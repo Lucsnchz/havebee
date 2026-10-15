@@ -32,8 +32,10 @@ public enum EventBridge {
     exit 0
     """#
 
-    public static let claudeHookEvents = ["SessionStart", "UserPromptSubmit", "Notification", "Stop"]
-    public static let claudeToolEvents = ["PreToolUse", "PostToolUse"]
+    public static let claudeHookEvents = ["SessionStart", "UserPromptSubmit", "Notification", "Stop", "StopFailure"]
+    /// Eventos de herramientas: llevan `matcher: "*"` para que corran con todas.
+    /// PermissionRequest avisa del permiso apenas aparece el diálogo (el Notification llega 6 s tarde).
+    public static let claudeToolEvents = ["PreToolUse", "PostToolUse", "PostToolUseFailure", "PermissionRequest"]
 
     /// Ajustes que se le pasan a Claude con `--settings`: hooks que llaman al puente.
     public static var claudeSettings: JSONValue {

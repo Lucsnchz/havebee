@@ -4,6 +4,8 @@ import Foundation
 public struct HistoryEntry: Codable, Identifiable, Hashable, Sendable {
     public enum Role: String, Codable, Sendable {
         case user, assistant, marker
+        /// Mensaje automático que entró como prompt (tareas en segundo plano, /loop): no lo escribiste vos.
+        case system
     }
 
     public var id: UUID
@@ -82,6 +84,8 @@ public struct HistoryStore: Sendable {
             return "\n## Vos · \(when)\n\n\(entry.text)\n"
         case .assistant:
             return "\n## \(agentName) · \(when)\n\n\(entry.text)\n"
+        case .system:
+            return "\n## Aviso automático · \(when)\n\n\(entry.text)\n"
         case .marker:
             return "\n---\n\n> **\(entry.text) · \(when)**: desde acá la IA arrancó con el contexto limpio. Lo de arriba ya no está en su memoria.\n\n---\n"
         }

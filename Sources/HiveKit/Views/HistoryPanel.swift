@@ -99,6 +99,7 @@ struct HistoryPanel: View {
         case .user: "Vos: \(entry.text)"
         case .assistant: "\(session.kind.label): \(entry.text)"
         case .marker: "—— \(entry.text) ——"
+        case .system: "Aviso automático: \(entry.text)"
         }
     }
 }

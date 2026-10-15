@@ -39,21 +39,26 @@ public struct AgentEventOutcome: Equatable, Sendable {
     public var reply: String?
     /// Si hubo actividad del usuario o del agente (para "hace cuánto se usó").
     public var touchesActivity: Bool
+    /// Transcript completo de la conversación (`transcript_path` de Claude), para guardarlo en Hive.
+    public var transcript: (conversationId: String, path: String)?
 
     public init(status: SessionStatus? = nil, notification: String? = nil, agentSessionId: String? = nil,
-                history: [(role: HistoryEntry.Role, text: String)] = [], reply: String? = nil, touchesActivity: Bool = false) {
+                history: [(role: HistoryEntry.Role, text: String)] = [], reply: String? = nil, touchesActivity: Bool = false,
+                transcript: (conversationId: String, path: String)? = nil) {
         self.status = status
         self.notification = notification
         self.agentSessionId = agentSessionId
         self.history = history
         self.reply = reply
         self.touchesActivity = touchesActivity
+        self.transcript = transcript
     }
 
     public static func == (a: AgentEventOutcome, b: AgentEventOutcome) -> Bool {
         a.status == b.status && a.notification == b.notification && a.agentSessionId == b.agentSessionId
             && a.history.map(\.role) == b.history.map(\.role) && a.history.map(\.text) == b.history.map(\.text)
             && a.reply == b.reply && a.touchesActivity == b.touchesActivity
+            && a.transcript?.conversationId == b.transcript?.conversationId && a.transcript?.path == b.transcript?.path
     }
 }
 
@@ -62,9 +67,13 @@ public enum AgentEventInterpreter {
     public static let defaultNotification = "Terminó. Es tu turno."
     public static let permissionNotification = "Necesita tu permiso para seguir."
 
-    public static func interpret(_ event: HiveEvent, status: SessionStatus, agentSessionId: String?) -> AgentEventOutcome {
+    /// - Parameter isSubagentThread: si un thread de Codex es de un subagente (sus eventos se ignoran).
+    public static func interpret(_ event: HiveEvent, status: SessionStatus, agentSessionId: String?,
+                                 isSubagentThread: (String) -> Bool = { _ in false }) -> AgentEventOutcome {
         var outcome = AgentEventOutcome()
         let payload = event.payload
+        // Dentro de un subagente, los hooks traen `agent_id`: no dicen nada del agente principal.
+        let fromSubagent = !(payload["agent_id"]?.string ?? "").isEmpty
         switch (event.source, event.name) {
         case ("claude", "SessionStart"):
             // Cambia con /clear: guardamos el nuevo para reanudar la conversación correcta.
@@ -72,12 +81,31 @@ public enum AgentEventInterpreter {
             if let source = payload["source"]?.string, source == "clear" || source == "compact" {
                 outcome.history = [(.marker, "/\(source)")]
             }
+            outcome.transcript = transcript(payload, agentSessionId: agentSessionId)
         case ("claude", "UserPromptSubmit"):
             outcome.status = .working
-            outcome.touchesActivity = true
-            if let prompt = payload["prompt"]?.string { outcome.history = [(.user, prompt)] }
+            let source = payload["source"]?.string ?? "user"
+            if source == "user" {
+                outcome.touchesActivity = true
+                if let prompt = payload["prompt"]?.string { outcome.history = [(.user, prompt)] }
+            } else if let prompt = payload["prompt"]?.string {
+                // Mensajes automáticos (tareas en segundo plano, /loop, recordatorios): no los escribiste vos.
+                outcome.history = [(.system, prompt)]
+            }
         case ("claude", "PreToolUse"), ("claude", "PostToolUse"):
-            outcome.status = .working
+            // Un subagente usando herramientas solo confirma que sigue trabajando; nunca te saca de tu turno.
+            if !fromSubagent || status == .working { outcome.status = .working }
+        case ("claude", "PostToolUseFailure"):
+            if payload["is_interrupt"]?.asBool == true {
+                // Lo cortaste con Esc: te toca a vos, y ya lo estás mirando.
+                if !fromSubagent { outcome.status = .waiting }
+            } else if !fromSubagent || status == .working {
+                outcome.status = .working
+            }
+        case ("claude", "PermissionRequest"):
+            outcome.status = .attention
+            outcome.notification = permissionText(toolName: payload["tool_name"]?.string, input: payload["tool_input"],
+                                                  cwd: payload["cwd"]?.string)
         case ("claude", "Notification"):
             let type = payload["notification_type"]?.string ?? ""
             let message = payload["message"]?.string ?? ""
@@ -101,9 +129,24 @@ public enum AgentEventInterpreter {
             outcome.reply = summary(full)
             outcome.touchesActivity = true
             outcome.status = .waiting
-            outcome.notification = outcome.reply ?? defaultNotification
+            let pending = backgroundTaskCount(payload["background_tasks"])
+            outcome.notification = pending > 0 ? backgroundText(pending) : (outcome.reply ?? defaultNotification)
+            outcome.transcript = transcript(payload, agentSessionId: agentSessionId)
+        case ("claude", "StopFailure"):
+            // El turno terminó por un error de la API: sin Stop, así que hace falta que hagas algo.
+            let error = errorCode(payload["error"])
+            let text = stopFailureText(error)
+            if let partial = payload["last_assistant_message"]?.string { outcome.history.append((.assistant, partial)) }
+            outcome.history.append((.marker, "\(stopFailureMarker) \(error)"))
+            outcome.reply = text
+            outcome.touchesActivity = true
+            outcome.status = .attention
+            outcome.notification = text
+            outcome.transcript = transcript(payload, agentSessionId: agentSessionId)
         case ("codex", _):
             if let thread = payload["thread-id"]?.string, !thread.isEmpty, thread != agentSessionId {
+                // Los subagentes de Codex corren con la config del padre: sus avisos no son de esta sesión.
+                if isSubagentThread(thread) { return AgentEventOutcome() }
                 // Un thread nuevo en la misma sesión es un /new o /clear de Codex.
                 if agentSessionId != nil { outcome.history.append((.marker, "Nueva conversación")) }
                 outcome.agentSessionId = thread
@@ -127,6 +170,95 @@ public enum AgentEventInterpreter {
             return text.isEmpty ? nil : (entry.role, text)
         }
         return outcome
+    }
+
+    /// Prefijo del marcador que queda en el historial cuando un turno se corta por un error.
+    public static let stopFailureMarker = "⚠︎ Se cortó:"
+
+    /// Qué le decimos al usuario según el `error` de StopFailure.
+    public static func stopFailureText(_ error: String) -> String {
+        switch error {
+        case "rate_limit": "Llegaste al límite de uso"
+        case "overloaded", "server_error": "Anthropic está saturado: reintentá"
+        case "authentication_failed": "Tenés que volver a iniciar sesión (/login)"
+        case _ where error.hasPrefix("oauth_"): "Tenés que volver a iniciar sesión (/login)"
+        case "max_output_tokens": "La respuesta se cortó (límite de tokens)"
+        case "billing_error": "Problema de facturación"
+        default: "Se cortó por un error"
+        }
+    }
+
+    /// El `error` puede venir como texto o, en otras versiones, como objeto con `type`.
+    static func errorCode(_ value: JSONValue?) -> String {
+        let code = value?.string ?? value?["type"]?.string ?? value?["code"]?.string ?? ""
+        return code.isEmpty ? "unknown" : code
+    }
+
+    /// Cuántas tareas siguen en segundo plano según `background_tasks` (lista, número u objeto).
+    static func backgroundTaskCount(_ value: JSONValue?) -> Int {
+        switch value {
+        case .array(let tasks)?: tasks.count
+        case .object(let tasks)?: tasks.count
+        case .number(let n)?: max(Int(n), 0)
+        default: 0
+        }
+    }
+
+    static func backgroundText(_ count: Int) -> String {
+        count == 1 ? "Terminó; queda 1 tarea en segundo plano" : "Terminó; quedan \(count) tareas en segundo plano"
+    }
+
+    static func transcript(_ payload: JSONValue, agentSessionId: String?) -> (conversationId: String, path: String)? {
+        guard let path = payload["transcript_path"]?.string, !path.isEmpty,
+              let id = payload["session_id"]?.string ?? agentSessionId, !id.isEmpty else { return nil }
+        return (id, path)
+    }
+
+    /// Cuerpo del aviso de PermissionRequest en español: «Pide permiso para Bash: npm test».
+    public static func permissionText(toolName: String?, input: JSONValue?, cwd: String? = nil) -> String {
+        guard let tool = toolName, !tool.isEmpty else { return permissionNotification }
+        func field(_ keys: String...) -> String? {
+            for key in keys {
+                if let value = input?[key]?.string?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty { return value }
+            }
+            return nil
+        }
+        func file(_ keys: String...) -> String? {
+            for key in keys {
+                guard let value = input?[key]?.string, !value.isEmpty else { continue }
+                return relative(value, to: cwd)
+            }
+            return nil
+        }
+        let detail: String?
+        switch tool {
+        case "Bash":
+            detail = field("command").flatMap { summary($0, limit: 120) }.map { "Bash: \($0)" }
+        case "Edit", "MultiEdit", "Write", "NotebookEdit":
+            detail = file("file_path", "notebook_path").map { "editar \($0)" }
+        case "Read":
+            detail = file("file_path").map { "leer \($0)" }
+        case "WebFetch":
+            detail = field("url").map { "abrir \($0)" }
+        case "WebSearch":
+            detail = field("query").map { "buscar en la web «\($0)»" }
+        default:
+            if tool.hasPrefix("mcp__") {
+                // mcp__<servidor>__<herramienta>
+                let pieces = tool.dropFirst(5).components(separatedBy: "__")
+                detail = pieces.count >= 2 ? "usar \(pieces.dropFirst().joined(separator: "__")) (MCP \(pieces[0]))" : "usar \(tool)"
+            } else {
+                detail = nil
+            }
+        }
+        return "Pide permiso para " + (detail ?? tool)
+    }
+
+    /// Una ruta dentro de la carpeta de la sesión se muestra relativa (app/Models/User.php).
+    static func relative(_ path: String, to cwd: String?) -> String {
+        guard let cwd, !cwd.isEmpty else { return path }
+        let base = cwd.hasSuffix("/") ? cwd : cwd + "/"
+        return path.hasPrefix(base) ? String(path.dropFirst(base.count)) : path
     }
 
     /// Qué hace un Notification de Claude según su `notification_type`.
@@ -158,10 +290,14 @@ public enum AgentEventInterpreter {
 
     /// Una línea de hasta 200 caracteres para avisos y tarjetas.
     public static func summary(_ text: String?) -> String? {
+        summary(text, limit: 200)
+    }
+
+    static func summary(_ text: String?, limit: Int) -> String? {
         guard let text else { return nil }
         let flat = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
         guard !flat.isEmpty else { return nil }
-        return flat.count > 200 ? String(flat.prefix(200)) + "…" : flat
+        return flat.count > limit ? String(flat.prefix(limit)) + "…" : flat
     }
 }
 
@@ -183,5 +319,26 @@ public enum SilenceRule {
         // Solo avisamos si de verdad estuvo trabajando un rato y el agente no tiene eventos propios.
         let wasBusy = lastOutput.timeIntervalSince(since) > sustained
         return Verdict(stopWorking: true, notify: wasBusy && !hooksSeen)
+    }
+}
+
+extension JSONValue {
+    /// Booleano de un payload (algunos agentes mandan "true" como texto).
+    var asBool: Bool? {
+        switch self {
+        case .bool(let b): b
+        case .string(let s): s == "true" ? true : (s == "false" ? false : nil)
+        case .number(let n): n != 0
+        default: nil
+        }
+    }
+
+    /// Número de un payload (también si viene como texto).
+    var asDouble: Double? {
+        switch self {
+        case .number(let n): n
+        case .string(let s): Double(s)
+        default: nil
+        }
     }
 }
