@@ -36,7 +36,7 @@ struct TerminalDropTests {
     }
 
     @Test("Soltar un archivo con espacios y ñ pega su ruta escapada, con un espacio al final")
-    func dropFile() throws {
+    func dropFile() async throws {
         let dir = TempDir("hive-drop")
         let file = dir.write("Mis Documentos/año 2026.png", "x")
         let paste = ScratchPasteboard()
@@ -44,11 +44,11 @@ struct TerminalDropTests {
         paste.board.writeObjects([file as NSURL])
         let (view, typed) = makeTerminal(agent: true)
         #expect(view.drop(from: paste.board))
-        #expect(typed.text == "'\(file.path)' ")
+        #expect(await waitUntil { typed.text == "'\(file.path)' " })
     }
 
     @Test("Soltar varios archivos: todas las rutas, separadas por espacios")
-    func dropFiles() {
+    func dropFiles() async {
         let dir = TempDir("hive-drop")
         let a = dir.write("a.txt"), b = dir.write("con espacio.txt")
         let paste = ScratchPasteboard()
@@ -56,36 +56,37 @@ struct TerminalDropTests {
         paste.board.writeObjects([a as NSURL, b as NSURL])
         let (view, typed) = makeTerminal(agent: false)
         view.drop(from: paste.board)
-        #expect(typed.text == "\(a.path) '\(b.path)' ")
+        #expect(await waitUntil { typed.text == "\(a.path) '\(b.path)' " })
     }
 
     @Test("Soltar una imagen sin archivo la guarda como PNG y pega su ruta")
-    func dropImage() throws {
+    func dropImage() async throws {
         let dir = TempDir("hive-drop-images")
         let paste = ScratchPasteboard()
         paste.board.clearContents()
         paste.board.setData(tinyPNG(), forType: .png)
         let (view, typed) = makeTerminal(agent: true)
         #expect(view.drop(from: paste.board, imagesDirectory: dir.url))
+        #expect(await waitUntil { typed.text.hasSuffix(" ") })
         let path = typed.text.trimmingCharacters(in: .whitespaces)
         #expect(path.hasPrefix(dir.path) && path.hasSuffix(".png"))
         #expect(FileManager.default.fileExists(atPath: path))
     }
 
     @Test("Soltar una URL o texto los pega tal cual")
-    func dropURLAndText() {
+    func dropURLAndText() async {
         let paste = ScratchPasteboard()
         paste.board.clearContents()
         paste.board.writeObjects([URL(string: "https://bevo.test/admin")! as NSURL])
         let (view, typed) = makeTerminal(agent: false)
         view.drop(from: paste.board)
-        #expect(typed.text == "https://bevo.test/admin")
+        #expect(await waitUntil { typed.text == "https://bevo.test/admin" })
 
         paste.board.clearContents()
         paste.board.setString("php artisan test", forType: .string)
         typed.bytes = []
         view.drop(from: paste.board)
-        #expect(typed.text == "php artisan test")
+        #expect(await waitUntil { typed.text == "php artisan test" })
     }
 
     @Test("⌘V con solo una imagen: Ctrl+V en un agente; en una terminal, lo de siempre")
@@ -103,7 +104,7 @@ struct TerminalDropTests {
     }
 
     @Test("⌘V con archivos copiados en Finder pega sus rutas; con texto, lo pega SwiftTerm")
-    func pasteFiles() {
+    func pasteFiles() async {
         let dir = TempDir("hive-drop")
         let file = dir.write("informe final.pdf")
         let paste = ScratchPasteboard()
@@ -111,7 +112,7 @@ struct TerminalDropTests {
         paste.board.writeObjects([file as NSURL])
         let (view, typed) = makeTerminal(agent: true)
         #expect(view.pasteSpecial(from: paste.board))
-        #expect(typed.text == "'\(file.path)' ")
+        #expect(await waitUntil { typed.text == "'\(file.path)' " })
 
         paste.board.clearContents()
         paste.board.setString("hola", forType: .string)

@@ -16,6 +16,7 @@ public final class HiveTerminalView: TerminalView, TerminalViewDelegate, LocalPr
     private var process: LocalProcess!
     weak var processDelegate: HiveTerminalDelegate?
     /// Lo que escribe el usuario (teclado, pegar, soltar). No incluye las respuestas automáticas.
+    /// Lo pegado avisa un instante después de mandarlo (ver `deliverFromTerminal`).
     var onUserInput: ((ArraySlice<UInt8>) -> Void)?
     /// Todo lo que le llega al proceso, también las respuestas automáticas (para las pruebas).
     var onProcessInput: ((ArraySlice<UInt8>) -> Void)?
@@ -295,7 +296,19 @@ public final class HiveTerminalView: TerminalView, TerminalViewDelegate, LocalPr
     }
 
     private func deliverFromTerminal(_ data: ArraySlice<UInt8>) {
-        if isPastingAsUser { sendInput(data) } else { writeToProcess(data) }
+        guard isPastingAsUser else {
+            writeToProcess(data)
+            return
+        }
+        // Lo pegado sale de SwiftTerm con su lock tomado (no es recursivo: si quien escucha
+        // `onUserInput` consulta la terminal, la app se cae). Se escribe ya, así ninguna tecla
+        // se le adelanta, y el aviso de que el usuario escribió va un instante después, sin el lock.
+        if TerminalInput.isSubmit(data) { preserver.userPressedEnter(at: now()) }
+        writeToProcess(data)
+        let bytes = Array(data)
+        DispatchQueue.main.async { [weak self] in
+            self?.onUserInput?(bytes[...])
+        }
     }
 
     /// Mientras corre `body`, lo que SwiftTerm mande por el camino de las respuestas es un pegado

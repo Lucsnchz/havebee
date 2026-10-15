@@ -60,10 +60,25 @@ struct TerminalAutoResponseTests {
     }
 
     @Test("Pegar es del usuario: pasa por onUserInput")
-    func pasteIsUserInput() {
+    func pasteIsUserInput() async {
         let probe = Probe()
         probe.view.pastingAsUser { probe.view.pasteText("hola") }
-        #expect(probe.typed == [Array("hola".utf8)])
+        // Al proceso llega en el acto; el aviso de tipeo, un instante después.
+        #expect(probe.toProcess == [Array("hola".utf8)])
+        #expect(await waitUntil { probe.typed == [Array("hola".utf8)] })
+    }
+
+    @Test("Quien escucha lo pegado puede consultar la terminal (el lock de SwiftTerm ya se soltó)")
+    func pasteListenerCanReadTerminal() async {
+        let probe = Probe()
+        probe.view.receive(Array("prompt$ ".utf8)[...])
+        var firstRow: [String] = []
+        // SwiftTerm manda lo pegado con su lock tomado y no es recursivo: si el aviso llegara
+        // ahí adentro, leer la terminal haría caer la app.
+        probe.view.onUserInput = { [unowned view = probe.view] _ in firstRow = view.visibleRowsText(0..<1) }
+        probe.view.pastingAsUser { probe.view.pasteText("ls") }
+        #expect(await waitUntil { !firstRow.isEmpty })
+        #expect(firstRow.first?.hasPrefix("prompt$") == true)
     }
 
     @Test("Nadie puede leer el portapapeles con OSC 52")
