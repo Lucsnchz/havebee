@@ -143,7 +143,8 @@ public enum SwitcherIndex {
                               compactLayout: Bool = false) -> [SwitcherItem] {
         let parsed = parse(query)
         if parsed.actionsOnly {
-            return rank(parsed.text, actions(projects: projects, compactLayout: compactLayout), limit: limit, minimumScore: 0)
+            return rank(parsed.text, actions(projects: projects, compactLayout: compactLayout), limit: limit, minimumScore: 0,
+                        fuzzyInTitleOnly: true)
         }
         let all = items(projects, includeArchived: includeArchived)
         let q = parsed.text
@@ -228,12 +229,17 @@ public enum SwitcherIndex {
         return (actionsOnly, normalize(text))
     }
 
-    /// Ordena por puntaje (las archivadas, con menos) y, si empatan, por uso reciente.
-    private static func rank(_ q: String, _ items: [SwitcherItem], limit: Int, minimumScore: Int) -> [SwitcherItem] {
+    /// Ordena por puntaje (las archivadas, con menos) y, si empatan, por uso reciente. Con
+    /// `fuzzyInTitleOnly`, las letras sueltas en orden tienen que estar en el título: las acciones
+    /// tienen contextos largos donde casi cualquier combinación de letras aparece.
+    private static func rank(_ q: String, _ items: [SwitcherItem], limit: Int, minimumScore: Int,
+                             fuzzyInTitleOnly: Bool = false) -> [SwitcherItem] {
         guard !q.isEmpty else { return Array(items.prefix(limit)) }
         var scored: [(item: SwitcherItem, score: Int)] = []
         for item in items {
-            guard let value = score(q, title: normalize(item.title), haystack: normalize(item.haystack)), value >= minimumScore else { continue }
+            let title = normalize(item.title)
+            guard let value = score(q, title: title, haystack: normalize(item.haystack)), value >= minimumScore else { continue }
+            if fuzzyInTitleOnly && value == 10 && score(q, title: title, haystack: title) == nil { continue }
             scored.append((item, item.kind == .archived ? value - 1_000 : value))
         }
         scored.sort { a, b in a.score != b.score ? a.score > b.score : a.item.recency > b.item.recency }

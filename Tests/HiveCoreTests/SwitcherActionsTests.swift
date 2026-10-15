@@ -59,6 +59,9 @@ struct SwitcherActionsTests {
         let everything = SwitcherIndex.search(">", in: projects)
         #expect(everything.map(\.title).prefix(3) == ["Agregar proyecto…", "Cambiar a vista compacta", "Ajustes…"])
         #expect(SwitcherIndex.search("> ajustes", in: projects).first?.target == .action(.settings))
+        // Letras sueltas en orden: tienen que estar en el título, no en cualquier parte del contexto.
+        #expect(SwitcherIndex.search(">ajst", in: projects).map(\.title) == ["Ajustes…"])
+        #expect(!SwitcherIndex.search(">nueva claude", in: projects).contains { $0.title.contains("Terminal en") })
     }
 
     @Test("Las acciones de cada proyecto y rama")
