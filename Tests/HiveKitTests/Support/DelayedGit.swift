@@ -12,6 +12,8 @@ final class DelayedGit: GitClient, @unchecked Sendable {
     private let lock = NSLock()
     private var delays: [Operation: TimeInterval] = [:]
     private var counts: [Operation: Int] = [:]
+    private var running = 0
+    private var peak = 0
 
     func setDelay(_ operation: Operation, _ seconds: TimeInterval) {
         lock.withLock { delays[operation] = seconds }
@@ -22,7 +24,15 @@ final class DelayedGit: GitClient, @unchecked Sendable {
         lock.withLock { counts[operation] ?? 0 }
     }
 
+    /// Cuántas llamadas a git llegaron a correr a la vez, como máximo.
+    var peakConcurrency: Int { lock.withLock { peak } }
+
     private func slow<T>(_ operation: Operation, _ body: () -> T) -> T {
+        lock.withLock {
+            running += 1
+            peak = max(peak, running)
+        }
+        defer { lock.withLock { running -= 1 } }
         let result = body()
         let delay = lock.withLock { () -> TimeInterval in
             counts[operation, default: 0] += 1

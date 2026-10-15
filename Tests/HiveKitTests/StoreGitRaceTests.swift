@@ -154,17 +154,22 @@ struct StoreGitScheduleTests {
             #expect(await s.store.createBranch(NewBranchRequest(projectId: s.project.id, name: "wt-\(i)", isNew: true, mode: .worktree)) == nil)
         }
         #expect(await s.settle())
-        s.git.setDelay(.status, 0.3)
-        let started = Date()
-        await s.store.refreshGitNow()
-        let elapsed = Date().timeIntervalSince(started)
-        let branches = try #require(s.store.project(s.project.id)?.branches)
-        #expect(branches.count == 7)
-        for branch in branches {
-            #expect(s.store.gitStatus(for: branch, in: try #require(s.store.project(s.project.id))) != nil, "Falta \(branch.name)")
+        // Cada status tarda 0,3 s: así las llamadas se superponen y se puede ver cuántas corren a la vez
+        // (contarlas no depende de lo cargada que esté la máquina, medir el tiempo sí).
+        let git = DelayedGit()
+        git.setDelay(.status, 0.3)
+        var environment = s.world.environment
+        environment.git = git
+        let store = AppStore(environment: environment)
+        await store.refreshGitNow()
+        let project = try #require(store.project(s.project.id))
+        #expect(project.branches.count == 7)
+        for branch in project.branches {
+            #expect(store.gitStatus(for: branch, in: project) != nil, "Falta \(branch.name)")
         }
-        // 7 carpetas de 0,3 s cada una: de a una tardaría más de 2 s; de a cuatro, unos 0,6 s.
-        #expect(elapsed < 2.0)
+        #expect(git.calls(.status) == 7)
+        #expect(git.peakConcurrency > 1) // en paralelo...
+        #expect(git.peakConcurrency <= 4) // ...pero como mucho 4 a la vez
     }
 
     @Test("Al cargar no lee git y la sesión abierta se lanza cuando su rama pasa a estar activa")
