@@ -142,7 +142,8 @@ enum QuitWarning {
 }
 
 extension Color {
-    static let honey = Color(red: 0.96, green: 0.72, blue: 0.24)
+    /// El acento de Hive (miel en oscuro, ámbar en claro). Es `Theme.accent`: cambia solo con la apariencia.
+    static var honey: Color { Theme.accent }
 }
 
 extension SessionKind {

@@ -259,7 +259,7 @@ private struct ExitedBar: View {
         HStack(spacing: 10) {
             if missing {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Theme.attention)
                 Text("No se encontró \(kind.label)")
                 Spacer()
                 Button(copied ? "Copiado" : "Copiar comando de instalación") {
@@ -315,7 +315,7 @@ private struct MovedHeadBanner: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
+                .foregroundStyle(Theme.attention)
             Text("La carpeta principal ahora está en «\(store.mainHeads[project.id] ?? "")»: esta sesión está viendo esa rama, no «\(branch.name)».")
                 .font(.callout)
             Spacer()
@@ -323,7 +323,7 @@ private struct MovedHeadBanner: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
-        .background(.orange.opacity(0.12))
+        .background(Theme.attention.opacity(0.12))
     }
 }
 
@@ -340,7 +340,7 @@ private struct InactiveBranchPlaceholder: View {
             Text("Esta sesión trabaja en la carpeta principal, que ahora está en «\(store.mainHeads[project.id] ?? "")». Para abrirla hay que hacer checkout de «\(branch.name)».")
         } actions: {
             Button("Hacer checkout y abrir", action: onCheckout)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.hiveProminent)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.background)

@@ -150,7 +150,7 @@ private struct MCPInvalidFileNotice: View {
         HStack(spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.title3)
-                .foregroundStyle(.orange)
+                .foregroundStyle(Theme.attention)
             VStack(alignment: .leading, spacing: 2) {
                 Text(".mcp.json tiene un error de sintaxis")
                     .font(.system(size: 13, weight: .semibold))
@@ -167,8 +167,8 @@ private struct MCPInvalidFileNotice: View {
             .help(error.path)
         }
         .padding(12)
-        .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color.orange.opacity(0.3)))
+        .background(Theme.attention.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Theme.attention.opacity(0.3)))
     }
 }
 
@@ -195,7 +195,7 @@ private struct MCPRow: View {
                 if let brokenPath {
                     Label("La ruta no existe en esta Mac: \(brokenPath)", systemImage: "exclamationmark.triangle.fill")
                         .font(.caption)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Theme.attention)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
@@ -416,7 +416,7 @@ struct MCPEditorSheet: View {
             if let message = problem {
                 Label(message, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Theme.attention)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Text("Se guarda en .mcp.json del repo. Claude lo lee directo; Hive se lo pasa a Codex y Gemini al abrir cada sesión.")
@@ -524,10 +524,10 @@ private struct MCPTypePicker: View {
                 .foregroundStyle(selected ? Color.primary : Color.secondary)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
-                .background(selected ? Color.honey.opacity(0.18) : Color.primary.opacity(0.05),
+                .background(selected ? Theme.accent.opacity(0.18) : Color.primary.opacity(0.05),
                             in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .strokeBorder(selected ? Color.honey.opacity(0.8) : Color.primary.opacity(0.1)))
+                    .strokeBorder(selected ? Theme.accent.opacity(0.8) : Color.primary.opacity(0.1)))
                 .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         }
         .buttonStyle(.plain)

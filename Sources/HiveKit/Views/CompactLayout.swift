@@ -70,7 +70,7 @@ private struct ProjectRail: View {
         .overlay {
             if dropTargeted {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(Color.honey, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
+                    .strokeBorder(Theme.accent, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
                     .padding(4)
                     .allowsHitTesting(false)
             }
@@ -126,10 +126,10 @@ private struct HomeRailItem: View {
                         if waiting > 0 {
                             Text("\(waiting)")
                                 .font(.system(size: 10, weight: .bold).monospacedDigit())
-                                .foregroundStyle(.white)
+                                .foregroundStyle(Theme.onAccent)
                                 .padding(.horizontal, 4)
                                 .frame(minWidth: 16, minHeight: 16)
-                                .background(activity.attention > 0 ? Color.orange : Color.green, in: Capsule())
+                                .background(activity.attention > 0 ? Theme.attention : Theme.pending, in: Capsule())
                                 .overlay(Capsule().strokeBorder(Color(nsColor: .windowBackgroundColor), lineWidth: 2))
                                 .offset(x: 7, y: -7)
                         }

@@ -53,7 +53,7 @@ struct ContentView: View {
                 .help(layout == .tree ? "Cambiar a la vista compacta (proyectos y pestañas)" : "Cambiar a la vista de árbol")
             }
         }
-        .tint(.honey)
+        .tint(Theme.accent)
         .modifier(StoreDialogs())
     }
 

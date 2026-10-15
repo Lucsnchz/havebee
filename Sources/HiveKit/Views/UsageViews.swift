@@ -92,7 +92,7 @@ final class UsageMonitor {
 
     /// Miel, naranja desde 80 % y rojo desde 95 %.
     static func color(_ percent: Double) -> Color {
-        percent >= 95 ? .red : (percent >= 80 ? .orange : .honey)
+        percent >= 95 ? .red : (percent >= 80 ? Theme.attention : Theme.accent)
     }
 }
 
@@ -112,10 +112,10 @@ struct UsageBadge: View {
             let high = percent >= 80
             Text("ctx \(value)%")
                 .font(.system(size: 10.5, weight: .medium).monospacedDigit())
-                .foregroundStyle(high ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.secondary))
+                .foregroundStyle(high ? AnyShapeStyle(Theme.attention) : AnyShapeStyle(.secondary))
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)
-                .background(Capsule().fill(high ? Color.orange.opacity(0.14) : Color.primary.opacity(0.06)))
+                .background(Capsule().fill(high ? Theme.attention.opacity(0.14) : Color.primary.opacity(0.06)))
                 .help(high ? "Contexto ocupado: \(value) %. Conviene /compact" : "Contexto ocupado: \(value) %")
                 .accessibilityLabel("Contexto ocupado: \(value) por ciento")
         } else {

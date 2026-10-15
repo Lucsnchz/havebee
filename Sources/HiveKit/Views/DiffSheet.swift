@@ -86,7 +86,7 @@ struct DiffSheet: View {
                         }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 4)
-                        .background(index == selected ? Color.honey.opacity(0.18) : .clear)
+                        .background(index == selected ? Theme.accent.opacity(0.18) : .clear)
                         .contentShape(Rectangle())
                         .onTapGesture { selected = index }
                         .id(index)
@@ -144,7 +144,7 @@ struct DiffSheet: View {
         let done = resolved[file.change.path]
         return HStack(spacing: 8) {
             Image(systemName: done == nil ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
-                .foregroundStyle(done == nil ? Color.orange : Color.green)
+                .foregroundStyle(done == nil ? Theme.attention : Theme.pending)
             VStack(alignment: .leading, spacing: 1) {
                 Text(done ?? "Archivo en conflicto" + (operation.map { " · \($0.label)" } ?? ""))
                     .font(.system(size: 12, weight: .medium))
@@ -173,7 +173,7 @@ struct DiffSheet: View {
         .disabled(resolving)
         .padding(.horizontal, 14)
         .padding(.vertical, 7)
-        .background(Color.orange.opacity(done == nil ? 0.12 : 0.04))
+        .background(Theme.attention.opacity(done == nil ? 0.12 : 0.04))
     }
 
     @ViewBuilder private var content: some View {

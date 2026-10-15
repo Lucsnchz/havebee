@@ -36,9 +36,9 @@ struct HomeSessionGroups {
         let shown = Set((attention + waiting + working).map(\.id))
         let recent = Array(all.filter { !shown.contains($0.id) }.prefix(recentLimit))
         return [
-            Group(title: "Necesitan permiso", symbol: "hand.raised.fill", tint: .orange, items: attention),
-            Group(title: "Tu turno", symbol: "arrowshape.turn.up.left.fill", tint: .green, items: waiting),
-            Group(title: "Trabajando", symbol: "sparkles", tint: .honey, items: working),
+            Group(title: "Necesitan permiso", symbol: "hand.raised.fill", tint: Theme.attention, items: attention),
+            Group(title: "Tu turno", symbol: "arrowshape.turn.up.left.fill", tint: Theme.pending, items: waiting),
+            Group(title: "Trabajando", symbol: "sparkles", tint: Theme.accent, items: working),
             Group(title: "Recientes", symbol: "clock", tint: .secondary, items: recent),
         ].filter { !$0.items.isEmpty }
     }

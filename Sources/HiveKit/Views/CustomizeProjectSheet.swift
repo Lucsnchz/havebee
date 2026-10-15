@@ -120,7 +120,7 @@ struct CustomizeProjectSheet: View {
                                         .background(Color(white: 0.97), in: RoundedRectangle(cornerRadius: 10))
                                         .overlay {
                                             RoundedRectangle(cornerRadius: 10)
-                                                .strokeBorder(path == form.imagePath ? Color.honey : .clear, lineWidth: 2.5)
+                                                .strokeBorder(path == form.imagePath ? Theme.accent : .clear, lineWidth: 2.5)
                                         }
                                 }
                                 Text((path as NSString).lastPathComponent)

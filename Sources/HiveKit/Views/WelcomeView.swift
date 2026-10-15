@@ -39,19 +39,19 @@ struct WelcomeView: View {
         VStack(spacing: 10) {
             Image(systemName: "folder.badge.plus")
                 .font(.system(size: 28, weight: .regular))
-                .foregroundStyle(dropTargeted ? Color.honey : .secondary)
+                .foregroundStyle(dropTargeted ? Theme.accent : .secondary)
             Text("Soltá acá las carpetas de tus repos")
                 .font(.headline)
             Button("Elegir carpetas…") { store.addProjectInteractive() }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.hiveProminent)
                 .controlSize(.large)
         }
         .padding(.vertical, 28)
         .frame(maxWidth: 520)
-        .background(dropTargeted ? Color.honey.opacity(0.08) : Color.primary.opacity(0.03),
+        .background(dropTargeted ? Theme.accent.opacity(0.08) : Color.primary.opacity(0.03),
                     in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .strokeBorder(dropTargeted ? Color.honey : Color.primary.opacity(0.22), style: StrokeStyle(lineWidth: 1.5, dash: [7, 5])))
+            .strokeBorder(dropTargeted ? Theme.accent : Color.primary.opacity(0.22), style: StrokeStyle(lineWidth: 1.5, dash: [7, 5])))
         .dropDestination(for: URL.self) { urls, _ in
             let folders = urls.filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true }.map(\.path)
             guard !folders.isEmpty else { return false }
@@ -75,9 +75,9 @@ private struct WelcomeStep: View {
         HStack(spacing: 12) {
             Text("\(number)")
                 .font(.system(size: 13, weight: .bold, design: .rounded))
-                .foregroundStyle(.black.opacity(0.8))
+                .foregroundStyle(Theme.onAccent)
                 .frame(width: 24, height: 24)
-                .background(Color.honey, in: Circle())
+                .background(Theme.accent, in: Circle())
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
                     .font(.system(size: 14, weight: .semibold))

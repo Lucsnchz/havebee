@@ -20,7 +20,7 @@ struct UndoToastView: View {
                         Button("Deshacer") { store.performUndo() }
                             .buttonStyle(.plain)
                             .fontWeight(.semibold)
-                            .foregroundStyle(Color.honey)
+                            .foregroundStyle(Theme.accent)
                             .help("Deshacer (⌘Z)")
                     }
                     Button {

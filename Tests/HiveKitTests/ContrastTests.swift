@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SwiftUI
 import Testing
 @testable import HiveKit
 
@@ -44,6 +45,33 @@ struct ContrastTests {
                 #expect(HiveContrast.ratio(text, on: background) >= 4.5, "\(appearance.rawValue): \(fill)")
             }
         }
+    }
+
+    @Test("En claro, el acento y los colores de estado se leen también sobre una tarjeta, con el mouse encima")
+    func onCards() {
+        // El relleno de HiveCard es Color.primary al 4,5 % (7,5 % con el mouse encima); en negro puro
+        // es el caso más exigente.
+        for fill in [0.045, 0.075] {
+            let card = HiveContrast.composite(NSColor.black.withAlphaComponent(fill), over: .white)
+            for color in [Theme.accentNSColor, Theme.attentionNSColor, Theme.pendingNSColor] {
+                let ratio = HiveContrast.ratio(HiveContrast.resolve(color, in: .aqua), on: card)
+                #expect(ratio >= 4.5, "\(color) sobre la tarjeta (\(fill)): \(ratio)")
+            }
+        }
+    }
+
+    @Test("Color.honey es el acento del tema: cambia con la apariencia")
+    func honeyIsAccent() {
+        for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+            let honey = HiveContrast.resolve(NSColor(Color.honey), in: appearance)
+            let accent = HiveContrast.resolve(Theme.accentNSColor, in: appearance)
+            #expect(abs(honey.redComponent - accent.redComponent) < 0.01, "\(appearance.rawValue)")
+            #expect(abs(honey.greenComponent - accent.greenComponent) < 0.01, "\(appearance.rawValue)")
+            #expect(abs(honey.blueComponent - accent.blueComponent) < 0.01, "\(appearance.rawValue)")
+        }
+        // En claro ya no es el miel de oscuro: es el ámbar que se lee sobre blanco.
+        let light = HiveContrast.resolve(NSColor(Color.honey), in: .aqua)
+        #expect(light.redComponent < 0.7)
     }
 
     @Test("Naranja de permiso y verde de «te espera» se leen como texto")

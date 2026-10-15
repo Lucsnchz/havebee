@@ -370,7 +370,7 @@ private struct HistoryRow: View {
         .overlay {
             if isCurrentMatch {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(Color.honey, lineWidth: 1.5)
+                    .strokeBorder(Theme.accent, lineWidth: 1.5)
                     .padding(-4)
             }
         }
@@ -381,12 +381,12 @@ private struct HistoryRow: View {
     private var marker: some View {
         let failed = entry.text.hasPrefix(AgentEventInterpreter.stopFailureMarker)
         return HStack(spacing: 8) {
-            Rectangle().fill((failed ? Color.orange : Color.primary).opacity(0.2)).frame(height: 1)
+            Rectangle().fill((failed ? Theme.attention : Color.primary).opacity(0.2)).frame(height: 1)
             Text("\(entry.text) · \(time)")
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(failed ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.secondary))
+                .foregroundStyle(failed ? AnyShapeStyle(Theme.attention) : AnyShapeStyle(.secondary))
                 .fixedSize()
-            Rectangle().fill((failed ? Color.orange : Color.primary).opacity(0.2)).frame(height: 1)
+            Rectangle().fill((failed ? Theme.attention : Color.primary).opacity(0.2)).frame(height: 1)
         }
         .padding(.vertical, 4)
         .help(HistoryStore.markerMeaning(entry.text))
@@ -437,7 +437,7 @@ private struct HistoryRow: View {
         }
         .padding(.horizontal, 11)
         .padding(.vertical, 9)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.honey.opacity(0.12)))
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.accent.opacity(0.12)))
         .padding(.leading, 24)
     }
 
@@ -599,7 +599,7 @@ enum HistoryMarkdown {
             let length = plain.distance(from: found.lowerBound, to: found.upperBound)
             let start = text.characters.index(text.startIndex, offsetBy: lower)
             let end = text.characters.index(start, offsetBy: length)
-            text[start..<end].backgroundColor = Color.honey.opacity(0.35)
+            text[start..<end].backgroundColor = Theme.accent.opacity(0.35)
             searchStart = found.upperBound
         }
     }

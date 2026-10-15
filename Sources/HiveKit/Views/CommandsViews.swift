@@ -340,7 +340,7 @@ private struct CommandRow: View {
             if let running {
                 Text("corriendo en \(running.branchName)")
                     .font(.caption)
-                    .foregroundStyle(.green)
+                    .foregroundStyle(Theme.pending)
             } else if let target {
                 Text("en \(target.name)")
                     .font(.caption)

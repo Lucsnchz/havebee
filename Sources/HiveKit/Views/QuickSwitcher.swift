@@ -241,7 +241,7 @@ private struct SwitcherRow: View {
         }
         .padding(.horizontal, 10)
         .frame(height: 40)
-        .background(selected ? Color.honey.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(selected ? Theme.accent.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel([item.title, item.subtitle, status?.label].compactMap { $0 }.joined(separator: ", "))
@@ -256,7 +256,7 @@ private struct SwitcherRow: View {
             let start = characters.index(characters.startIndex, offsetBy: range.lowerBound)
             let end = characters.index(characters.startIndex, offsetBy: range.upperBound)
             text[start..<end].font = .system(size: 13.5, weight: .bold)
-            text[start..<end].backgroundColor = Color.honey.opacity(0.28)
+            text[start..<end].backgroundColor = Theme.accent.opacity(0.28)
         }
         return text
     }
@@ -267,9 +267,9 @@ private struct SwitcherRow: View {
         let label = rt.status.label(for: rt.kind)
         switch rt.status {
         case .dormant: return nil
-        case .attention: return (.orange, label)
-        case .waiting: return (rt.unseen ? .green : .green.opacity(0.5), label)
-        case .working: return (.honey, label)
+        case .attention: return (Theme.attention, label)
+        case .waiting: return (rt.unseen ? Theme.pending : Theme.pending.opacity(0.5), label)
+        case .working: return (Theme.accent, label)
         case .idle, .exited: return (.secondary.opacity(0.6), label)
         }
     }
@@ -293,7 +293,7 @@ private struct SwitcherRow: View {
             }
         case .command:
             Image(systemName: "play.fill")
-                .foregroundStyle(.green)
+                .foregroundStyle(Theme.pending)
         case .action(let action):
             switch action {
             case .newSession(_, let kind):
@@ -344,7 +344,7 @@ private struct ArchivedSessionView: View {
                 }
                 Spacer(minLength: 8)
                 Button("Restaurar", action: onRestore)
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.hiveProminent)
                     .help("Vuelve a las pestañas y retoma la conversación")
             }
             .padding(12)

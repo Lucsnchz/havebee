@@ -4,10 +4,11 @@ import SwiftUI
 // MARK: - Colores
 
 /// Colores de Hive. Hay un solo acento: miel en oscuro y un ámbar más oscuro en claro, para que
-/// el texto en acento se lea sobre blanco (contraste ≥ 4,5).
+/// el texto en acento se lea (contraste ≥ 4,5) sobre blanco y también sobre las tarjetas, con el
+/// mouse encima incluido.
 enum Theme {
     /// Acento como NSColor dinámico (cambia solo con la apariencia).
-    static let accentNSColor = dynamicNSColor(light: srgb(0x9A6700),
+    static let accentNSColor = dynamicNSColor(light: srgb(0x8F5F00),
                                               dark: NSColor(srgbRed: 0.96, green: 0.72, blue: 0.24, alpha: 1))
     static let accent = Color(nsColor: accentNSColor)
 
@@ -19,8 +20,8 @@ enum Theme {
     static let attentionNSColor = dynamicNSColor(light: srgb(0xB54708), dark: .systemOrange)
     static let attention = Color(nsColor: attentionNSColor)
 
-    /// Te espera y no la viste: verde (más oscuro en claro).
-    static let pendingNSColor = dynamicNSColor(light: srgb(0x1A7F37), dark: .systemGreen)
+    /// Te espera y no la viste: verde (más oscuro en claro, para que se lea también sobre una tarjeta).
+    static let pendingNSColor = dynamicNSColor(light: srgb(0x187A34), dark: .systemGreen)
     static let pending = Color(nsColor: pendingNSColor)
 
     /// Un NSColor que elige el valor según la apariencia (claro u oscuro, también en alto contraste).
