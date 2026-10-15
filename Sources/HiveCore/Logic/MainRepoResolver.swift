@@ -60,11 +60,10 @@ public enum MainRepoResolver {
         return Found(repo: repo, head: head, initialBranch: initial, worktrees: worktrees, worktree: worktree)
     }
 
-    /// La rama a la que apunta origin/HEAD ("origin/main"), si la hay. `GitClient` no la expone:
-    /// con el git del sistema se lee directo; con otro cliente (tests) no hay.
+    /// La rama por defecto del remoto principal ("origin/main"), si la hay: origin/HEAD o, si no
+    /// está configurado, main, master, develop o trunk del remoto. Sale de `GitClient`, así que
+    /// también funciona con cualquier cliente (no solo con el git del sistema).
     public static func originHead(_ dir: String, git: GitClient) -> String? {
-        guard let cli = git as? GitCLI else { return nil }
-        let r = cli.run(["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"], in: dir)
-        return r.ok && !r.output.isEmpty ? r.output : nil
+        git.defaultRemoteBranch(dir)
     }
 }
