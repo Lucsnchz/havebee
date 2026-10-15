@@ -384,7 +384,8 @@ public final class HiveTerminalView: TerminalView, TerminalViewDelegate, LocalPr
         case .folder(let path):
             NSWorkspace.shared.open(URL(fileURLWithPath: path, isDirectory: true))
         case .file(let path, let line, let column):
-            ExternalApps.openFile(path, line: line, column: column, projectDirectory: startDirectory)
+            // El proyecto se busca desde el archivo: puede estar fuera de la carpeta de la sesión.
+            ExternalApps.openFile(path, line: line, column: column)
         }
     }
 

@@ -55,16 +55,38 @@ enum ExternalApps {
     static func preferredEditor(for dir: String?, installed: [ExternalApp] = editors, defaults: UserDefaults = .standard) -> ExternalApp? {
         func app(_ id: String) -> ExternalApp? { installed.first { $0.id == id } }
         if let dir {
-            let files = FileManager.default
-            if files.fileExists(atPath: (dir as NSString).appendingPathComponent("gradlew")), let studio = app(androidStudioID) {
-                return studio
-            }
-            let isXcodeProject = files.fileExists(atPath: (dir as NSString).appendingPathComponent("Package.swift"))
-                || ((try? files.contentsOfDirectory(atPath: dir)) ?? []).contains { $0.hasSuffix(".xcodeproj") }
-            if isXcodeProject, let xcode = app(xcodeID) { return xcode }
+            if isAndroidProject(dir), let studio = app(androidStudioID) { return studio }
+            if isXcodeProject(dir), let xcode = app(xcodeID) { return xcode }
         }
         if let id = defaults.string(forKey: preferredEditorKey), let chosen = app(id) { return chosen }
         return installed.first
+    }
+
+    private static func isAndroidProject(_ dir: String) -> Bool {
+        FileManager.default.fileExists(atPath: (dir as NSString).appendingPathComponent("gradlew"))
+    }
+
+    private static func isXcodeProject(_ dir: String) -> Bool {
+        FileManager.default.fileExists(atPath: (dir as NSString).appendingPathComponent("Package.swift"))
+            || ((try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []).contains { $0.hasSuffix(".xcodeproj") }
+    }
+
+    /// La carpeta del proyecto de un archivo, para elegir el editor: la primera hacia arriba con
+    /// gradlew, Package.swift o un .xcodeproj, sin pasar de la raíz del repo (la que tiene .git).
+    /// Si no hay ninguna, la raíz del repo o, fuera de un repo, la carpeta del archivo.
+    static func projectDirectory(containing path: String) -> String {
+        let start = (path as NSString).deletingLastPathComponent
+        var dir = start
+        while !dir.isEmpty {
+            if isAndroidProject(dir) || isXcodeProject(dir)
+                || FileManager.default.fileExists(atPath: (dir as NSString).appendingPathComponent(".git")) {
+                return dir
+            }
+            let parent = (dir as NSString).deletingLastPathComponent
+            if parent == dir { break }
+            dir = parent
+        }
+        return start
     }
 
     /// URL que abre el archivo en esa línea con el editor, si el editor tiene una.
@@ -80,15 +102,22 @@ enum ExternalApps {
             var components = URLComponents()
             components.scheme = "phpstorm"
             components.host = "open"
-            components.queryItems = [URLQueryItem(name: "file", value: path), URLQueryItem(name: "line", value: "\(line)")]
+            // URLComponents deja el «+» tal cual en la consulta, y al decodificarla como formulario
+            // (lo hace Java) se lee como espacio: «c++/main.cpp» abriría «c  /main.cpp».
+            let value = CharacterSet.urlQueryAllowed.subtracting(CharacterSet(charactersIn: "&=+?#"))
+            components.percentEncodedQueryItems = [
+                URLQueryItem(name: "file", value: path.addingPercentEncoding(withAllowedCharacters: value) ?? path),
+                URLQueryItem(name: "line", value: "\(line)"),
+            ]
             return components.url
         default: return nil
         }
     }
 
-    /// Abre un archivo en el editor que corresponde, en su línea y columna si se puede.
+    /// Abre un archivo en el editor que corresponde, en su línea y columna si se puede. Sin
+    /// `projectDirectory`, el proyecto se busca hacia arriba desde el archivo.
     static func openFile(_ path: String, line: Int? = nil, column: Int? = nil, projectDirectory: String? = nil) {
-        let editor = preferredEditor(for: projectDirectory ?? (path as NSString).deletingLastPathComponent)
+        let editor = preferredEditor(for: projectDirectory ?? Self.projectDirectory(containing: path))
         if let editor, let url = editorURL(editorId: editor.id, path: path, line: line, column: column) {
             NSWorkspace.shared.open(url)
         } else if let editor {

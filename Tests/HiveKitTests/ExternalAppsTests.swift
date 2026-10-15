@@ -85,6 +85,46 @@ struct ExternalAppsTests {
         #expect(query.first { $0.name == "line" }?.value == "42")
     }
 
+    @Test("Un archivo suelto (diff, ⌘clic) busca su proyecto hacia arriba, sin pasar de la raíz del repo")
+    func projectOfAFile() {
+        let dir = TempDir("hive-editors")
+        dir.write("android/gradlew")
+        let kotlin = dir.write("android/app/src/main/java/MainActivity.kt").path
+        dir.write("hive/Package.swift")
+        let swift = dir.write("hive/Sources/HiveKit/Views/Vista.swift").path
+        // Un repo de Laravel adentro de una carpeta que tiene gradlew: manda el repo.
+        dir.write("gradle-padre/gradlew")
+        _ = dir.subdir("gradle-padre/tienda/.git")
+        let php = dir.write("gradle-padre/tienda/app/Http/Controllers/Pedidos.php").path
+        let suelto = dir.write("suelto/notas.md").path
+
+        #expect(ExternalApps.projectDirectory(containing: kotlin) == dir.path + "/android")
+        #expect(ExternalApps.projectDirectory(containing: swift) == dir.path + "/hive")
+        #expect(ExternalApps.projectDirectory(containing: php) == dir.path + "/gradle-padre/tienda")
+        #expect(ExternalApps.projectDirectory(containing: suelto) == dir.path + "/suelto")
+        let installed = editors
+        withDefaults { defaults in
+            func editor(_ path: String) -> String? {
+                ExternalApps.preferredEditor(for: ExternalApps.projectDirectory(containing: path), installed: installed, defaults: defaults)?.name
+            }
+            #expect(editor(kotlin) == "Android Studio")
+            #expect(editor(swift) == "Xcode")
+            #expect(editor(php) == "VS Code")
+        }
+    }
+
+    @Test("PhpStorm: una ruta con «+», «&» o «=» no rompe la URL")
+    func phpStormSpecialCharacters() {
+        let path = "/Users/luciano/Herd/a&b/precio=1+iva.php"
+        let url = ExternalApps.editorURL(editorId: ExternalApps.phpStormID, path: path, line: 7, column: nil)
+        // El «+» va codificado: decodificada como formulario, la consulta lo leería como espacio.
+        #expect(url?.absoluteString.contains("1%2Biva.php") == true)
+        let query = URLComponents(url: url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        #expect(query.count == 2)
+        #expect(query.first { $0.name == "file" }?.value == path)
+        #expect(query.first { $0.name == "line" }?.value == "7")
+    }
+
     @Test("Sin línea, o con un editor sin URL (Xcode, Android Studio), se abre con la app")
     func noURL() {
         #expect(ExternalApps.editorURL(editorId: ExternalApps.vscodeID, path: "/tmp/a.php", line: nil, column: nil) == nil)
