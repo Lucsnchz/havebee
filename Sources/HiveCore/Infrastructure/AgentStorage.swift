@@ -154,13 +154,14 @@ public struct AgentStorage: Sendable {
     private static let rolloutCache = AgentStorageURLCache()
 
     /// Gemini no deja fijar el ID de sesión al arrancar: buscamos el chat que guardó en esa carpeta
-    /// (<home>/tmp/<hash>/chats/*.json) después del último arranque. Si no hay, arranca de cero.
+    /// (<home>/tmp/<hash>/chats/*.json) después del último arranque. Gana el que empezó (startTime)
+    /// más cerca del arranque, no el último modificado. Si no hay, arranca de cero.
     public func discoverGeminiSession(cwd: String, since: Date, excluding: Set<String>) -> String? {
         let fm = FileManager.default
         let base = geminiHome.appendingPathComponent("tmp")
         let hash = Self.sha256(URL(fileURLWithPath: cwd).standardizedFileURL.path)
         let threshold = since.addingTimeInterval(-5)
-        var best: (date: Date, id: String)?
+        var best: (distance: TimeInterval, id: String)?
         for project in (try? fm.contentsOfDirectory(atPath: base.path)) ?? [] {
             let chats = base.appendingPathComponent(project).appendingPathComponent("chats")
             let files = (try? fm.contentsOfDirectory(at: chats, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
@@ -172,7 +173,10 @@ public struct AgentStorage: Sendable {
                       let id = json["sessionId"]?.string, !excluding.contains(id) else { continue }
                 if let projectHash = json["projectHash"]?.string, projectHash != hash { continue }
                 if json["projectHash"] == nil && project != hash { continue }
-                if best == nil || modified > best!.date { best = (modified, id) }
+                let started = json["startTime"]?.string.flatMap(AgentTimestamp.parse) ?? modified
+                guard started >= threshold else { continue }
+                let distance = abs(started.timeIntervalSince(since))
+                if best == nil || distance < best!.distance { best = (distance, id) }
             }
         }
         return best?.id

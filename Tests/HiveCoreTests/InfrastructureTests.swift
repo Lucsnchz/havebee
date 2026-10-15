@@ -514,6 +514,23 @@ struct AgentStorageTests {
         #expect(storage.claudeUserStatusLine(directory: repo.path) == "~/.claude/statusline.sh")
     }
 
+    @Test("Gemini: gana el chat que empezó más cerca del arranque")
+    func geminiStartTime() throws {
+        let (storage, _, _, gemini) = storage()
+        let hash = AgentStorage.sha256("/code/x")
+        let since = Date().addingTimeInterval(-600)
+        func chat(_ name: String, id: String, started: Date) {
+            let stamp = started.formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true))
+            gemini.write("tmp/\(hash)/chats/\(name).json", #"{"sessionId": "\#(id)", "projectHash": "\#(hash)", "startTime": "\#(stamp)"}"#)
+        }
+        chat("session-a", id: "propio", started: since.addingTimeInterval(4))
+        chat("session-b", id: "otra-terminal", started: since.addingTimeInterval(300)) // se modificó después, pero empezó más tarde
+        chat("session-c", id: "anterior", started: since.addingTimeInterval(-3600))  // de antes del arranque
+        #expect(storage.discoverGeminiSession(cwd: "/code/x", since: since, excluding: []) == "propio")
+        #expect(storage.discoverGeminiSession(cwd: "/code/x", since: since, excluding: ["propio"]) == "otra-terminal")
+        #expect(storage.discoverGeminiSession(cwd: "/code/x", since: since, excluding: ["propio", "otra-terminal"]) == nil)
+    }
+
     @Test("Usa las variables de entorno de cada agente")
     func live() {
         let storage = AgentStorage.live(environment: ["CLAUDE_CONFIG_DIR": "/c", "CODEX_HOME": "/x"], home: URL(fileURLWithPath: "/h"))
