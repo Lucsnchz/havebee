@@ -134,9 +134,9 @@ extension AppStore {
             try? await Task.sleep(nanoseconds: 50_000_000)
         }
         if run.running {
-            // Como «Detener»: Ctrl+C y, por las dudas, SIGTERM. Al quitar la rama se cierra su terminal.
+            // Como «Detener»: Ctrl+C y cortarlo aunque el shell ignore SIGTERM. Al quitar la rama se cierra su terminal.
             run.terminal?.sendInput([3])
-            run.terminal?.terminate()
+            run.terminal?.hangUp()
             alert = AppAlert(title: "La limpieza de «\(branch.name)» tardó demasiado",
                              message: "\(command)\n\nLa corté a los \(Int(archiveTimeout)) s y seguí con el borrado del worktree.")
         } else if let code = run.exitCode, code != 0 {

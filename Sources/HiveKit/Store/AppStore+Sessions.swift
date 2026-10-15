@@ -138,7 +138,10 @@ extension AppStore {
     }
 
     public func stop(_ id: UUID) {
-        runtimes[id]?.terminal?.terminate()
+        guard let rt = runtimes[id], let terminal = rt.terminal else { return }
+        // Un agente termina con SIGTERM (y guarda su conversación); el shell interactivo de una sesión
+        // de Terminal lo ignora, así que se corta como al cerrar una ventana.
+        if rt.kind.isAgent { terminal.terminate() } else { terminal.hangUp() }
     }
 
     /// Corta el proceso de una terminal y la saca de la pantalla.

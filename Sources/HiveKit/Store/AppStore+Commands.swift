@@ -132,13 +132,14 @@ extension AppStore {
 
     public func stopRun(_ id: UUID) {
         guard let run = commandRuns.first(where: { $0.id == id }), run.running, let terminal = run.terminal else { return }
-        // Como apretar Ctrl+C; si no termina en el plazo de gracia, lo cortamos.
+        // Como apretar Ctrl+C; si no termina en el plazo de gracia, lo cortamos (el `zsh -i` de un
+        // comando compuesto ignora SIGTERM: hangUp manda SIGHUP y, si hace falta, SIGKILL).
         terminal.sendInput([3])
         DispatchQueue.main.asyncAfter(deadline: .now() + environment.stopGrace) { [weak run, weak terminal] in
             MainActor.assumeIsolated {
                 // Solo si sigue siendo la misma terminal: si lo reiniciaste mientras tanto, el nuevo no se toca.
                 guard let run, let terminal, run.terminal === terminal, run.running else { return }
-                terminal.terminate()
+                terminal.hangUp()
             }
         }
     }

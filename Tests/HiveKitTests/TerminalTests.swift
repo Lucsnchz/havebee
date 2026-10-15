@@ -120,6 +120,31 @@ struct TerminalTests {
         #expect(!view.isProcessRunning)
     }
 
+    @Test("hangUp corta un shell interactivo que ignora SIGTERM, y uno que ignora todo con SIGKILL")
+    func hangUp() async {
+        // Un zsh interactivo con un comando compuesto (como una sesión de Terminal o un comando del proyecto).
+        let shell = makeTerminal()
+        let shellProbe = TerminalProbe()
+        shell.processDelegate = shellProbe
+        TerminalProcessStarter().start(shell, executable: "/bin/zsh", args: ["-f", "-i", "-c", "sleep 30; echo fin"],
+                                       environment: ["PATH=/usr/bin:/bin", "TERM=xterm-256color"], directory: "/tmp")
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        #expect(shell.isProcessRunning)
+        shell.hangUp(grace: 3)
+        #expect(await waitUntil(timeout: realProcessTimeout) { shellProbe.exitCode != nil })
+        #expect(!shell.isProcessRunning)
+
+        // Uno que ignora SIGTERM y SIGHUP: después del plazo, SIGKILL.
+        let stubborn = makeTerminal()
+        let stubbornProbe = TerminalProbe()
+        stubborn.processDelegate = stubbornProbe
+        start(stubborn, "trap '' TERM HUP; while true; do sleep 1; done")
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        stubborn.hangUp(grace: 0.3)
+        #expect(await waitUntil(timeout: realProcessTimeout) { stubbornProbe.exitCode != nil })
+        #expect(!stubborn.isProcessRunning)
+    }
+
     @Test("Una sesión real: el store marca terminada la sesión cuando el proceso sale")
     func storeIntegration() async throws {
         let world = TestWorld()

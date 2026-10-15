@@ -79,6 +79,29 @@ public final class HiveTerminalView: TerminalView, TerminalViewDelegate, LocalPr
 
     func terminate() { process.terminate() }
 
+    /// Corta el proceso aunque ignore SIGTERM, como un shell interactivo (`zsh -i`, el de las sesiones
+    /// de Terminal y el de los comandos compuestos). Primero SIGTERM; si a la mitad de `grace` sigue
+    /// vivo, SIGHUP (como al cerrar una ventana de Terminal: zsh se lo pasa a sus trabajos), y si al
+    /// terminar el plazo todavía sigue, SIGKILL.
+    func hangUp(grace: TimeInterval = 1) {
+        let pid = process.shellPid
+        guard pid > 0, process.running else { return }
+        process.terminate()
+        escalate(pid, signals: [SIGHUP, SIGKILL], every: grace / 2)
+    }
+
+    private func escalate(_ pid: pid_t, signals: [Int32], every delay: TimeInterval) {
+        guard let signal = signals.first else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            MainActor.assumeIsolated {
+                // Si ya terminó (o la terminal arrancó otro proceso), no se toca nada.
+                guard let self, self.process.running, self.process.shellPid == pid else { return }
+                kill(pid, signal)
+                self.escalate(pid, signals: Array(signals.dropFirst()), every: delay)
+            }
+        }
+    }
+
     /// Lo usan el menú de la sesión, el dock y los paneles.
     var isProcessRunning: Bool { process.running }
 
