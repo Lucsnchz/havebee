@@ -31,13 +31,42 @@ extension AppStore {
         requestCheckout(branchId: ctx.branch.id, then: .openSession(id))
     }
 
-    /// Lanza el proceso de una sesión (agente o shell) en su terminal.
+    /// Lanza el proceso de una sesión (agente o shell) en su terminal. Las búsquedas en disco
+    /// (historial, MCP, conversaciones anteriores) corren fuera del hilo principal; la terminal se
+    /// crea al volver, si la sesión sigue ahí y nadie la lanzó mientras tanto.
     func launch(_ id: UUID) {
-        guard let ctx = sessionContext(id), let rt = runtimes[id], !rt.isRunning else { return }
+        guard let ctx = sessionContext(id), let rt = runtimes[id], !rt.isRunning, !rt.isLaunching else { return }
         let dir = ctx.project.directory(for: ctx.branch)
         guard folderExists(dir, branch: ctx.branch, warnKey: id) else { return }
-        let plan = LaunchPlanner.plan(launchContext(for: ctx.session, project: ctx.project, branch: ctx.branch, directory: dir))
+        let builder = launchContextBuilder(for: ctx.session, project: ctx.project, branch: ctx.branch, directory: dir)
+        guard environment.launchesInBackground else {
+            startSession(id, plan: LaunchPlanner.plan(builder.build()), directory: dir)
+            return
+        }
+        rt.isLaunching = true
+        Task { [weak self] in
+            let context = await Task.detached(priority: .userInitiated) { builder.build() }.value
+            rt.isLaunching = false
+            // Mientras tanto se pudo borrar, archivar o lanzar por otro lado.
+            guard let self, self.runtimes[id] === rt, !rt.isRunning,
+                  let current = self.sessionContext(id), !current.session.isArchived else { return }
+            self.startSession(id, plan: LaunchPlanner.plan(context), directory: dir)
+        }
+    }
 
+    /// Junta lo que hace falta para armar el contexto de lanzamiento (sin tocar el disco todavía).
+    func launchContextBuilder(for session: Session, project: Project, branch: Branch, directory: String) -> LaunchContextBuilder {
+        let settings = environment.settings()
+        return LaunchContextBuilder(
+            session: session, project: project, branch: branch, directory: directory, path: currentPATH,
+            inheritedEnvironment: environment.inheritedEnvironment, paths: environment.paths, agents: environment.agents,
+            claudeInline: settings.claudeInline, historyHint: settings.historyHint,
+            claimedAgentIds: projects.claimedAgentIds(session.kind, except: session.id), now: environment.now())
+    }
+
+    /// Crea la terminal y arranca el proceso según el plan.
+    private func startSession(_ id: UUID, plan: LaunchPlan, directory dir: String) {
+        guard let ctx = sessionContext(id), let rt = runtimes[id] else { return }
         let terminal = HiveTerminalView(frame: NSRect(x: 0, y: 0, width: 900, height: 600))
         TerminalTheme.apply(to: terminal)
         // El cursor toma el color del proyecto: así sabés en cuál estás de un vistazo.
@@ -75,39 +104,6 @@ extension AppStore {
         rt.hooksSeen = false
         rt.workingSince = nil
         rt.status = started ? .idle : .exited(nil)
-    }
-
-    /// Junta todo lo que el planificador necesita (con las búsquedas en disco ya hechas).
-    func launchContext(for session: Session, project: Project, branch: Branch, directory: String) -> LaunchContext {
-        let settings = environment.settings()
-        let agents = environment.agents
-        if session.kind.reportsConversation {
-            history.ensureMarkdown(session: session, place: project.isScratch ? project.name : "\(project.name) › \(branch.name)")
-        }
-        let mcpFile = MCPConfig.effectiveFile(directory: directory, projectPath: project.path)
-        let mcpServers = mcpFile.map(MCPConfig.load) ?? []
-        var discovered: String?
-        if let since = session.lastLaunchedAt {
-            let claimed = projects.claimedAgentIds(session.kind, except: session.id)
-            switch session.kind {
-            case .codex where session.agentSessionId == nil:
-                discovered = agents.discoverCodexThread(cwd: directory, since: since, excluding: claimed, now: environment.now())
-            case .gemini:
-                discovered = agents.discoverGeminiSession(cwd: directory, since: since, excluding: claimed)
-            default:
-                break
-            }
-        }
-        let geminiSettings = session.kind == .gemini
-            ? MCPConfig.writeGeminiSettings(mcpServers, to: environment.paths.geminiDir.appendingPathComponent("\(session.id.uuidString).json"))
-            : nil
-        return LaunchContext(
-            session: session, project: project, branch: branch, directory: directory, path: currentPATH,
-            inheritedEnvironment: environment.inheritedEnvironment, paths: environment.paths,
-            claudeInline: settings.claudeInline, historyHint: settings.historyHint,
-            claudeConversationExists: session.kind == .claude && session.agentSessionId.map(agents.claudeConversationExists) == true,
-            discoveredAgentId: discovered, mcpFile: mcpFile, mcpServers: mcpServers, geminiSettingsPath: geminiSettings,
-            codexExistingNotify: session.kind == .codex ? agents.codexExistingNotify() : nil)
     }
 
     var currentPATH: String {

@@ -50,12 +50,16 @@ public struct AppEnvironment {
     public var saveDelay: TimeInterval
     /// Plazo entre el Ctrl+C de «Detener» y cortar el comando si no terminó.
     public var stopGrace: TimeInterval
+    /// Armar el lanzamiento de las sesiones fuera del hilo principal (en la app, sí; en los tests,
+    /// por defecto no, para que lanzar sea inmediato).
+    public var launchesInBackground: Bool
 
     public init(paths: HivePaths, git: GitClient, agents: AgentStorage, notifier: SessionNotifying, processes: ProcessStarting,
                 settings: @escaping () -> AppSettings, inheritedEnvironment: [String: String], home: URL, loginShell: String,
                 cachedLoginPATH: String?, resolveLoginPATH: @escaping @Sendable () -> String?, storeLoginPATH: @escaping (String) -> Void,
                 logos: @escaping @Sendable (String) -> [String], isAppActive: @escaping () -> Bool, setDockBadge: @escaping (String?) -> Void,
-                now: @escaping () -> Date, saveDelay: TimeInterval, stopGrace: TimeInterval = 3) {
+                now: @escaping () -> Date, saveDelay: TimeInterval, stopGrace: TimeInterval = 3,
+                launchesInBackground: Bool = true) {
         self.paths = paths
         self.git = git
         self.agents = agents
@@ -74,6 +78,7 @@ public struct AppEnvironment {
         self.now = now
         self.saveDelay = saveDelay
         self.stopGrace = stopGrace
+        self.launchesInBackground = launchesInBackground
     }
 
     public static func live() -> AppEnvironment {
@@ -100,6 +105,7 @@ public struct AppEnvironment {
             setDockBadge: { NSApp?.dockTile.badgeLabel = $0 },
             now: Date.init,
             saveDelay: 0.4,
-            stopGrace: 3)
+            stopGrace: 3,
+            launchesInBackground: true)
     }
 }

@@ -15,6 +15,8 @@ public final class SessionRuntime {
     /// Lo que pidió el agente al quedar esperando tu permiso (nil en cualquier otro estado).
     public var notice: String? { status == .attention ? attentionNotice : nil }
     var attentionNotice: String?
+    /// Se está armando su lanzamiento (búsquedas en disco fuera del hilo principal).
+    public internal(set) var isLaunching = false
 
     @ObservationIgnored var events: TerminalEvents?
     /// Último momento en que la terminal recibió salida (para la regla del silencio).

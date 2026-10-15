@@ -71,6 +71,9 @@ final class TestWorld {
         set { logoTable.value = newValue }
     }
     private let logoTable = LockedLogos()
+    /// Lanzar sesiones armando el contexto en segundo plano, como la app. Por defecto no: así
+    /// lanzar es inmediato y los tests no tienen que esperar.
+    var launchesInBackground = false
     /// git real por defecto; los tests de carreras ponen uno con demoras (`DelayedGit`).
     var git: GitClient = GitCLI()
 
@@ -92,7 +95,8 @@ final class TestWorld {
             setDockBadge: { [unowned self] in self.badge = $0 },
             now: { [unowned self] in self.now },
             saveDelay: 0,
-            stopGrace: 0.2)
+            stopGrace: 0.2,
+            launchesInBackground: launchesInBackground)
     }
 
     func makeStore() -> AppStore { AppStore(environment: environment) }
