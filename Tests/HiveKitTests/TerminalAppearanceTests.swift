@@ -90,6 +90,13 @@ struct TerminalAppearanceTests {
         store.defaults.set("Menlo", forKey: "terminalFontName")
         #expect(await waitUntil { command.font.familyName == "Menlo" })
         #expect(command.font.pointSize == 15)
+
+        // Con sizeDelta la terminal nace un punto más chica y con la familia elegida.
+        let other = HiveTerminalView(frame: NSRect(x: 0, y: 0, width: 600, height: 200), scrollback: 100)
+        TerminalTheme.apply(to: other, defaults: store.defaults, sizeDelta: -1)
+        #expect(other.font.pointSize == 15 && other.font.familyName == "Menlo")
+        store.defaults.set(20.0, forKey: "terminalFontSize")
+        #expect(await waitUntil { other.font.pointSize == 19 })
     }
 
     @Test("Con el sistema en claro usa la paleta clara, y vuelve a la oscura si el sistema cambia")

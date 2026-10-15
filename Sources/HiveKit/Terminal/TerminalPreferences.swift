@@ -196,10 +196,12 @@ enum TerminalTheme {
 
     /// Configura una terminal nueva con los ajustes de `defaults`. Después, cada `HiveTerminalView`
     /// los vuelve a aplicar sola cuando cambian (o cuando cambia la apariencia del sistema).
+    /// `sizeDelta`: puntos de más o de menos respecto del tamaño elegido (la esquinita de
+    /// comandos usa -1); se conserva cuando el tamaño cambia.
     @MainActor
-    static func apply(to view: TerminalView, defaults: UserDefaults = .standard) {
+    static func apply(to view: TerminalView, defaults: UserDefaults = .standard, sizeDelta: Double = 0) {
         let prefs = TerminalPreferences.read(defaults)
-        view.font = prefs.font(size: prefs.fontSize)
+        view.font = prefs.font(size: CGFloat(max(6, prefs.fontSize + sizeDelta)))
         applyColors(palette(for: view.effectiveAppearance, preferences: prefs), to: view)
         view.caretColor = defaultCaret
         view.setCursorStyle(prefs.cursor.style)
