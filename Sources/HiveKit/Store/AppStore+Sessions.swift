@@ -205,15 +205,23 @@ extension AppStore {
         let now = environment.now()
         projects.updateSession(id) { $0.archivedAt = now }
         scheduleSave()
-        if selection == .session(id) {
+        let wasOpen = selection == .session(id)
+        if wasOpen {
             select(neighbor.map { .session($0) } ?? .branch(ctx.branch.id))
         }
+        offerUndo("Archivaste “\(ctx.session.name)”") { [weak self] in self?.restoreArchived(id, select: wasOpen) }
     }
 
     public func unarchive(_ id: UUID) {
+        restoreArchived(id, select: true)
+    }
+
+    /// Saca una sesión del archivo; `select`: abrirla (si era la que estabas mirando).
+    func restoreArchived(_ id: UUID, select reopen: Bool) {
+        guard sessionContext(id)?.session.isArchived == true else { return }
         projects.updateSession(id) { $0.archivedAt = nil }
         if let ctx = sessionContext(id) { expanded.formUnion([ctx.project.id, ctx.branch.id]) }
         scheduleSave()
-        select(.session(id))
+        if reopen { select(.session(id)) }
     }
 }

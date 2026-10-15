@@ -21,8 +21,18 @@ extension AppStore {
     }
 
     public func deleteCommand(projectId: UUID, commandId: UUID) {
-        projects.updateProject(projectId) { $0.commands.removeAll { $0.id == commandId } }
+        guard let index = project(projectId)?.commands.firstIndex(where: { $0.id == commandId }),
+              let command = project(projectId)?.commands[index] else { return }
+        projects.updateProject(projectId) { $0.commands.remove(at: index) }
         scheduleSave()
+        offerUndo("Borraste el comando “\(command.name)”") { [weak self] in
+            // Vuelve al mismo lugar de la lista.
+            self?.projects.updateProject(projectId) { p in
+                guard !p.commands.contains(where: { $0.id == command.id }) else { return }
+                p.commands.insert(command, at: min(index, p.commands.count))
+            }
+            self?.scheduleSave()
+        }
     }
 
     /// Rama donde corre un comando si no se elige otra: la que está abierta, o la activa de la carpeta principal.
@@ -149,9 +159,13 @@ extension AppStore {
 
     public func removeMCP(_ name: String, projectId: UUID) {
         guard let project = project(projectId) else { return }
+        let removed = MCPConfig.load(dir: project.path).first { $0.name == name }
         do {
             try MCPConfig.remove(name, dir: project.path)
             mcpVersion += 1
+            if let removed {
+                offerUndo("Quitaste el MCP “\(name)”") { [weak self] in self?.saveMCP(removed, replacing: nil, projectId: projectId) }
+            }
         } catch {
             alert = AppAlert(title: "No se pudo guardar .mcp.json", message: error.localizedDescription)
         }

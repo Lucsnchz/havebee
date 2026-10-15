@@ -24,6 +24,15 @@ public struct AppAlert: Identifiable {
     }
 }
 
+/// Algo que se puede deshacer por unos segundos: la cápsula de abajo al centro y ⌘Z.
+public struct UndoAction: Identifiable {
+    public let id = UUID()
+    /// «Archivaste “Claude 2”».
+    public let message: String
+    public let expiresAt: Date
+    let undo: () -> Void
+}
+
 /// Qué hacer después de un checkout que se pidió para abrir algo.
 public enum AfterCheckout: Equatable {
     case createSession(SessionKind)

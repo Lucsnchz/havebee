@@ -27,6 +27,10 @@ struct ContentView: View {
             }
         }
         .overlay(alignment: .bottomTrailing) { CommandsDock() }
+        .overlay(alignment: .bottom) {
+            UndoToastView()
+                .padding(.bottom, 18)
+        }
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 Button {
@@ -141,7 +145,8 @@ private struct StoreDialogs: ViewModifier {
                     if removal.isWorktree {
                         Button("Quitar y borrar el worktree", role: .destructive) { store.remove(removal.item, deleteWorktree: true) }
                     }
-                case .session:
+                case .session(let id):
+                    Button("Archivar en su lugar") { store.archive(id) }
                     Button("Eliminar sesión", role: .destructive) { store.remove(removal.item) }
                 case .project:
                     Button("Quitar de Hive", role: .destructive) { store.remove(removal.item) }

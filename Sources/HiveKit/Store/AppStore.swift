@@ -53,6 +53,8 @@ public final class AppStore {
     public var commandEditor: CommandEditorTarget?
     public var mcpEditor: MCPEditorTarget?
     public var diffTarget: DiffTarget?
+    /// Lo último que se puede deshacer (vence a los `undoWindow` segundos).
+    public internal(set) var undoAction: UndoAction?
     public var showSwitcher = false
     public var dockExpanded = false
     public var dockRunId: UUID?
@@ -129,6 +131,44 @@ public final class AppStore {
     /// Los repos, sin el proyecto «Terminales».
     public var repoProjects: [Project] { projects.repos }
     public var scratchProject: Project? { projects.scratch }
+
+    /// Cuánto dura la oferta de deshacer.
+    static let undoWindow: TimeInterval = 6
+
+    /// Ofrece deshacer algo durante unos segundos, con la cápsula y con ⌘Z (el undo de la ventana).
+    func offerUndo(_ message: String, undo: @escaping () -> Void) {
+        let once = UndoOnce()
+        let action = UndoAction(message: message, expiresAt: environment.now().addingTimeInterval(Self.undoWindow)) {
+            once.run(undo)
+        }
+        undoAction = action
+        let id = action.id
+        if let manager = NSApp?.keyWindow?.undoManager {
+            manager.registerUndo(withTarget: self) { store in
+                MainActor.assumeIsolated {
+                    if store.undoAction?.id == id { store.undoAction = nil }
+                    once.run(undo)
+                }
+            }
+            manager.setActionName(message)
+        }
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(Self.undoWindow * 1_000_000_000))
+            if self?.undoAction?.id == id { self?.undoAction = nil }
+        }
+    }
+
+    /// Deshace lo que ofrece la cápsula.
+    public func performUndo() {
+        guard let action = undoAction else { return }
+        undoAction = nil
+        action.undo()
+    }
+
+    /// Cierra la cápsula sin deshacer.
+    public func dismissUndo() {
+        undoAction = nil
+    }
 
     /// Cierra una alerta puntual (la que se estaba mostrando), aunque ya haya otras en la cola.
     public func dismissAlert(_ id: UUID) {
@@ -322,5 +362,17 @@ public final class AppStore {
     /// Sube (-1) o baja (+1) un elemento un lugar.
     public func move(_ item: SidebarItem, by delta: Int) {
         if projects.move(item, by: delta) { scheduleSave() }
+    }
+}
+
+/// Corre un deshacer una sola vez, venga de la cápsula o de ⌘Z.
+@MainActor
+private final class UndoOnce {
+    private var done = false
+
+    func run(_ undo: () -> Void) {
+        guard !done else { return }
+        done = true
+        undo()
     }
 }
