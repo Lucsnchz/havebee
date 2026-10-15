@@ -165,7 +165,7 @@ struct HiveCommands: Commands {
         .disabled(!hasTerminal)
         // En los agentes se limpia con /clear (así el historial queda en el panel).
         Button("Limpiar terminal") {
-            if !NSApp.sendAction(Selector(("clearTerminal:")), to: nil, from: nil) { NSSound.beep() }
+            if !HiveNavigator.clearTerminal(store) { NSSound.beep() }
         }
         .hiveShortcut(.clearTerminal)
         .disabled(selected.map { $0.session.kind.isAgent } ?? store.commandRuns.isEmpty)
@@ -472,6 +472,24 @@ enum HiveNavigator {
                                                      excluding: selectedSession(store)?.session.id) else { return false }
         reveal(store, session: id)
         return true
+    }
+
+    /// Limpia la terminal con foco o, si el foco está en otro lado de la misma ventana (el sidebar,
+    /// por ejemplo), la de la sesión abierta. Devuelve si limpió algo (los agentes no se limpian así:
+    /// se usa /clear y el historial queda en el panel).
+    @discardableResult
+    static func clearTerminal(_ store: AppStore, keyWindow: NSWindow? = NSApp?.keyWindow) -> Bool {
+        let selector = #selector(HiveTerminalView.clearTerminal(_:))
+        if keyWindow?.firstResponder is HiveTerminalView {
+            return NSApp.sendAction(selector, to: nil, from: nil)
+        }
+        if let id = selectedSession(store)?.session.id, let terminal = store.runtimes[id]?.terminal,
+           let window = terminal.window, window === keyWindow {
+            guard !terminal.preservesScrollbackOnClear else { return false }
+            terminal.clearTerminal(nil)
+            return true
+        }
+        return NSApp.sendAction(selector, to: nil, from: nil)
     }
 
     /// Busca en la terminal con foco o, si el foco está en otro lado de la ventana principal, en la

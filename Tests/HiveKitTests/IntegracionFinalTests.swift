@@ -325,4 +325,39 @@ struct IntegracionFinalTests {
         send("PostToolUse", ["tool_name": "Read", "tool_input": ["file_path": "/e/a.php"]])
         #expect(rt.status == .working)
     }
+
+    @Test("⌥⌘K limpia la terminal de la sesión abierta aunque el foco esté en el sidebar")
+    func clearWithFocusElsewhere() async throws {
+        _ = NSApplication.shared
+        let world = TestWorld()
+        let repo = GitRepo(name: "tienda")
+        defer { withExtendedLifetime(repo) {} }
+        let store = world.makeStore()
+        await store.addProject(at: repo.path)
+        let project = try #require(store.repoProjects.first)
+        store.requestNewSession(branchId: project.branches[0].id, kind: .shell)
+        let session = try #require(store.project(project.id)?.allSessions.first)
+        store.activate(session.id)
+        let terminal = try #require(store.runtimes[session.id]?.terminal)
+        store.select(.session(session.id))
+        // La terminal está en la ventana, pero el foco lo tiene otra vista (como el sidebar).
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 300), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let sidebar = NSTextField(frame: NSRect(x: 0, y: 0, width: 100, height: 20))
+        window.contentView?.addSubview(sidebar)
+        window.contentView?.addSubview(terminal)
+        window.makeFirstResponder(sidebar)
+        defer { window.close() }
+        var sent: [UInt8] = []
+        terminal.onProcessInput = { sent.append(contentsOf: $0) }
+        terminal.receive(Array("salida vieja\r\n".utf8)[...])
+        #expect(HiveNavigator.clearTerminal(store, keyWindow: window))
+        #expect(!terminal.fullText().contains("salida vieja"))
+        #expect(sent == [0x0C])
+        // En un agente no: se limpia con /clear.
+        terminal.preservesScrollbackOnClear = true
+        terminal.receive(Array("charla\r\n".utf8)[...])
+        #expect(!HiveNavigator.clearTerminal(store, keyWindow: window))
+        #expect(terminal.fullText().contains("charla"))
+    }
 }
