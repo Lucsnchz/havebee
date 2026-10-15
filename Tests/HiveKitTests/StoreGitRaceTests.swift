@@ -234,4 +234,31 @@ struct StoreGitScheduleTests {
         store.activate(saved.other.id)
         #expect(world.processes.launches.count == 2)
     }
+
+    @Test("Al arrancar, la rama se confirma sin esperar los git status (que pueden tardar)")
+    func quickHeadConfirmation() async throws {
+        let world = TestWorld()
+        let repo = GitRepo()
+        let saved = try savedOnMain(world, repo)
+        let git = DelayedGit()
+        world.git = git
+        let store = world.makeStore()
+        store.activate(saved.open.id)
+        #expect(world.processes.launches.isEmpty)
+        await store.confirmSavedHeads()
+        #expect(store.runtimes[saved.open.id]?.isRunning == true)
+        #expect(git.calls(.status) == 0 && git.calls(.worktrees) == 0) // solo leyó la rama
+        #expect(git.calls(.currentBranch) == 1)
+
+        // Con la rama cambiada por fuera, tampoco hace falta la revisión completa para no lanzarla.
+        let other = TestWorld()
+        let moved = GitRepo()
+        let stale = try savedOnMain(other, moved)
+        moved.sh("git checkout -q -b otra")
+        let second = other.makeStore()
+        second.activate(stale.open.id)
+        await second.confirmSavedHeads()
+        #expect(second.mainHead(of: stale.project.id) == "otra")
+        #expect(other.processes.launches.isEmpty)
+    }
 }

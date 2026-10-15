@@ -129,7 +129,9 @@ public final class AppStore {
         timers.append(Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.periodicGitRefresh() }
         })
-        // También corrige la rama de cada carpeta principal, que se cargó del estado guardado.
+        // La rama de cada carpeta principal se cargó del estado guardado: primero se confirma sola (es
+        // rápido y así arranca enseguida la sesión abierta) y después viene la revisión completa.
+        Task { [weak self] in await self?.confirmSavedHeads() }
         refreshGit()
     }
 

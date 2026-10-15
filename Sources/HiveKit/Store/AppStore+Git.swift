@@ -225,7 +225,6 @@ extension AppStore {
             heads = heads.filter { busy.contains($0.1) }
             guard !dirs.isEmpty else { return }
         }
-        let selected = selectedDormantSession()
         let scan = await GitScan.run(dirs: Array(dirs), heads: heads, worktrees: !onlyWorking, git: git)
         // Fusionamos por clave: lo que se sumó durante la revisión (un proyecto, un worktree) no se pierde.
         var status = dirStatus
@@ -241,9 +240,39 @@ extension AppStore {
         if missingWorktrees != missing { missingWorktrees = missing }
         // Hive cambió git mientras leíamos: lo leído puede ser viejo. La pasada que pidió ese cambio lo corrige.
         guard generation == gitGeneration else { return }
-        confirmedHeads.formUnion(scan.heads.keys)
+        applyHeads(scan.heads)
+        var found = false
+        for (id, worktrees) in scan.worktrees where syncWorktrees(id, worktrees) { found = true }
+        // Hay ramas nuevas: traemos su estado de git en esta misma pasada.
+        if found { await refreshGitNow() }
+    }
+
+    /// Al arrancar, antes de la revisión completa: lee solo la rama de cada carpeta principal (no mira
+    /// los archivos, así que es rápido aunque `git status` tarde) para confirmar la guardada y lanzar
+    /// enseguida la sesión que tenés abierta.
+    func confirmSavedHeads() async {
+        let pending = repoProjects.filter { !confirmedHeads.contains($0.id) }.map { ($0.id, $0.path) }
+        guard !pending.isEmpty else { return }
+        let generation = gitGeneration
+        let git = self.git
+        let heads = await Task.detached(priority: .userInitiated) { () -> [UUID: String] in
+            var heads: [UUID: String] = [:]
+            for (id, path) in pending { heads[id] = git.currentBranch(path) ?? "" }
+            return heads
+        }.value
+        // Hive cambió git mientras tanto: lo leído puede ser viejo; lo corrige la revisión completa.
+        guard generation == gitGeneration else { return }
+        applyHeads(heads)
+    }
+
+    /// Aplica la rama leída de cada carpeta principal: la da por confirmada, avisa si cambió por fuera
+    /// con sesiones corriendo y lanza las sesiones abiertas que esperaban saberla.
+    private func applyHeads(_ heads: [UUID: String]) {
+        // La sesión abierta dormida porque su rama no estaba activa: si ahora lo está, se lanza.
+        let selected = selectedDormantSession()
+        confirmedHeads.formUnion(heads.keys)
         var merged = mainHeads
-        for (id, head) in scan.heads where project(id) != nil { merged[id] = head }
+        for (id, head) in heads where project(id) != nil { merged[id] = head }
         merged = merged.filter { project($0.key) != nil }
         if mainHeads != merged {
             let before = mainHeads
@@ -251,7 +280,6 @@ extension AppStore {
             scheduleSave()
             for (id, head) in merged { warnIfHeadMoved(projectId: id, from: before[id], to: head) }
         }
-        // La sesión abierta estaba dormida en una rama inactiva y ahora la rama está activa: la lanzamos.
         if let selected, let ctx = sessionContext(selected), isActive(ctx.branch, in: ctx.project) {
             activate(selected)
         }
@@ -260,10 +288,6 @@ extension AppStore {
         let waiting = awaitingHead
         awaitingHead = []
         for id in waiting where selection == .session(id) { activate(id) }
-        var found = false
-        for (id, worktrees) in scan.worktrees where syncWorktrees(id, worktrees) { found = true }
-        // Hay ramas nuevas: traemos su estado de git en esta misma pasada.
-        if found { await refreshGitNow() }
     }
 
     /// Algo (vos en una terminal, otra app) cambió la rama de la carpeta principal sin pasar por
