@@ -70,7 +70,7 @@ extension AppStore {
                 guard r.ok else {
                     alert = AppAlert(title: "No se pudo borrar el worktree",
                                      message: "\(r.errorMessage)\n\n¿Borrarlo igual? Se pierden los cambios sin commitear.",
-                                     actionTitle: "Borrar igual",
+                                     actionTitle: "Borrar igual", isDestructive: true,
                                      action: { [weak self] in self?.remove(item, deleteWorktree: true, force: true) })
                     return false
                 }

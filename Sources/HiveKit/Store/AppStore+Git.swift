@@ -24,9 +24,10 @@ extension AppStore {
             return (top, git.currentBranch(top), git.worktrees(top))
         }.value
         guard let found else {
+            let folder = URL(fileURLWithPath: path).lastPathComponent
             alert = AppAlert(
                 title: "No es un repositorio git",
-                message: "\(path)\n\n¿Querés inicializar git en esta carpeta?",
+                message: "“\(folder)” no es un repo de git. ¿Querés inicializarlo y agregarlo a Hive?\n\n\(path)",
                 actionTitle: "Inicializar git",
                 action: { [weak self] in Task { await self?.initializeRepository(at: path) } })
             return

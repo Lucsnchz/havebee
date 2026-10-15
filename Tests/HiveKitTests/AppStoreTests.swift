@@ -171,6 +171,8 @@ struct AppStoreProjectTests {
         #expect(pending.branchName == "fix" && pending.currentHead == "main")
         #expect(pending.after == .createSession(.codex))
         #expect(pending.dirty)
+        #expect(pending.message.contains("La carpeta principal está en «main»"))
+        #expect(pending.message.contains("Hay cambios sin commitear"))
         #expect(fix.sessions.isEmpty)
 
         #expect(await store.performCheckout(pending))
@@ -244,6 +246,7 @@ struct AppStoreProjectTests {
 
         #expect(!(await store.performRemove(.branch(branch.id), deleteWorktree: true)))
         #expect(store.alert?.actionTitle == "Borrar igual")
+        #expect(store.alert?.isDestructive == true)
         #expect(store.project(project.id)?.branches.count == 2)
 
         #expect(await store.performRemove(.branch(branch.id), deleteWorktree: true, force: true))

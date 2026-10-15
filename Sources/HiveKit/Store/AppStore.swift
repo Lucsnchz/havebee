@@ -26,7 +26,22 @@ public final class AppStore {
     public internal(set) var commandRuns: [CommandRun] = []
 
     // Diálogos y hojas abiertas.
-    public var alert: AppAlert?
+    /// Alertas en cola: se muestran de a una y en orden.
+    public internal(set) var alerts: [AppAlert] = []
+    /// La alerta visible. Asignar una la encola (no pisa la que se está mostrando); asignar nil
+    /// cierra la visible y deja ver la siguiente.
+    public var alert: AppAlert? {
+        get { alerts.first }
+        set {
+            if let newValue {
+                // La misma alerta dos veces seguidas (ej. un error que se repite) se muestra una sola vez.
+                guard !alerts.contains(where: { $0.title == newValue.title && $0.message == newValue.message }) else { return }
+                alerts.append(newValue)
+            } else if !alerts.isEmpty {
+                alerts.removeFirst()
+            }
+        }
+    }
     public var pendingCheckout: PendingCheckout?
     public var pendingRemoval: PendingRemoval?
     public var rename: RenameRequest?
@@ -97,6 +112,11 @@ public final class AppStore {
     /// Los repos, sin el proyecto «Terminales».
     public var repoProjects: [Project] { projects.repos }
     public var scratchProject: Project? { projects.scratch }
+
+    /// Cierra una alerta puntual (la que se estaba mostrando), aunque ya haya otras en la cola.
+    public func dismissAlert(_ id: UUID) {
+        alerts.removeAll { $0.id == id }
+    }
 
     public func project(_ id: UUID) -> Project? { projects.project(id) }
     public func branchContext(_ id: UUID) -> (project: Project, branch: Branch)? { projects.branchContext(id) }

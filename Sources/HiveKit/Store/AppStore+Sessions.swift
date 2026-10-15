@@ -144,7 +144,7 @@ extension AppStore {
         if rt.status == .working {
             alert = AppAlert(title: "La sesión está trabajando",
                              message: "Si la archivás se corta lo que está haciendo. La conversación queda guardada y la podés restaurar.",
-                             actionTitle: "Archivar igual",
+                             actionTitle: "Archivar igual", isDestructive: true,
                              action: { [weak self] in self?.archive(id) })
         } else {
             archive(id)
