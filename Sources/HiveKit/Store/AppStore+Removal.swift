@@ -75,6 +75,9 @@ extension AppStore {
         case .branch(let id):
             guard let ctx = branchContext(id) else { return false }
             if deleteWorktree, let path = ctx.branch.worktreePath {
+                // Mientras se borra, sus sesiones no se pueden volver a abrir (arrancarían en esa carpeta).
+                removingBranches.insert(id)
+                defer { removingBranches.remove(id) }
                 // Primero se corta lo que corre ahí, así nada escribe en la carpeta mientras git la borra.
                 let terminals = ctx.branch.sessions.compactMap { runtimes[$0.id]?.terminal }
                     + commandRuns.filter { $0.branchId == id }.compactMap(\.terminal)

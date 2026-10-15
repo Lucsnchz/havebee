@@ -35,7 +35,8 @@ extension AppStore {
     /// (historial, MCP, conversaciones anteriores) corren fuera del hilo principal; la terminal se
     /// crea al volver, si la sesión sigue ahí y nadie la lanzó mientras tanto.
     func launch(_ id: UUID) {
-        guard let ctx = sessionContext(id), !ctx.session.isArchived, let rt = runtimes[id], !rt.isRunning, !rt.isLaunching else { return }
+        guard let ctx = sessionContext(id), !ctx.session.isArchived, let rt = runtimes[id], !rt.isRunning, !rt.isLaunching,
+              !removingBranches.contains(ctx.branch.id) else { return }
         let dir = ctx.project.directory(for: ctx.branch)
         guard folderExists(dir, project: ctx.project, branch: ctx.branch, warnKey: id) else { return }
         let builder = launchContextBuilder(for: ctx.session, project: ctx.project, branch: ctx.branch, directory: dir)

@@ -271,4 +271,35 @@ struct IntegracionFinalTests {
         #expect(store.isExpanded(project.id))
         #expect(store.isExpanded(project.branches[0].id))
     }
+
+    @Test("Mientras se borra un worktree, sus sesiones no se vuelven a lanzar")
+    func noRelaunchWhileRemovingWorktree() async throws {
+        let world = TestWorld()
+        let repo = GitRepo(name: "tienda")
+        defer { withExtendedLifetime(repo) {} }
+        repo.write("polyscope.json", #"{"scripts": {"archive": "herd unsecure tienda"}}"#)
+        let store = world.makeStore()
+        await store.addProject(at: repo.path)
+        let project = try #require(store.repoProjects.first)
+        #expect(await store.createBranch(NewBranchRequest(projectId: project.id, name: "feature-x", isNew: true, mode: .worktree,
+                                                          copyIgnored: false, setupCommand: nil)) == nil)
+        let branch = try #require(store.project(project.id)?.branches.first { $0.name == "feature-x" })
+        store.requestNewSession(branchId: branch.id, kind: .claude)
+        let session = try #require(store.project(project.id)?.branches.first { $0.id == branch.id }?.sessions.first)
+        store.activate(session.id)
+        #expect(store.runtimes[session.id]?.isRunning == true)
+
+        let removal = Task { await store.performRemove(.branch(branch.id), deleteWorktree: true) }
+        // El script de cierre corre: la sesión ya se cortó y la carpeta todavía existe.
+        #expect(await waitUntil { store.commandRuns.contains { $0.isScript && $0.name == "Cerrar feature-x" } })
+        #expect(store.removingBranches.contains(branch.id))
+        store.activate(session.id)
+        store.relaunch(session.id)
+        #expect(store.runtimes[session.id]?.isRunning != true)
+        let run = try #require(store.commandRuns.first { $0.isScript })
+        store.commandExited(run.id, terminal: try #require(run.terminal), code: 0)
+        #expect(await removal.value)
+        #expect(store.removingBranches.isEmpty)
+        #expect(store.sessionContext(session.id) == nil)
+    }
 }

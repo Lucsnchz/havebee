@@ -18,6 +18,9 @@ public final class AppStore {
     var mainHeads: [UUID: String] = [:]
     /// Carpetas de worktrees que ya no existen (se borraron o movieron por fuera de Hive).
     public internal(set) var missingWorktrees: Set<String> = []
+    /// Ramas cuyo worktree se está borrando: mientras tanto sus sesiones no se vuelven a lanzar (lo
+    /// harían dentro de la carpeta que git está por borrar).
+    public internal(set) var removingBranches: Set<UUID> = []
     public internal(set) var runtimes: [UUID: SessionRuntime] = [:]
     var lastSessionByProject: [UUID: UUID] = [:]
     /// Sube cada vez que se agrega algo al historial de una sesión (para refrescar el panel).
