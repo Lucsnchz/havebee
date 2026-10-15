@@ -9,7 +9,7 @@ extension AppStore {
         guard let rt = runtimes[id] else { return }
         if rt.unseen { markSeen(rt) }
         guard rt.kind.isAgent else { return }
-        if AgentKeystrokes.isLoneEscape(data) {
+        if TerminalInput.isLoneEscape(data) {
             // Esc rechaza el pedido de permiso o interrumpe al agente: ya no trabaja ni espera que
             // le des permiso, te toca a vos. No hace falta avisarte: lo acabás de hacer vos.
             if rt.status == .attention || rt.status == .working {
@@ -18,8 +18,9 @@ extension AppStore {
             }
             return
         }
-        // Enter en un agente: mandaste un prompt o aprobaste algo, así que empieza a trabajar.
-        guard AgentKeystrokes.isSubmit(data), rt.status != .working else { return }
+        // Enter en un agente: mandaste un prompt o aprobaste algo, así que empieza a trabajar. No cuentan
+        // el salto de línea (Shift+Enter, ⌥Enter) ni lo que llega dentro de un pegado.
+        guard TerminalInput.isSubmit(data), rt.status != .working else { return }
         setStatus(rt, .working)
     }
 
@@ -28,7 +29,9 @@ extension AppStore {
         for event in events {
             guard let rt = runtimes[event.sessionId], rt.isRunning, let ctx = sessionContext(event.sessionId) else { continue }
             rt.hooksSeen = true
-            let outcome = AgentEventInterpreter.interpret(event, status: rt.status, agentSessionId: ctx.session.agentSessionId)
+            // Un thread de Codex distinto del de la sesión puede ser de un subagente: esos avisos se ignoran.
+            let outcome = AgentEventInterpreter.interpret(event, status: rt.status, agentSessionId: ctx.session.agentSessionId,
+                                                          isSubagentThread: environment.agents.isCodexSubagentThread)
             if !outcome.history.isEmpty {
                 let place = ctx.project.isScratch ? ctx.project.name : "\(ctx.project.name) › \(ctx.branch.name)"
                 history.ensureMarkdown(session: ctx.session, place: place)
@@ -39,6 +42,7 @@ extension AppStore {
                 historyVersions[ctx.session.id, default: 0] += 1
                 if let prompt = outcome.history.first(where: { $0.role == .user })?.text { autoName(ctx.session, prompt: prompt) }
             }
+            keepTranscript(event, outcome: outcome, session: ctx.session)
             if outcome.agentSessionId != nil || outcome.reply != nil || outcome.touchesActivity {
                 let now = environment.now()
                 projects.updateSession(event.sessionId) { session in
@@ -49,6 +53,30 @@ extension AppStore {
                 scheduleSave()
             }
             if let status = outcome.status { setStatus(rt, status, notify: outcome.notification) }
+        }
+    }
+
+    /// Guarda una copia del transcript completo del agente en el historial de Hive, para que sobreviva
+    /// aunque el agente borre sus archivos. Claude manda su `transcript_path`; Codex no, así que al
+    /// terminar cada turno se busca su rollout. Leer y copiar el transcript corre fuera del hilo principal.
+    func keepTranscript(_ event: HiveEvent, outcome: AgentEventOutcome, session: Session) {
+        let history = self.history
+        let sessionId = session.id
+        let agent = session.kind
+        if let transcript = outcome.transcript {
+            history.recordTranscript(sessionId: sessionId, agent: agent, conversationId: transcript.conversationId,
+                                     path: transcript.path, now: environment.now())
+            let path = transcript.path
+            Task.detached(priority: .utility) { history.archiveTranscript(sessionId: sessionId, agent: agent, path: path) }
+        } else if event.source == "codex", event.payload["type"]?.string == "agent-turn-complete", outcome.status != nil,
+                  let thread = outcome.agentSessionId ?? session.agentSessionId, !thread.isEmpty {
+            let agents = environment.agents
+            let now = environment.now()
+            Task.detached(priority: .utility) {
+                guard let rollout = agents.codexRolloutURL(thread) else { return }
+                history.recordTranscript(sessionId: sessionId, agent: agent, conversationId: thread, path: rollout.path, now: now)
+                history.archiveTranscript(sessionId: sessionId, agent: agent, path: rollout.path)
+            }
         }
     }
 
@@ -98,32 +126,5 @@ extension AppStore {
     func updateBadge() {
         let count = runtimes.values.filter(\.unseen).count
         environment.setDockBadge(count > 0 ? "\(count)" : nil)
-    }
-}
-
-/// Qué teclas cambian el estado de un agente. (En la integración se reemplaza por TerminalInput,
-/// de la terminal.)
-private enum AgentKeystrokes {
-    static let escape: UInt8 = 0x1B
-    static let carriageReturn: UInt8 = 0x0D
-    /// ESC[200~: empieza un pegado (bracketed paste).
-    static let pasteStart: [UInt8] = [0x1B, 0x5B, 0x32, 0x30, 0x30, 0x7E]
-
-    /// Esc solo (no el comienzo de una secuencia, como una flecha).
-    static func isLoneEscape(_ data: ArraySlice<UInt8>) -> Bool {
-        data.count == 1 && data.first == escape
-    }
-
-    /// Un Enter que manda lo escrito: un CR suelto. No cuentan un CR después de ESC (Option+Enter:
-    /// salto de línea), las secuencias CSI-u con modificadores (ESC[13;2u, Shift+Enter, que no
-    /// traen un CR) ni lo que llega dentro de un pegado.
-    static func isSubmit(_ data: ArraySlice<UInt8>) -> Bool {
-        if data.starts(with: pasteStart) { return false }
-        var previous: UInt8?
-        for byte in data {
-            if byte == carriageReturn && previous != escape { return true }
-            previous = byte
-        }
-        return false
     }
 }

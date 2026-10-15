@@ -117,6 +117,9 @@ public final class AppStore {
             self?.loginPATH = path
             self?.environment.storeLoginPATH(path)
         }
+        // Lo que se eliminó del historial hace más de 30 días se borra de verdad.
+        let history = self.history
+        Task.detached(priority: .background) { history.purge() }
         watcher = EventWatcher(directory: environment.paths.eventsDir) { [weak self] events in
             Task { @MainActor in self?.handle(events) }
         }

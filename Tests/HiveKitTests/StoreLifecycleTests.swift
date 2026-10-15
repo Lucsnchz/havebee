@@ -138,6 +138,23 @@ struct StoreLifecycleTests {
         #expect(store.sessionContext(session.id)?.session.name == "Hacé el deploy")
     }
 
+    @Test("Al arrancar se borra de verdad lo eliminado del historial hace más de 30 días")
+    func startPurgesDeletedHistory() async throws {
+        let world = TestWorld()
+        let store = world.makeStore()
+        let deleted = store.history.deletedDirectory
+        try FileManager.default.createDirectory(at: deleted, withIntermediateDirectories: true)
+        let old = deleted.appendingPathComponent("vieja.jsonl")
+        let recent = deleted.appendingPathComponent("reciente.jsonl")
+        try "{}".write(to: old, atomically: true, encoding: .utf8)
+        try "{}".write(to: recent, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-40 * 86_400)], ofItemAtPath: old.path)
+        store.start()
+        defer { store.shutdown() }
+        #expect(await waitUntil { !FileManager.default.fileExists(atPath: old.path) })
+        #expect(FileManager.default.fileExists(atPath: recent.path))
+    }
+
     @Test("Si no se puede instalar el puente de eventos, avisa")
     func bridgeFailureWarns() async throws {
         let world = TestWorld()
