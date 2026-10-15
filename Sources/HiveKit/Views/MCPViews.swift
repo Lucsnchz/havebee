@@ -5,17 +5,34 @@ import SwiftUI
 /// MCP del proyecto (`.mcp.json`), sugerencias por stack y los globales de cada agente.
 /// Todo lo que viene del disco se lee en `.task`, fuera del hilo principal; `body` solo dibuja.
 struct MCPSection: View {
-    @Environment(AppStore.self) private var store
     let project: Project
     /// En el resumen del proyecto el «Agregar» puede ir en el título de la sección.
     var showsAddButton: Bool
+
+    init(project: Project, showsAddButton: Bool = true) {
+        self.project = project
+        self.showsAddButton = showsAddButton
+    }
+
+    var body: some View {
+        // El resumen reutiliza la vista al pasar de un proyecto a otro: con `.id` cada proyecto arranca
+        // con su propio estado y no se ven los MCP (ni los globales) del proyecto anterior.
+        MCPSectionContent(project: project, showsAddButton: showsAddButton)
+            .id(project.id)
+    }
+}
+
+private struct MCPSectionContent: View {
+    @Environment(AppStore.self) private var store
+    let project: Project
+    let showsAddButton: Bool
     @State private var data: MCPSectionData?
     /// Sube al volver a la app, por si el `.mcp.json` cambió por fuera (`claude mcp add`, el editor).
     @State private var reloadToken = 0
     /// Si el usuario abrió o cerró los sugeridos: "" (todavía no eligió), "open" o "closed".
     @AppStorage private var suggestionsState: String
 
-    init(project: Project, showsAddButton: Bool = true) {
+    init(project: Project, showsAddButton: Bool) {
         self.project = project
         self.showsAddButton = showsAddButton
         _suggestionsState = AppStorage(wrappedValue: "", "mcpSuggestions-\(project.id.uuidString)")
@@ -84,7 +101,10 @@ struct MCPSection: View {
         .task(id: "\(project.path)-\(store.mcpVersion)-\(reloadToken)") {
             let path = project.path
             let home = store.environment.home
-            data = await Task.detached(priority: .userInitiated) { MCPSectionData.scan(projectPath: path, home: home) }.value
+            let scanned = await Task.detached(priority: .userInitiated) { MCPSectionData.scan(projectPath: path, home: home) }.value
+            // Si mientras leíamos cambió el archivo, ya hay otra lectura en camino: esta quedó vieja.
+            guard !Task.isCancelled else { return }
+            data = scanned
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             reloadToken += 1
@@ -100,7 +120,7 @@ struct MCPSection: View {
 }
 
 /// Lo que muestra la sección, leído de una vez fuera del hilo principal.
-private struct MCPSectionData: Sendable {
+struct MCPSectionData: Sendable {
     var servers: Result<[MCPServer], MCPConfigError>
     var fileExists: Bool
     var suggestions: [MCPCatalog.Item]
@@ -348,9 +368,11 @@ private struct GlobalMCPs: View {
             let path = project.path
             let home = store.environment.home
             let codexHome = store.environment.agents.codexHome
-            groups = await Task.detached(priority: .userInitiated) {
+            let loaded = await Task.detached(priority: .userInitiated) {
                 MCPConfig.globals(projectPath: path, home: home, codexHome: codexHome)
             }.value
+            guard !Task.isCancelled else { return } // se cerró antes de terminar: se lee al volver a abrir
+            groups = loaded
         }
     }
 }
