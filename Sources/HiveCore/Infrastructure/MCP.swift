@@ -30,6 +30,26 @@ public struct MCPServer: Identifiable, Equatable, Sendable {
     }
 }
 
+/// Por qué no se pudo usar un `.mcp.json`.
+public enum MCPConfigError: Error, Equatable, Sendable, LocalizedError {
+    /// El archivo existe, pero no se puede leer o no es un JSON válido. No lo tocamos para no perder servidores.
+    case invalidJSON(String)
+
+    public var path: String {
+        switch self {
+        case .invalidJSON(let path): path
+        }
+    }
+
+    public var errorDescription: String? {
+        switch self {
+        case .invalidJSON(let path):
+            "\((path as NSString).lastPathComponent) tiene un error de sintaxis o no se puede leer. "
+                + "Corregilo a mano (\(path)) antes de cambiar los MCP desde Hive: así no se pierde ningún servidor."
+        }
+    }
+}
+
 /// Lee y escribe el `.mcp.json` del repo (el formato de Claude Code) y lo traduce para Codex y Gemini.
 public enum MCPConfig {
     public static func url(in dir: String) -> URL {
@@ -44,17 +64,25 @@ public enum MCPConfig {
         return FileManager.default.fileExists(atPath: main.path) ? main : nil
     }
 
+    /// Los servidores del archivo, o el error si existe pero no se puede leer. Si no existe, no hay servidores.
+    public static func loadResult(_ file: URL) -> Result<[MCPServer], MCPConfigError> {
+        Result { try servers(in: readRoot(file)) }.mapError { $0 as? MCPConfigError ?? .invalidJSON(file.path) }
+    }
+
+    public static func loadResult(dir: String) -> Result<[MCPServer], MCPConfigError> { loadResult(url(in: dir)) }
+
+    /// Igual que `loadResult`, pero sin distinguir el error: un archivo roto se lee como sin servidores.
+    /// Lo usa el lanzamiento de sesiones, que no tiene cómo mostrar el problema.
     public static func load(_ file: URL) -> [MCPServer] {
-        guard let data = try? Data(contentsOf: file), let servers = JSONValue.parse(data)?["mcpServers"]?.object else { return [] }
-        return servers.compactMap { name, value in value.object.map { MCPServer(name: name, config: $0) } }
-            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        (try? loadResult(file).get()) ?? []
     }
 
     public static func load(dir: String) -> [MCPServer] { load(url(in: dir)) }
 
     /// Agrega o reemplaza un servidor, conservando el resto del archivo.
+    /// Si el archivo no se puede leer, lanza `MCPConfigError` sin tocarlo.
     public static func upsert(_ server: MCPServer, replacing oldName: String? = nil, dir: String) throws {
-        var root = readRoot(dir)
+        var root = try readRoot(url(in: dir))
         var servers = root["mcpServers"]?.object ?? [:]
         if let oldName, oldName != server.name { servers.removeValue(forKey: oldName) }
         servers[server.name] = .object(server.config)
@@ -62,17 +90,45 @@ public enum MCPConfig {
         try write(root, dir: dir)
     }
 
+    /// Quita un servidor. Si no estaba, no escribe nada; si el archivo no se puede leer, lanza sin tocarlo.
     public static func remove(_ name: String, dir: String) throws {
-        var root = readRoot(dir)
+        var root = try readRoot(url(in: dir))
         var servers = root["mcpServers"]?.object ?? [:]
-        servers.removeValue(forKey: name)
+        guard servers.removeValue(forKey: name) != nil else { return }
         root["mcpServers"] = .object(servers)
         try write(root, dir: dir)
     }
 
-    private static func readRoot(_ dir: String) -> [String: JSONValue] {
-        guard let data = try? Data(contentsOf: url(in: dir)) else { return [:] }
-        return JSONValue.parse(data)?.object ?? [:]
+    /// El objeto raíz del archivo. Un archivo que no existe es un objeto vacío; uno que no se puede
+    /// leer o parsear es un error, porque reescribirlo borraría lo que tiene.
+    static func readRoot(_ file: URL) throws -> [String: JSONValue] {
+        let data: Data
+        do {
+            data = try Data(contentsOf: file)
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
+            return [:]
+        } catch {
+            throw MCPConfigError.invalidJSON(file.path)
+        }
+        return try parseRoot(data, path: file.path)
+    }
+
+    static func parseRoot(_ data: Data, path: String) throws -> [String: JSONValue] {
+        if let root = JSONValue.parse(data)?.object {
+            // `mcpServers` tiene que ser un objeto: si es otra cosa, reemplazarlo perdería datos.
+            if let servers = root["mcpServers"], servers.object == nil { throw MCPConfigError.invalidJSON(path) }
+            return root
+        }
+        // Sin ninguna cadena entre comillas no puede haber servidores ni otros datos (vacío, `{roto`, `null`):
+        // se trata como un archivo vacío. Con datos adentro, mejor no tocarlo.
+        if !data.contains(UInt8(ascii: "\"")) { return [:] }
+        throw MCPConfigError.invalidJSON(path)
+    }
+
+    private static func servers(in root: [String: JSONValue]) -> [MCPServer] {
+        (root["mcpServers"]?.object ?? [:])
+            .compactMap { name, value in value.object.map { MCPServer(name: name, config: $0) } }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
     private static func write(_ root: [String: JSONValue], dir: String) throws {
@@ -199,15 +255,32 @@ public enum MCPConfig {
         return result
     }
 
-    /// Separa una línea de comando en palabras, respetando comillas.
+    /// Separa una línea de comando en palabras, como un shell: respeta comillas simples y dobles, y la
+    /// barra invertida escapa un espacio, una comilla u otra barra (`a\ b`, `"di \"hola\""`). Fuera de eso
+    /// la barra queda tal cual, así una ruta de Windows como `C:\tools\x.exe` no se rompe.
     public static func splitCommandLine(_ line: String) -> [String] {
         var words: [String] = []
         var current = ""
         var quote: Character?
         var hasWord = false
-        for char in line {
+        let chars = Array(line)
+        var index = 0
+        while index < chars.count {
+            let char = chars[index]
+            let next: Character? = index + 1 < chars.count ? chars[index + 1] : nil
             if let q = quote {
-                if char == q { quote = nil } else { current.append(char) }
+                if char == q {
+                    quote = nil
+                } else if q == "\"", char == "\\", let next, next == "\"" || next == "\\" {
+                    current.append(next)
+                    index += 1
+                } else {
+                    current.append(char)
+                }
+            } else if char == "\\", let next, next == " " || next == "\t" || next == "\"" || next == "'" || next == "\\" {
+                current.append(next)
+                hasWord = true
+                index += 1
             } else if char == "\"" || char == "'" {
                 quote = char
                 hasWord = true
@@ -216,9 +289,26 @@ public enum MCPConfig {
             } else {
                 current.append(char)
             }
+            index += 1
         }
         if hasWord || !current.isEmpty { words.append(current) }
         return words
+    }
+
+    /// Lo inverso de `splitCommandLine`: arma una línea que, al separarla, devuelve exactamente las mismas palabras.
+    public static func joinCommandLine(_ words: [String]) -> String {
+        words.map(quoteWord).joined(separator: " ")
+    }
+
+    /// Una palabra lista para la línea de comando: tal cual si es simple, entre comillas simples si tiene
+    /// espacios, comillas dobles o barras, y entre comillas dobles (escapando) si tiene un apóstrofo.
+    static func quoteWord(_ word: String) -> String {
+        if word.isEmpty { return "\"\"" }
+        let needsQuotes = word.contains { $0 == "\"" || $0 == "'" || $0 == "\\" || $0.isWhitespace }
+        guard needsQuotes else { return word }
+        if !word.contains("'") { return "'\(word)'" }
+        let escaped = word.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+        return "\"\(escaped)\""
     }
 }
 
