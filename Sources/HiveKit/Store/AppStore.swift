@@ -159,15 +159,19 @@ public final class AppStore {
 
     /// Revisa que exista la carpeta donde se va a lanzar algo. Si no está, avisa una sola vez por
     /// sesión o comando (`warnKey`), no cada vez que se vuelve a mirar.
-    func folderExists(_ dir: String, branch: Branch, warnKey: UUID) -> Bool {
+    func folderExists(_ dir: String, project: Project, branch: Branch, warnKey: UUID) -> Bool {
         guard !FileManager.default.fileExists(atPath: dir) else {
             warnedMissing.remove(warnKey)
             return true
         }
         if branch.mode == .worktree { missingWorktrees.insert(dir) }
         if warnedMissing.insert(warnKey).inserted {
-            alert = AppAlert(title: "No encuentro la carpeta de «\(branch.name)»",
-                             message: "\(dir)\n\nSe borró o se movió por fuera de Hive. Si ya no la usás, quitá la rama de Hive.")
+            // Un worktree es de su rama; la carpeta principal es la del proyecto entero.
+            alert = branch.mode == .worktree
+                ? AppAlert(title: "No encuentro la carpeta de «\(branch.name)»",
+                           message: "\(dir)\n\nSe borró o se movió por fuera de Hive. Si ya no la usás, quitá la rama de Hive.")
+                : AppAlert(title: "No encuentro la carpeta de «\(project.name)»",
+                           message: "\(dir)\n\nSe borró o se movió por fuera de Hive. Si ya no lo usás, quitá el proyecto de Hive.")
         }
         return false
     }

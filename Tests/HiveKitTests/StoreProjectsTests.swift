@@ -53,6 +53,23 @@ struct StoreProjectsTests {
         #expect(world.processes.launches.count == 1)
     }
 
+    @Test("Si falta la carpeta principal, el aviso habla del proyecto, no de la rama")
+    func missingMainFolder() async throws {
+        let world = TestWorld()
+        let repo = GitRepo()
+        let store = world.makeStore()
+        await store.addProject(at: repo.path)
+        let project = try #require(store.repoProjects.first)
+        store.requestNewSession(branchId: project.branches[0].id, kind: .shell)
+        let session = try #require(store.project(project.id)?.allSessions.first)
+        try FileManager.default.moveItem(atPath: repo.path, toPath: repo.path + "-movido")
+        store.activate(session.id)
+        #expect(store.alert?.title == "No encuentro la carpeta de «repo»")
+        #expect(store.alert?.message.hasSuffix("Si ya no lo usás, quitá el proyecto de Hive.") == true)
+        #expect(!store.isMissing(project.branches[0]))
+        #expect(world.processes.launches.isEmpty)
+    }
+
     @Test("La carpeta de un worktree agrega o selecciona el repo principal, sin duplicarlo")
     func worktreeFolderAddsMainRepo() async throws {
         let world = TestWorld()
@@ -153,7 +170,7 @@ struct StoreMovedHeadTests {
         await s.store.refreshGitNow()
         let alert = try #require(s.store.alert)
         #expect(alert.title == "Algo cambió la carpeta principal de “main” a “fix/bar”")
-        #expect(alert.message == "La sesión «Claude 1» quedó viendo «fix/bar» en «repo». ¿Las movés a esa rama en Hive?")
+        #expect(alert.message == "La sesión «Claude 1» quedó viendo «fix/bar» en «repo». ¿La movés a esa rama en Hive?")
         #expect(alert.actionTitle == "Mover las sesiones ahí" && alert.cancelTitle == "Dejar así")
         #expect(!alert.isDestructive)
         alert.action?()
@@ -163,6 +180,17 @@ struct StoreMovedHeadTests {
         #expect(s.store.isActive(renamed.branch, in: renamed.project))
         await s.store.refreshGitNow()
         #expect(s.store.alerts.count == 1) // no vuelve a preguntar
+    }
+
+    @Test("Con varias sesiones corriendo, la pregunta va en plural")
+    func pluralQuestion() async throws {
+        let s = try await Setup()
+        let main = s.project.branches[0]
+        try s.runSession(on: main.id)
+        try s.runSession(on: main.id)
+        s.repo.sh("git checkout -q -b fix/bar")
+        await s.store.refreshGitNow()
+        #expect(s.store.alert?.message == "Las 2 sesiones de esa rama quedaron viendo «fix/bar» en «repo». ¿Las movés a esa rama en Hive?")
     }
 
     @Test("Si ya hay una rama con ese nombre, le pasa las sesiones que corrían")

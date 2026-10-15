@@ -274,9 +274,11 @@ extension AppStore {
         let running = branch.sessions.filter { runtimes[$0.id]?.isRunning == true }
         guard !running.isEmpty else { return }
         let branchId = branch.id
-        let sessions = running.count == 1 ? "La sesión «\(running[0].name)» quedó" : "Las \(running.count) sesiones de esa rama quedaron"
+        let message = running.count == 1
+            ? "La sesión «\(running[0].name)» quedó viendo «\(new)» en «\(project.name)». ¿La movés a esa rama en Hive?"
+            : "Las \(running.count) sesiones de esa rama quedaron viendo «\(new)» en «\(project.name)». ¿Las movés a esa rama en Hive?"
         alert = AppAlert(title: "Algo cambió la carpeta principal de “\(old)” a “\(new)”",
-                         message: "\(sessions) viendo «\(new)» en «\(project.name)». ¿Las movés a esa rama en Hive?",
+                         message: message,
                          actionTitle: "Mover las sesiones ahí", cancelTitle: "Dejar así",
                          action: { [weak self] in self?.followHead(branchId: branchId, to: new) })
     }

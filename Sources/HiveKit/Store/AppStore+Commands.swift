@@ -61,7 +61,7 @@ extension AppStore {
             return
         }
         let dir = project.directory(for: branch)
-        guard folderExists(dir, branch: branch, warnKey: command.id) else { return }
+        guard folderExists(dir, project: project, branch: branch, warnKey: command.id) else { return }
         // Ya terminó en esta rama: se vuelve a correr en la misma pestaña en lugar de abrir otra.
         if let finished = commandRuns.first(where: { $0.commandId == commandId && $0.branchId == branch.id }) {
             finished.name = command.name
@@ -88,7 +88,7 @@ extension AppStore {
         let dir = project.directory(for: branch)
         let run = CommandRun(projectId: project.id, branchId: branch.id, branchName: branch.name, commandId: UUID(),
                              name: name, command: command, directory: dir, extraEnvironment: extra, isScript: true)
-        guard folderExists(dir, branch: branch, warnKey: run.id) else { return nil }
+        guard folderExists(dir, project: project, branch: branch, warnKey: run.id) else { return nil }
         start(run)
         commandRuns.append(run)
         showRun(run.id)

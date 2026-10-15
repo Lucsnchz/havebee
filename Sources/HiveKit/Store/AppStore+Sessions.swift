@@ -37,7 +37,7 @@ extension AppStore {
     func launch(_ id: UUID) {
         guard let ctx = sessionContext(id), !ctx.session.isArchived, let rt = runtimes[id], !rt.isRunning, !rt.isLaunching else { return }
         let dir = ctx.project.directory(for: ctx.branch)
-        guard folderExists(dir, branch: ctx.branch, warnKey: id) else { return }
+        guard folderExists(dir, project: ctx.project, branch: ctx.branch, warnKey: id) else { return }
         let builder = launchContextBuilder(for: ctx.session, project: ctx.project, branch: ctx.branch, directory: dir)
         guard environment.launchesInBackground else {
             startSession(id, plan: LaunchPlanner.plan(builder.build()), directory: dir)
