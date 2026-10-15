@@ -294,6 +294,8 @@ struct RecentCommits: View {
     /// Clave de refresco a partir del estado de git (cambia con un commit, un pull o un push).
     static func refreshKey(_ status: GitStatus?) -> String {
         guard let status else { return "-" }
+        // El oid de HEAD cambia con cada commit, pull, checkout o reset, aunque no haya upstream.
+        if let oid = status.headOid { return "\(status.branch ?? "")|\(oid)" }
         return "\(status.branch ?? "")|\(status.ahead)|\(status.behind)|\(status.changes.count)"
     }
 
