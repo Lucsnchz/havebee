@@ -45,7 +45,7 @@ struct ProjectTile: View {
                         .overlay(Capsule().strokeBorder(Color(nsColor: .windowBackgroundColor), lineWidth: 2))
                         .offset(x: size * 0.18, y: -size * 0.18)
                         .transition(.scale.combined(with: .opacity))
-                        .accessibilityLabel(activity.attention > 0 ? "Necesita permiso" : "\(activity.waitingForYou) te esperan")
+                        .accessibilityLabel(activity.badgeAccessibilityText)
                 }
             }
     }

@@ -77,6 +77,9 @@ struct StatusStyleTests {
         #expect(statusStyleSame(Activity.Ring.attention.color, Theme.attention))
         #expect(Activity(pending: 2).badgeText == "2")
         #expect(Activity(pending: 2, attention: 1).badgeText == "!")
+        #expect(Activity(pending: 1).badgeAccessibilityText == "Una sesión te espera")
+        #expect(Activity(pending: 3).badgeAccessibilityText == "3 sesiones te esperan")
+        #expect(Activity(pending: 2, attention: 1).badgeAccessibilityText == "Necesita permiso")
         #expect(Activity.Ring.attention.accessibilityText == "Necesita permiso")
         #expect(Activity.Ring.none.accessibilityText == nil)
     }
