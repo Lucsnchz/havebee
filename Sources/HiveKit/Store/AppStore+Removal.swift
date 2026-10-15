@@ -1,0 +1,113 @@
+import AppKit
+import HiveCore
+
+/// Renombrar y quitar proyectos, ramas y sesiones.
+extension AppStore {
+    // MARK: - Renombrar y quitar
+
+    public func beginRename(_ item: SidebarItem) {
+        switch item {
+        case .project(let id): renameText = project(id)?.name ?? ""
+        case .session(let id): renameText = sessionContext(id)?.session.name ?? ""
+        case .branch: return
+        }
+        rename = RenameRequest(item: item)
+    }
+
+    public func commitRename(_ request: RenameRequest) {
+        let name = renameText.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return }
+        switch request.item {
+        case .project(let id): projects.updateProject(id) { $0.name = name }
+        case .session(let id): projects.updateSession(id) { $0.name = name }
+        case .branch: return
+        }
+        scheduleSave()
+    }
+
+    public func requestRemoval(_ item: SidebarItem) {
+        switch item {
+        case .project(let id):
+            guard let p = project(id), !p.isScratch else { return }
+            pendingRemoval = PendingRemoval(item: item, title: "¿Quitar «\(p.name)» de Hive?",
+                                            message: "Se cierran sus sesiones. No se borra nada del disco.", isWorktree: false)
+        case .branch(let id):
+            guard let ctx = branchContext(id) else { return }
+            let worktree = ctx.branch.mode == .worktree
+            let message = worktree
+                ? "Se cierran sus sesiones. La rama de git no se borra. Podés conservar el worktree en \(ctx.branch.worktreePath ?? "") o borrarlo."
+                : "Se cierran sus sesiones. La rama de git no se borra."
+            pendingRemoval = PendingRemoval(item: item, title: "¿Quitar la rama «\(ctx.branch.name)»?", message: message, isWorktree: worktree)
+        case .session(let id):
+            guard let ctx = sessionContext(id) else { return }
+            pendingRemoval = PendingRemoval(item: item, title: "¿Eliminar «\(ctx.session.name)»?",
+                                            message: "Se cierra la terminal. La conversación del agente queda guardada en su historial.", isWorktree: false)
+        }
+    }
+
+    public func remove(_ item: SidebarItem, deleteWorktree: Bool = false, force: Bool = false) {
+        Task { await performRemove(item, deleteWorktree: deleteWorktree, force: force) }
+    }
+
+    /// Quita un elemento. Si hay que borrar un worktree y falla, ofrece forzarlo. Devuelve si se quitó.
+    @discardableResult
+    func performRemove(_ item: SidebarItem, deleteWorktree: Bool = false, force: Bool = false) async -> Bool {
+        switch item {
+        case .session(let id):
+            guard let ctx = sessionContext(id) else { return false }
+            terminate([id])
+            history.delete(id)
+            projects.updateBranch(ctx.branch.id) { $0.sessions.removeAll { $0.id == id } }
+            scheduleSave()
+            if selection == item { select(.branch(ctx.branch.id)) }
+            return true
+        case .branch(let id):
+            guard let ctx = branchContext(id) else { return false }
+            if deleteWorktree, let path = ctx.branch.worktreePath {
+                let repo = ctx.project.path
+                let git = self.git
+                let r = await Task.detached { git.removeWorktree(path, force: force, in: repo) }.value
+                guard r.ok else {
+                    alert = AppAlert(title: "No se pudo borrar el worktree",
+                                     message: "\(r.errorMessage)\n\n¿Borrarlo igual? Se pierden los cambios sin commitear.",
+                                     actionTitle: "Borrar igual",
+                                     action: { [weak self] in self?.remove(item, deleteWorktree: true, force: true) })
+                    return false
+                }
+            } else if let path = ctx.branch.worktreePath, ctx.branch.mode == .worktree {
+                // El worktree queda en disco: que la detección automática no lo vuelva a sumar.
+                projects.updateProject(ctx.project.id) { $0.ignoredWorktrees.append(path) }
+            }
+            dropBranch(id)
+            return true
+        case .project(let id):
+            guard let p = project(id), !p.isScratch else { return false }
+            terminate(p.allSessions.map(\.id))
+            let selectionWasInside = projects.contains(selection, inProject: id)
+            projects.removeAll { $0.id == id }
+            if selectionWasInside { select(nil) }
+            scheduleSave()
+            return true
+        }
+    }
+
+    func dropBranch(_ id: UUID) {
+        guard let ctx = branchContext(id) else { return }
+        terminate(ctx.branch.sessions.map(\.id))
+        let selectionWasInside = selection == .branch(id) || ctx.branch.sessions.contains(where: { selection == .session($0.id) })
+        projects.updateProject(ctx.project.id) { $0.branches.removeAll { $0.id == id } }
+        scheduleSave()
+        if selectionWasInside { select(.project(ctx.project.id)) }
+        refreshGit()
+    }
+
+    func terminate(_ ids: [UUID]) {
+        for id in ids {
+            runtimes[id]?.terminal?.terminate()
+            runtimes[id]?.terminal?.removeFromSuperview()
+            runtimes[id] = nil
+            environment.notifier.clear(id)
+        }
+        updateBadge()
+    }
+}
