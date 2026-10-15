@@ -78,6 +78,23 @@ extension AppStore {
         showRun(run.id)
     }
 
+    /// Corre un script suelto, sin comando guardado en el proyecto (por ejemplo, preparar un
+    /// worktree nuevo). Se ve en la esquinita como cualquier comando. Devuelve el id del run, o nil
+    /// si no encontró el proyecto, la rama o su carpeta.
+    @discardableResult
+    public func runScript(name: String, command: String, projectId: UUID, branchId: UUID,
+                          environment extra: [String: String] = [:]) -> UUID? {
+        guard let project = project(projectId), let branch = project.branches.first(where: { $0.id == branchId }) else { return nil }
+        let dir = project.directory(for: branch)
+        let run = CommandRun(projectId: project.id, branchId: branch.id, branchName: branch.name, commandId: UUID(),
+                             name: name, command: command, directory: dir, extraEnvironment: extra, isScript: true)
+        guard folderExists(dir, branch: branch, warnKey: run.id) else { return nil }
+        start(run)
+        commandRuns.append(run)
+        showRun(run.id)
+        return run.id
+    }
+
     func start(_ run: CommandRun) {
         let terminal = HiveTerminalView(frame: NSRect(x: 0, y: 0, width: 600, height: 300), scrollback: 5_000)
         TerminalTheme.apply(to: terminal)
@@ -86,6 +103,7 @@ extension AppStore {
         let events = TerminalEvents(onExit: { [weak self] terminal, code in self?.commandExited(runId, terminal: terminal, code: code) })
         terminal.processDelegate = events
         let env = SessionEnvironment.base(inherited: environment.inheritedEnvironment, directory: run.directory, path: currentPATH)
+            .merging(run.extraEnvironment) { _, extra in extra }
             .sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }
         // Shell interactivo de login: así carga nvm, aliases y lo que tengas en tu .zshrc.
         environment.processes.start(terminal, executable: environment.loginShell, args: ["-l", "-i", "-c", run.command],

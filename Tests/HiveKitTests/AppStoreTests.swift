@@ -718,6 +718,30 @@ struct AppStoreToolsTests {
         #expect(store.project(project.id)?.commands.isEmpty == true)
     }
 
+    @Test("Un script suelto corre con su entorno, se ve en la esquinita y se puede reiniciar")
+    func runScript() async throws {
+        let world = TestWorld()
+        let repo = GitRepo()
+        let store = world.makeStore()
+        await store.addProject(at: repo.path)
+        let project = try #require(store.repoProjects.first)
+        let id = try #require(store.runScript(name: "Preparar main", command: "composer install", projectId: project.id,
+                                              branchId: project.branches[0].id, environment: ["HIVE_BRANCH": "main", "PATH": "/otro"]))
+        let launch = try #require(world.processes.launches.last)
+        #expect(launch.args == ["-l", "-i", "-c", "composer install"])
+        #expect(launch.directory == repo.path)
+        #expect(launch.environment["HIVE_BRANCH"] == "main")
+        #expect(launch.environment["PATH"] == "/otro") // lo del script gana
+        let run = try #require(store.commandRuns.first { $0.id == id })
+        #expect(run.isScript && run.running && run.name == "Preparar main")
+        #expect(store.dockExpanded && store.dockRunId == id)
+        #expect(project.commands.isEmpty)
+        store.restartRun(id)
+        #expect(world.processes.launches.count == 2)
+        #expect(world.processes.launches.last?.environment["HIVE_BRANCH"] == "main")
+        #expect(store.runScript(name: "x", command: "y", projectId: project.id, branchId: UUID()) == nil)
+    }
+
     @Test("Los comandos corren en la rama abierta del proyecto")
     func commandBranch() async throws {
         let world = TestWorld()

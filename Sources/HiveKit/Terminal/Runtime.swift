@@ -62,13 +62,20 @@ public final class CommandRun: Identifiable {
     public internal(set) var name: String
     public internal(set) var command: String
     public let directory: String
+    /// Variables de entorno extra (para los scripts, ej. HIVE_BRANCH).
+    let extraEnvironment: [String: String]
+    /// Un script suelto (`runScript`), sin comando guardado en el proyecto.
+    public let isScript: Bool
     var terminal: HiveTerminalView?
     public internal(set) var running = false
     public internal(set) var exitCode: Int32?
     public internal(set) var startedAt = Date()
     @ObservationIgnored var events: TerminalEvents?
 
-    init(projectId: UUID, branchId: UUID, branchName: String, commandId: UUID, name: String, command: String, directory: String) {
+    init(projectId: UUID, branchId: UUID, branchName: String, commandId: UUID, name: String, command: String, directory: String,
+         extraEnvironment: [String: String] = [:], isScript: Bool = false) {
+        self.extraEnvironment = extraEnvironment
+        self.isScript = isScript
         self.projectId = projectId
         self.branchId = branchId
         self.branchName = branchName
