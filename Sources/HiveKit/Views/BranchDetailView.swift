@@ -188,6 +188,25 @@ private struct BranchHeader: View {
                 }
                 CopyablePath(path: directory)
             }
+            Spacer(minLength: 12)
+            // Abrir el sitio de la rama y traer, publicar o abrir el MR. Si no hay sitio ni remoto, no ocupan lugar.
+            BranchWebActions(project: project, branch: branch)
+        }
+    }
+}
+
+/// «Abrir sitio» y el menú del remoto (GitLab o GitHub) de una rama, juntos. Van en el encabezado de
+/// la rama y en la barra de la sesión.
+struct BranchWebActions: View {
+    let project: Project
+    let branch: Branch
+
+    var body: some View {
+        HStack(spacing: 8) {
+            OpenSiteButton(project: project, branch: branch)
+                .fixedSize()
+            RemoteActionsMenu(project: project, branch: branch)
+                .fixedSize()
         }
     }
 }

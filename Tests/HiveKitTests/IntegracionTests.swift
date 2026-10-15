@@ -40,11 +40,18 @@ struct IntegracionViewTests {
         return (world, repo, store, project, session)
     }
 
-    private func check(_ view: some View, size: CGSize, name: String) async {
+    /// Dibuja en oscuro y en claro. `empty`: lo que se espera es que no dibuje nada (solo el fondo).
+    private func check(_ view: some View, size: CGSize, name: String, empty: Bool = false) async {
         let defaults = SnapshotDefaults()
         let reps = await Snapshot.render(view, size: size, name: name, defaults: defaults.defaults)
         #expect(reps.count == 2, "No se pudo dibujar \(name)")
-        for rep in reps { #expect(Snapshot.distinctColors(rep) > 3, "\(name) parece vacía") }
+        for rep in reps {
+            if empty {
+                #expect(Snapshot.distinctColors(rep) == 1, "\(name) tendría que estar vacía")
+            } else {
+                #expect(Snapshot.distinctColors(rep) > 3, "\(name) parece vacía")
+            }
+        }
     }
 
     @Test("La tarjeta de una sesión que pide permiso muestra el pedido")
@@ -66,5 +73,22 @@ struct IntegracionViewTests {
         #expect(store.undoAction?.canUndo == false)
         await check(ZStack(alignment: .bottom) { Color.clear; UndoToastView().padding(.bottom, 16) }.environment(store),
                     size: CGSize(width: 560, height: 120), name: "20-aviso-copie")
+    }
+
+    @Test("Encabezado de la rama y barra de la sesión con «Abrir sitio» y el menú de GitLab")
+    func webActions() async throws {
+        let (world, repo, store, project, session) = try await storeWithClaude()
+        defer { withExtendedLifetime((world, repo)) {} }
+        repo.sh("git remote add origin git@gitlab.com:dizeg/tienda.git")
+        repo.write("polyscope.json", #"{"preview": {"url": "https://{{folder}}.test"}}"#)
+        await check(NavigationStack { BranchDetailView(branchId: project.branches[0].id) }.environment(store),
+                    size: CGSize(width: 1000, height: 420), name: "21-rama-sitio-y-remoto")
+        await check(NavigationStack { SessionDetailView(sessionId: session.id) }.environment(store),
+                    size: CGSize(width: 1200, height: 500), name: "22-sesion-sitio-y-remoto")
+        // Sin sitio ni remoto no ocupan lugar.
+        let plain = try await storeWithClaude()
+        defer { withExtendedLifetime((plain.0, plain.1)) {} }
+        await check(BranchWebActions(project: plain.3, branch: plain.3.branches[0]).environment(plain.2).padding(20),
+                    size: CGSize(width: 300, height: 80), name: "23-sin-sitio-ni-remoto", empty: true)
     }
 }

@@ -62,6 +62,8 @@ struct SessionDetailView: View {
                     NewSessionMenu(branchId: ctx.branch.id, kind: ctx.session.kind)
                     if !ctx.project.isScratch {
                         SessionCommandsMenu(project: ctx.project, branch: ctx.branch)
+                        OpenSiteButton(project: ctx.project, branch: ctx.branch)
+                        RemoteActionsMenu(project: ctx.project, branch: ctx.branch)
                     }
                     Button {
                         rt.terminal?.openFindBar()
