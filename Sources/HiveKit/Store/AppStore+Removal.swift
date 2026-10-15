@@ -96,6 +96,7 @@ extension AppStore {
         terminate(ctx.branch.sessions.map(\.id))
         let selectionWasInside = selection == .branch(id) || ctx.branch.sessions.contains(where: { selection == .session($0.id) })
         projects.updateProject(ctx.project.id) { $0.branches.removeAll { $0.id == id } }
+        gitGeneration += 1
         scheduleSave()
         if selectionWasInside { select(.project(ctx.project.id)) }
         refreshGit()

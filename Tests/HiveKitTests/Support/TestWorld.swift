@@ -66,6 +66,8 @@ final class TestWorld {
     var now = Date.reference
     var badge: String?
     var logos: [String: [String]] = [:]
+    /// git real por defecto; los tests de carreras ponen uno con demoras (`DelayedGit`).
+    var git: GitClient = GitCLI()
 
     init() {
         paths = HivePaths(root: dir.url.appendingPathComponent("Hive"))
@@ -75,7 +77,7 @@ final class TestWorld {
 
     var environment: AppEnvironment {
         AppEnvironment(
-            paths: paths, git: GitCLI(), agents: agents, notifier: notifier, processes: processes,
+            paths: paths, git: git, agents: agents, notifier: notifier, processes: processes,
             settings: { [unowned self] in self.settings },
             inheritedEnvironment: ["HOME": home.path, "PATH": "/usr/bin:/bin", "CLAUDECODE": "1"],
             home: home, loginShell: "/bin/zsh", cachedLoginPATH: "/fake/bin:/usr/bin:/bin",

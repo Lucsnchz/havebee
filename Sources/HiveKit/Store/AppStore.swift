@@ -48,6 +48,11 @@ public final class AppStore {
     @ObservationIgnored var watcher: EventWatcher?
     @ObservationIgnored var timers: [Timer] = []
     @ObservationIgnored var refreshTask: Task<Void, Never>?
+    /// Llegó un pedido de revisión mientras otra corría: al terminar se hace otra pasada.
+    @ObservationIgnored var refreshPending = false
+    /// Sube con cada cambio de git que hace Hive (checkout, proyecto o rama nuevos, rama quitada).
+    /// Una revisión que empezó antes descarta las ramas actuales que leyó, porque pueden ser viejas.
+    @ObservationIgnored var gitGeneration = 0
 
     /// Carga el estado guardado. No arranca nada: eso lo hace `start()`.
     public init(environment: AppEnvironment) {

@@ -39,6 +39,7 @@ extension AppStore {
                               branches: [Branch(name: found.head ?? "HEAD", mode: .main)])
         AppearanceDefaults.apply(to: &project, others: projects, logos: environment.logos)
         projects.insertRepo(project)
+        gitGeneration += 1
         mainHeads[project.id] = found.head ?? ""
         expanded.formUnion([project.id, project.branches[0].id])
         syncWorktrees(project.id, found.worktrees)
@@ -75,6 +76,7 @@ extension AppStore {
         case .success(let value): branch = value
         case .failure(let error): return error.errorDescription
         }
+        gitGeneration += 1
         projects.updateProject(project.id) { p in
             p.branches.append(branch)
             if let path = branch.worktreePath { p.ignoredWorktrees.removeAll { samePath($0, path) } }
@@ -110,7 +112,10 @@ extension AppStore {
         let path = ctx.project.path
         let name = ctx.branch.name
         let git = self.git
+        gitGeneration += 1
         let r = await Task.detached { git.checkout(name, in: path) }.value
+        // Otra vez: una revisión que empezó durante el checkout pudo leer la rama de antes.
+        gitGeneration += 1
         guard r.ok else {
             alert = AppAlert(title: "No se pudo hacer checkout de «\(name)»", message: r.errorMessage)
             return false
@@ -129,22 +134,26 @@ extension AppStore {
 
     // MARK: - Git
 
-    /// Pide una revisión de git en segundo plano (una a la vez).
+    /// Pide una revisión de git en segundo plano. Corre una a la vez; si llega un pedido con una
+    /// pasada en curso, no se pierde: al terminar se hace otra.
     public func refreshGit() {
-        guard refreshTask == nil else { return }
+        guard refreshTask == nil else {
+            refreshPending = true
+            return
+        }
         refreshTask = Task { [weak self] in
-            await self?.refreshGitNow()
+            repeat {
+                self?.refreshPending = false
+                await self?.refreshGitNow()
+            } while self?.refreshPending == true
             self?.refreshTask = nil
         }
     }
 
     /// Revisa git (estado de cada carpeta, rama de la carpeta principal y worktrees nuevos) y espera.
     func refreshGitNow() async {
-        var dirs = Set<String>()
-        for p in repoProjects {
-            dirs.insert(p.path)
-            for b in p.branches where b.mode == .worktree { if let path = b.worktreePath { dirs.insert(path) } }
-        }
+        let generation = gitGeneration
+        let dirs = gitDirectories()
         let heads = repoProjects.map { ($0.id, $0.path) }
         let git = self.git
         let (statuses, current, trees) = await Task.detached(priority: .utility) {
@@ -158,11 +167,31 @@ extension AppStore {
             }
             return (statuses, current, trees)
         }.value
-        if dirStatus != statuses { dirStatus = statuses }
-        if mainHeads != current { mainHeads = current }
+        // Fusionamos por clave: lo que se sumó durante la revisión (un proyecto, un worktree) no se pierde.
+        var status = dirStatus
+        for dir in dirs { status[dir] = statuses[dir] }
+        let known = gitDirectories()
+        status = status.filter { known.contains($0.key) }
+        if dirStatus != status { dirStatus = status }
+        // Hive cambió git mientras leíamos: lo leído puede ser viejo. La pasada que pidió ese cambio lo corrige.
+        guard generation == gitGeneration else { return }
+        var merged = mainHeads
+        for (id, head) in current where project(id) != nil { merged[id] = head }
+        merged = merged.filter { project($0.key) != nil }
+        if mainHeads != merged { mainHeads = merged }
         var found = false
         for (id, worktrees) in trees where syncWorktrees(id, worktrees) { found = true }
         // Hay ramas nuevas: traemos su estado de git en esta misma pasada.
         if found { await refreshGitNow() }
+    }
+
+    /// Carpetas de las que se guarda el estado de git: la principal de cada repo y cada worktree.
+    func gitDirectories() -> Set<String> {
+        var dirs = Set<String>()
+        for p in repoProjects {
+            dirs.insert(p.path)
+            for b in p.branches where b.mode == .worktree { if let path = b.worktreePath { dirs.insert(path) } }
+        }
+        return dirs
     }
 }
