@@ -78,11 +78,11 @@ public final class AppStore {
     @ObservationIgnored var warnedMissing: Set<UUID> = []
     /// Sesiones que se están reiniciando (esperando a que termine el proceso viejo).
     @ObservationIgnored var relaunching: Set<UUID> = []
-    /// Quienes esperan que termine el proceso de una terminal (ver `waitForExit`).
     /// El estado guardado existe pero no se pudo leer: no se guarda nada para no pisarlo.
     @ObservationIgnored var persistenceBlocked = false
     /// El último guardado falló (y ya se avisó).
     @ObservationIgnored var saveFailed = false
+    /// Quienes esperan que termine el proceso de una terminal (ver `waitForExit`).
     @ObservationIgnored var exitWaiters: [ObjectIdentifier: [CheckedContinuation<Void, Never>]] = [:]
 
     /// Carga el estado guardado. No arranca nada: eso lo hace `start()`.
@@ -131,49 +131,6 @@ public final class AppStore {
     /// Los repos, sin el proyecto «Terminales».
     public var repoProjects: [Project] { projects.repos }
     public var scratchProject: Project? { projects.scratch }
-
-    /// Cuánto dura la oferta de deshacer.
-    static let undoWindow: TimeInterval = 6
-
-    /// Ofrece deshacer algo durante unos segundos, con la cápsula y con ⌘Z (el undo de la ventana).
-    func offerUndo(_ message: String, undo: @escaping () -> Void) {
-        let once = UndoOnce()
-        let action = UndoAction(message: message, expiresAt: environment.now().addingTimeInterval(Self.undoWindow)) {
-            once.run(undo)
-        }
-        undoAction = action
-        let id = action.id
-        if let manager = NSApp?.keyWindow?.undoManager {
-            manager.registerUndo(withTarget: self) { store in
-                MainActor.assumeIsolated {
-                    if store.undoAction?.id == id { store.undoAction = nil }
-                    once.run(undo)
-                }
-            }
-            manager.setActionName(message)
-        }
-        Task { [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(Self.undoWindow * 1_000_000_000))
-            if self?.undoAction?.id == id { self?.undoAction = nil }
-        }
-    }
-
-    /// Deshace lo que ofrece la cápsula.
-    public func performUndo() {
-        guard let action = undoAction else { return }
-        undoAction = nil
-        action.undo()
-    }
-
-    /// Cierra la cápsula sin deshacer.
-    public func dismissUndo() {
-        undoAction = nil
-    }
-
-    /// Cierra una alerta puntual (la que se estaba mostrando), aunque ya haya otras en la cola.
-    public func dismissAlert(_ id: UUID) {
-        alerts.removeAll { $0.id == id }
-    }
 
     public func project(_ id: UUID) -> Project? { projects.project(id) }
     public func branchContext(_ id: UUID) -> (project: Project, branch: Branch)? { projects.branchContext(id) }
@@ -295,6 +252,51 @@ public final class AppStore {
 
     func isFocused(_ id: UUID) -> Bool {
         environment.isAppActive() && selection == .session(id)
+    }
+
+    // MARK: - Diálogos y deshacer
+
+    /// Cuánto dura la oferta de deshacer.
+    static let undoWindow: TimeInterval = 6
+
+    /// Ofrece deshacer algo durante unos segundos, con la cápsula y con ⌘Z (el undo de la ventana).
+    func offerUndo(_ message: String, undo: @escaping () -> Void) {
+        let once = UndoOnce()
+        let action = UndoAction(message: message, expiresAt: environment.now().addingTimeInterval(Self.undoWindow)) {
+            once.run(undo)
+        }
+        undoAction = action
+        let id = action.id
+        if let manager = NSApp?.keyWindow?.undoManager {
+            manager.registerUndo(withTarget: self) { store in
+                MainActor.assumeIsolated {
+                    if store.undoAction?.id == id { store.undoAction = nil }
+                    once.run(undo)
+                }
+            }
+            manager.setActionName(message)
+        }
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(Self.undoWindow * 1_000_000_000))
+            if self?.undoAction?.id == id { self?.undoAction = nil }
+        }
+    }
+
+    /// Deshace lo que ofrece la cápsula.
+    public func performUndo() {
+        guard let action = undoAction else { return }
+        undoAction = nil
+        action.undo()
+    }
+
+    /// Cierra la cápsula sin deshacer.
+    public func dismissUndo() {
+        undoAction = nil
+    }
+
+    /// Cierra una alerta puntual (la que se estaba mostrando), aunque ya haya otras en la cola.
+    public func dismissAlert(_ id: UUID) {
+        alerts.removeAll { $0.id == id }
     }
 
     // MARK: - Apariencia y orden
