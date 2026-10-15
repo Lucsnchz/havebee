@@ -31,9 +31,16 @@ private final class CommandWorld {
         return try #require(store.commandRuns.last)
     }
 
-    /// Espera a que el proceso arranque de verdad (antes, un Ctrl+C se pierde).
-    func started(_ run: CommandRun) async -> Bool {
-        await waitUntil { run.terminal?.isProcessRunning == true }
+    /// Un comando que no termina solo y que sale con 143 al recibir SIGTERM. Un shell interactivo
+    /// (`-i`) ignora SIGTERM si no tiene un trap, así que se lo ponemos para que el test no dependa
+    /// de cuándo el shell hace exec.
+    static func loop(_ tag: String, ignoringInterrupt: Bool = false) -> String {
+        (ignoringInterrupt ? "trap '' INT; " : "") + "trap 'exit 143' TERM; echo \(tag); while :; do sleep 0.05; done"
+    }
+
+    /// Espera a que el comando arranque de verdad (que haya escrito su marca).
+    func started(_ run: CommandRun, _ tag: String) async -> Bool {
+        await waitUntil { run.terminal?.fullText().contains(tag) == true }
     }
 }
 
@@ -43,14 +50,14 @@ struct StoreCommandLifecycleTests {
     @Test("Detener y reiniciar enseguida: el comando nuevo sigue vivo después del plazo de gracia")
     func stopThenRestart() async throws {
         let w = await CommandWorld()
-        let run = try w.run("exec sleep 30")
-        #expect(await w.started(run))
+        let run = try w.run(CommandWorld.loop("corriendo"))
+        #expect(await w.started(run, "corriendo"))
         let old = try #require(run.terminal)
         w.store.stopRun(run.id)
         w.store.restartRun(run.id)
         let fresh = try #require(run.terminal)
         #expect(fresh !== old)
-        #expect(await w.started(run))
+        #expect(await w.started(run, "corriendo"))
         // Pasa el plazo de gracia (0,2 s en los tests) y un poco más.
         try await Task.sleep(nanoseconds: 700_000_000)
         #expect(run.terminal === fresh)
@@ -64,14 +71,13 @@ struct StoreCommandLifecycleTests {
     @Test("Si ignora Ctrl+C, se corta al vencer el plazo de gracia")
     func ignoresInterrupt() async throws {
         let w = await CommandWorld()
-        let run = try w.run("trap '' INT; exec sleep 30")
-        #expect(await w.started(run))
-        try await Task.sleep(nanoseconds: 150_000_000)
+        let run = try w.run(CommandWorld.loop("terco", ignoringInterrupt: true))
+        #expect(await w.started(run, "terco"))
         w.store.stopRun(run.id)
         try await Task.sleep(nanoseconds: 100_000_000)
         #expect(run.running) // el Ctrl+C no alcanzó
         #expect(await waitUntil { !run.running })
-        #expect(run.exitCode != 0)
+        #expect(run.exitCode == 143)
     }
 
     @Test("Correr de nuevo un comando terminado reutiliza su pestaña, con el comando actualizado")
@@ -97,10 +103,10 @@ struct StoreCommandLifecycleTests {
         let w = await CommandWorld()
         #expect(await w.store.createBranch(NewBranchRequest(projectId: w.project.id, name: "wt", isNew: true, mode: .worktree)) == nil)
         let branch = try #require(w.store.project(w.project.id)?.branches.last)
-        let inBranch = try w.run("exec sleep 30", branchId: branch.id)
-        let inMain = try w.run("exec sleep 31", branchId: w.project.branches[0].id)
-        #expect(await w.started(inBranch))
-        #expect(await w.started(inMain))
+        let inBranch = try w.run(CommandWorld.loop("en-la-rama"), branchId: branch.id)
+        let inMain = try w.run(CommandWorld.loop("en-main"), branchId: w.project.branches[0].id)
+        #expect(await w.started(inBranch, "en-la-rama"))
+        #expect(await w.started(inMain, "en-main"))
         let terminal = try #require(inBranch.terminal)
         #expect(await w.store.performRemove(.branch(branch.id), deleteWorktree: true))
         #expect(w.store.commandRuns.map(\.id) == [inMain.id])
@@ -112,8 +118,8 @@ struct StoreCommandLifecycleTests {
     @Test("Quitar un proyecto corta sus comandos")
     func removingProjectStopsRuns() async throws {
         let w = await CommandWorld()
-        let run = try w.run("exec sleep 30")
-        #expect(await w.started(run))
+        let run = try w.run(CommandWorld.loop("proyecto"))
+        #expect(await w.started(run, "proyecto"))
         let terminal = try #require(run.terminal)
         #expect(await w.store.performRemove(.project(w.project.id)))
         #expect(w.store.commandRuns.isEmpty)

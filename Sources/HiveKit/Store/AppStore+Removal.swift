@@ -29,14 +29,19 @@ extension AppStore {
         switch item {
         case .project(let id):
             guard let p = project(id), !p.isScratch else { return }
+            let stopping = Self.stoppingSummary(commands: commandRuns.filter { $0.projectId == id && $0.running }.count,
+                                                sessions: p.allSessions.filter { runtimes[$0.id]?.isRunning == true }.count)
             pendingRemoval = PendingRemoval(item: item, title: "¿Quitar «\(p.name)» de Hive?",
-                                            message: "Se cierran sus sesiones. No se borra nada del disco.", isWorktree: false)
+                                            message: [stopping, "No se borra nada del disco."].compactMap { $0 }.joined(separator: " "),
+                                            isWorktree: false)
         case .branch(let id):
             guard let ctx = branchContext(id) else { return }
             let worktree = ctx.branch.mode == .worktree
-            let message = worktree
-                ? "Se cierran sus sesiones. La rama de git no se borra. Podés conservar el worktree en \(ctx.branch.worktreePath ?? "") o borrarlo."
-                : "Se cierran sus sesiones. La rama de git no se borra."
+            let stopping = Self.stoppingSummary(commands: commandRuns.filter { $0.branchId == id && $0.running }.count,
+                                                sessions: ctx.branch.sessions.filter { runtimes[$0.id]?.isRunning == true }.count)
+            let message = [stopping, "La rama de git no se borra.",
+                           worktree ? "Podés conservar el worktree en \(ctx.branch.worktreePath ?? "") o borrarlo." : nil]
+                .compactMap { $0 }.joined(separator: " ")
             pendingRemoval = PendingRemoval(item: item, title: "¿Quitar la rama «\(ctx.branch.name)»?", message: message, isWorktree: worktree)
         case .session(let id):
             guard let ctx = sessionContext(id) else { return }
@@ -64,6 +69,12 @@ extension AppStore {
         case .branch(let id):
             guard let ctx = branchContext(id) else { return false }
             if deleteWorktree, let path = ctx.branch.worktreePath {
+                // Primero se corta lo que corre ahí, así nada escribe en la carpeta mientras git la borra.
+                let terminals = ctx.branch.sessions.compactMap { runtimes[$0.id]?.terminal }
+                    + commandRuns.filter { $0.branchId == id }.compactMap(\.terminal)
+                stopSessions(ctx.branch.sessions.map(\.id))
+                stopRuns { $0.branchId == id }
+                await waitUntilStopped(terminals)
                 let repo = ctx.project.path
                 let git = self.git
                 let r = await Task.detached { git.removeWorktree(path, force: force, in: repo) }.value
@@ -102,6 +113,38 @@ extension AppStore {
         scheduleSave()
         if selectionWasInside { select(.project(ctx.project.id)) }
         refreshGit()
+    }
+
+    /// «Se detienen 2 comandos y 1 sesión.» (nil si no corre nada).
+    static func stoppingSummary(commands: Int, sessions: Int) -> String? {
+        var parts: [String] = []
+        if commands > 0 { parts.append(commands == 1 ? "1 comando" : "\(commands) comandos") }
+        if sessions > 0 { parts.append(sessions == 1 ? "1 sesión" : "\(sessions) sesiones") }
+        guard !parts.isEmpty else { return nil }
+        return "\(commands + sessions == 1 ? "Se detiene" : "Se detienen") \(parts.joined(separator: " y "))."
+    }
+
+    /// Corta las sesiones pero las deja en Hive, dormidas (por si después no se pueden quitar).
+    func stopSessions(_ ids: [UUID]) {
+        for id in ids {
+            guard let rt = runtimes[id] else { continue }
+            tearDown(rt.terminal)
+            rt.terminal = nil
+            rt.events = nil
+            rt.status = .dormant
+            rt.unseen = false
+            environment.notifier.clear(id)
+        }
+        updateBadge()
+    }
+
+    /// Espera a que terminen los procesos de unas terminales ya cortadas, como mucho `timeout` segundos.
+    /// (Un shell interactivo ignora SIGTERM y se cierra recién al soltar su terminal: no lo esperamos de más.)
+    func waitUntilStopped(_ terminals: [HiveTerminalView], timeout: TimeInterval = 1) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while terminals.contains(where: \.isProcessRunning), Date() < deadline {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
     }
 
     func terminate(_ ids: [UUID]) {

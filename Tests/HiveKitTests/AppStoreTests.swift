@@ -243,15 +243,23 @@ struct AppStoreProjectTests {
         let branch = try #require(store.project(project.id)?.branches.last)
         let path = try #require(branch.worktreePath)
         try "cambio".write(toFile: path + "/nuevo.txt", atomically: true, encoding: .utf8)
+        store.requestNewSession(branchId: branch.id, kind: .shell)
+        let session = try #require(store.project(project.id)?.branches.last?.sessions.first)
+        store.activate(session.id)
+        #expect(store.runtimes[session.id]?.isRunning == true)
 
         #expect(!(await store.performRemove(.branch(branch.id), deleteWorktree: true)))
         #expect(store.alert?.actionTitle == "Borrar igual")
         #expect(store.alert?.isDestructive == true)
         #expect(store.project(project.id)?.branches.count == 2)
+        // Las sesiones se cortaron antes de intentar borrar, pero siguen en Hive (dormidas).
+        #expect(store.runtimes[session.id]?.status == .dormant)
+        #expect(store.runtimes[session.id]?.isRunning == false)
 
         #expect(await store.performRemove(.branch(branch.id), deleteWorktree: true, force: true))
         #expect(!FileManager.default.fileExists(atPath: path))
         #expect(store.project(project.id)?.branches.count == 1)
+        #expect(store.runtimes[session.id] == nil)
     }
 
     @Test("Quitar un proyecto cierra sus sesiones; «Terminales» no se puede quitar")
@@ -282,12 +290,31 @@ struct AppStoreProjectTests {
         let project = try #require(store.repoProjects.first)
         _ = await store.createBranch(NewBranchRequest(projectId: project.id, name: "wt", isNew: true, mode: .worktree))
         let worktree = try #require(store.project(project.id)?.branches.last)
+        let path = try #require(worktree.worktreePath)
         store.requestRemoval(.branch(worktree.id))
         #expect(store.pendingRemoval?.isWorktree == true)
+        #expect(store.pendingRemoval?.message == "La rama de git no se borra. Podés conservar el worktree en \(path) o borrarlo.")
         store.requestRemoval(.branch(project.branches[0].id))
         #expect(store.pendingRemoval?.isWorktree == false)
+        #expect(store.pendingRemoval?.message == "La rama de git no se borra.")
         store.requestRemoval(.project(project.id))
         #expect(store.pendingRemoval?.title == "¿Quitar «repo» de Hive?")
+        #expect(store.pendingRemoval?.message == "No se borra nada del disco.")
+
+        // Con cosas corriendo, dice qué se va a detener.
+        store.requestNewSession(branchId: worktree.id, kind: .shell)
+        let session = try #require(store.project(project.id)?.branches.last?.sessions.first)
+        store.activate(session.id)
+        store.saveCommand(projectId: project.id, commandId: nil, name: "Dev", command: "npm run dev")
+        store.saveCommand(projectId: project.id, commandId: nil, name: "Cola", command: "php artisan queue:work")
+        for command in try #require(store.project(project.id)?.commands) { store.run(command.id, projectId: project.id, branchId: worktree.id) }
+        store.requestRemoval(.branch(worktree.id))
+        #expect(store.pendingRemoval?.message == "Se detienen 2 comandos y 1 sesión. La rama de git no se borra. Podés conservar el worktree en \(path) o borrarlo.")
+        store.requestRemoval(.project(project.id))
+        #expect(store.pendingRemoval?.message == "Se detienen 2 comandos y 1 sesión. No se borra nada del disco.")
+        #expect(AppStore.stoppingSummary(commands: 1, sessions: 0) == "Se detiene 1 comando.")
+        #expect(AppStore.stoppingSummary(commands: 0, sessions: 3) == "Se detienen 3 sesiones.")
+        #expect(AppStore.stoppingSummary(commands: 0, sessions: 0) == nil)
     }
 
     @Test("Renombrar, colores, apariencia y orden")
