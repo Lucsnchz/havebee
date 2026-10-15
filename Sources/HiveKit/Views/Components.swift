@@ -136,8 +136,10 @@ final class TerminalHostView: NSView {
     required init?(coder: NSCoder) { fatalError() }
 
     func show(_ view: NSView?) {
-        guard view !== current else { return }
-        current?.removeFromSuperview()
+        // Si es la misma terminal pero otro contenedor se la llevó (el popover de un comando y la
+        // esquinita muestran la misma), hay que volver a ponerla acá.
+        guard view !== current || (view != nil && view?.superview !== self) else { return }
+        if current?.superview === self { current?.removeFromSuperview() }
         current = view
         guard let view else { return }
         view.removeFromSuperview()

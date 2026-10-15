@@ -185,4 +185,26 @@ struct IntegracionFinalTests {
         #expect(!terminal.fullText().contains("VITE"))
         #expect(sent.isEmpty)
     }
+
+    @Test("Si otro contenedor se llevó la terminal, mostrarla de nuevo la trae de vuelta")
+    func terminalHostReclaims() {
+        let first = TerminalHostView(frame: NSRect(x: 0, y: 0, width: 300, height: 200))
+        let second = TerminalHostView(frame: NSRect(x: 0, y: 0, width: 300, height: 200))
+        let terminal = NSView(frame: .zero)
+        let other = NSView(frame: .zero)
+        first.show(terminal)
+        #expect(terminal.superview === first)
+        // El popover del chip muestra la misma terminal del comando: se la lleva.
+        second.show(terminal)
+        #expect(terminal.superview === second)
+        // La esquinita se vuelve a dibujar con la misma terminal: tiene que volver a tenerla.
+        first.show(terminal)
+        #expect(terminal.superview === first)
+        // Cambiar de terminal en un contenedor no le saca la suya a otro.
+        second.show(other)
+        #expect(terminal.superview === first)
+        #expect(other.superview === second)
+        first.show(nil)
+        #expect(terminal.superview == nil)
+    }
 }
