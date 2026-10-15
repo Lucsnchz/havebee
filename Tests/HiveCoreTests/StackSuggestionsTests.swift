@@ -25,11 +25,142 @@ struct StackSuggestionsTests {
         }
         """)
         let all = CommandSuggestions.detect(projectPath: dir.path)
+        // El sufijo de defaultConfig vale para todas las variantes: la app instalada es com.dizeg.whatsapp.debug.
         #expect(all.map(\.command) == [
             "./gradlew assembleDebug", "./gradlew installDebug", "./gradlew testDebugUnitTest", "./gradlew lint",
-            "adb logcat --pid=$(adb shell pidof -s com.dizeg.whatsapp)",
+            "adb logcat --pid=$(adb shell pidof -s com.dizeg.whatsapp.debug)",
         ])
         #expect(all.map(\.name) == ["Compilar debug", "Instalar en el teléfono", "Tests", "Lint", "Logcat de la app"])
+        #expect(CommandSuggestions.androidApplicationId(projectPath: dir.path) == "com.dizeg.whatsapp")
+    }
+
+    /// Como los proyectos reales del usuario: sabores con sufijo, cadenas con `${…}` y llaves en comentarios.
+    static let flavoredKotlin = #"""
+    android {
+        namespace = "com.dizeg.mobile"
+        defaultConfig {
+            applicationId = "com.dizeg.mobile"
+            buildConfigField("String", "WEB_BASE_URL", "\"https://dizeg.com\"")
+        }
+        // Una llave suelta en un comentario: }
+        flavorDimensions += "environment"
+        productFlavors {
+            create("demo") {
+                dimension = "environment"
+                applicationIdSuffix = ".demo"
+                buildConfigField("String", "DEV_EMAIL", "\"${devPropEscaped("dev.email")}\"")
+            }
+            create("local") {
+                dimension = "environment"
+                applicationIdSuffix = ".local"
+                buildConfigField("String", "X", "\"{\"")
+            }
+            create("prod") {
+                dimension = "environment"
+            }
+        }
+        productFlavors.configureEach {
+            buildConfigField("boolean", "FIREBASE_ENABLED", "true")
+        }
+        buildTypes {
+            debug {
+                enableUnitTestCoverage = true
+            }
+            release {
+                isDebuggable = false
+            }
+        }
+    }
+    """#
+
+    @Test("Android con sabores: las tareas y el id llevan el sabor del día a día («local»)")
+    func androidFlavors() throws {
+        let dir = TempDir()
+        dir.write("gradlew")
+        dir.write("app/build.gradle.kts", Self.flavoredKotlin)
+        let app = try #require(AndroidApp.read(projectPath: dir.path))
+        #expect(app.applicationId == "com.dizeg.mobile")
+        #expect(app.flavors.map(\.name) == ["demo", "local", "prod"])
+        #expect(app.flavors.map(\.suffix) == [".demo", ".local", ""])
+        #expect(app.debugVariant == AndroidApp.Variant(flavor: "local", applicationId: "com.dizeg.mobile.local"))
+        let all = CommandSuggestions.detect(projectPath: dir.path)
+        #expect(all.map(\.command) == [
+            "./gradlew assembleDebug", "./gradlew installLocalDebug", "./gradlew testLocalDebugUnitTest", "./gradlew lint",
+            "adb logcat --pid=$(adb shell pidof -s com.dizeg.mobile.local)",
+        ])
+        #expect(all.map(\.name) == ["Compilar debug", "Instalar en el teléfono (local)", "Tests (local)", "Lint", "Logcat de la app (local)"])
+    }
+
+    @Test("Groovy: sin «local» usa el primer sabor y suma el sufijo de debug (con o sin punto)")
+    func androidGroovyFlavorsAndDebugSuffix() {
+        let app = AndroidApp.parse("""
+        android {
+            defaultConfig {
+                applicationId 'ar.emplag.app'
+            }
+            buildTypes {
+                release { minifyEnabled true }
+                debug {
+                    applicationIdSuffix 'debug'
+                }
+            }
+            productFlavors {
+                gratis {
+                    dimension 'plan'
+                    applicationIdSuffix '.gratis'
+                }
+                pago {
+                    dimension 'plan'
+                    applicationId 'ar.emplag.pago'
+                }
+            }
+        }
+        """)
+        #expect(app.debugSuffix == "debug")
+        #expect(app.debugVariant == AndroidApp.Variant(flavor: "gratis", applicationId: "ar.emplag.app.gratis.debug"))
+        let pago = AndroidApp(applicationId: app.applicationId, debugSuffix: app.debugSuffix, flavors: Array(app.flavors.reversed()))
+        #expect(pago.debugVariant?.applicationId == "ar.emplag.pago.debug") // el sabor puede tener su propio id
+    }
+
+    @Test("Sin sabores, el sufijo de debug también va en el logcat")
+    func androidDebugSuffix() {
+        let app = AndroidApp.parse("""
+        android {
+            namespace = "com.app"
+            defaultConfig { applicationId = "com.app.id" }
+            buildTypes { getByName("debug") { applicationIdSuffix = ".dev" } }
+        }
+        """)
+        #expect(CommandSuggestions.gradleSuggestions(app).map(\.command) == [
+            "./gradlew assembleDebug", "./gradlew installDebug", "./gradlew testDebugUnitTest", "./gradlew lint",
+            "adb logcat --pid=$(adb shell pidof -s com.app.id.dev)",
+        ])
+    }
+
+    @Test("Sabores de varias dimensiones: no adivina la variante y sugiere solo compilar y lint")
+    func androidMultipleDimensions() {
+        let app = AndroidApp.parse("""
+        android {
+            defaultConfig { applicationId = "com.app" }
+            productFlavors {
+                create("free") { dimension = "plan" }
+                create("arm") { dimension = "abi" }
+            }
+        }
+        """)
+        #expect(app.debugVariant == nil)
+        #expect(CommandSuggestions.gradleSuggestions(app).map(\.command) == ["./gradlew assembleDebug", "./gradlew lint"])
+    }
+
+    @Test("Los comentarios y las cadenas no cuentan como llaves")
+    func gradleMasking() {
+        let text = GradleText(#"a { "}" /* } */ b("${x { "}" }}") // }"# + "\n}")
+        #expect(text.blocks(named: "a").count == 1)
+        #expect(text.closing(2) == text.bytes.count - 1)
+        #expect(GradleText.childName("\n  // comentario\n  create(\"local\") ") == "local")
+        #expect(GradleText.childName("debug") == "debug")
+        #expect(GradleText.childName("all") == nil)
+        #expect(GradleText.childName("if (x)") == nil)
     }
 
     @Test("applicationId en Groovy, con paréntesis o tomado del namespace", arguments: [
