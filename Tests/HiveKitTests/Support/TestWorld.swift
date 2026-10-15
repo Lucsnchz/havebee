@@ -86,7 +86,8 @@ final class TestWorld {
             isAppActive: { [unowned self] in self.appActive },
             setDockBadge: { [unowned self] in self.badge = $0 },
             now: { [unowned self] in self.now },
-            saveDelay: 0)
+            saveDelay: 0,
+            stopGrace: 0.2)
     }
 
     func makeStore() -> AppStore { AppStore(environment: environment) }

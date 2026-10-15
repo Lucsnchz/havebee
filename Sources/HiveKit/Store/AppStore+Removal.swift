@@ -83,6 +83,7 @@ extension AppStore {
         case .project(let id):
             guard let p = project(id), !p.isScratch else { return false }
             terminate(p.allSessions.map(\.id))
+            stopRuns { $0.projectId == id }
             let selectionWasInside = projects.contains(selection, inProject: id)
             projects.removeAll { $0.id == id }
             if selectionWasInside { select(nil) }
@@ -94,6 +95,7 @@ extension AppStore {
     func dropBranch(_ id: UUID) {
         guard let ctx = branchContext(id) else { return }
         terminate(ctx.branch.sessions.map(\.id))
+        stopRuns { $0.branchId == id }
         let selectionWasInside = selection == .branch(id) || ctx.branch.sessions.contains(where: { selection == .session($0.id) })
         projects.updateProject(ctx.project.id) { $0.branches.removeAll { $0.id == id } }
         gitGeneration += 1

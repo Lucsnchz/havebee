@@ -52,6 +52,15 @@ extension AppStore {
         }
         let dir = project.directory(for: branch)
         guard folderExists(dir, branch: branch, warnKey: command.id) else { return }
+        // Ya terminó en esta rama: se vuelve a correr en la misma pestaña en lugar de abrir otra.
+        if let finished = commandRuns.first(where: { $0.commandId == commandId && $0.branchId == branch.id }) {
+            finished.name = command.name
+            finished.command = command.command
+            tearDown(finished.terminal)
+            start(finished)
+            showRun(finished.id)
+            return
+        }
         let run = CommandRun(projectId: project.id, branchId: branch.id, branchName: branch.name, commandId: command.id,
                              name: command.name, command: command.command, directory: dir)
         start(run)
@@ -85,12 +94,20 @@ extension AppStore {
 
     public func stopRun(_ id: UUID) {
         guard let run = commandRuns.first(where: { $0.id == id }), run.running, let terminal = run.terminal else { return }
-        // Como apretar Ctrl+C; si no termina en unos segundos, lo cortamos.
+        // Como apretar Ctrl+C; si no termina en el plazo de gracia, lo cortamos.
         terminal.sendInput([3])
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak run] in
-            guard let run, run.running else { return }
-            run.terminal?.terminate()
+        DispatchQueue.main.asyncAfter(deadline: .now() + environment.stopGrace) { [weak run, weak terminal] in
+            MainActor.assumeIsolated {
+                // Solo si sigue siendo la misma terminal: si lo reiniciaste mientras tanto, el nuevo no se toca.
+                guard let run, let terminal, run.terminal === terminal, run.running else { return }
+                terminal.terminate()
+            }
         }
+    }
+
+    /// Corta y cierra los comandos que cumplen la condición (al quitar su rama o su proyecto).
+    func stopRuns(where predicate: (CommandRun) -> Bool) {
+        for run in commandRuns where predicate(run) { closeRun(run.id) }
     }
 
     public func restartRun(_ id: UUID) {

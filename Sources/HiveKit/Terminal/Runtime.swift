@@ -55,8 +55,8 @@ public final class CommandRun: Identifiable {
     public let branchId: UUID
     public let branchName: String
     public let commandId: UUID
-    public let name: String
-    public let command: String
+    public internal(set) var name: String
+    public internal(set) var command: String
     public let directory: String
     var terminal: HiveTerminalView?
     public internal(set) var running = false

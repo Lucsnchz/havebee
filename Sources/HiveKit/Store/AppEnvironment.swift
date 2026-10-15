@@ -47,12 +47,14 @@ public struct AppEnvironment {
     public var now: () -> Date
     /// Espera antes de guardar el estado (agrupa cambios seguidos). En los tests suele ser 0.
     public var saveDelay: TimeInterval
+    /// Plazo entre el Ctrl+C de «Detener» y cortar el comando si no terminó.
+    public var stopGrace: TimeInterval
 
     public init(paths: HivePaths, git: GitClient, agents: AgentStorage, notifier: SessionNotifying, processes: ProcessStarting,
                 settings: @escaping () -> AppSettings, inheritedEnvironment: [String: String], home: URL, loginShell: String,
                 cachedLoginPATH: String?, resolveLoginPATH: @escaping @Sendable () -> String?, storeLoginPATH: @escaping (String) -> Void,
                 logos: @escaping (String) -> [String], isAppActive: @escaping () -> Bool, setDockBadge: @escaping (String?) -> Void,
-                now: @escaping () -> Date, saveDelay: TimeInterval) {
+                now: @escaping () -> Date, saveDelay: TimeInterval, stopGrace: TimeInterval = 3) {
         self.paths = paths
         self.git = git
         self.agents = agents
@@ -70,6 +72,7 @@ public struct AppEnvironment {
         self.setDockBadge = setDockBadge
         self.now = now
         self.saveDelay = saveDelay
+        self.stopGrace = stopGrace
     }
 
     public static func live() -> AppEnvironment {
@@ -95,6 +98,7 @@ public struct AppEnvironment {
             isAppActive: { NSApp.isActive && NSApp.keyWindow?.isVisible == true },
             setDockBadge: { NSApp?.dockTile.badgeLabel = $0 },
             now: Date.init,
-            saveDelay: 0.4)
+            saveDelay: 0.4,
+            stopGrace: 3)
     }
 }
