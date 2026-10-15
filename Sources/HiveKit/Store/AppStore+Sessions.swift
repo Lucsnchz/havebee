@@ -86,7 +86,7 @@ extension AppStore {
                 environment.processes.start(terminal, executable: executable, args: plan.args, environment: plan.environmentList, directory: dir)
             } else {
                 let kind = ctx.session.kind
-                terminal.feed(text: "\r\n  No encontré `\(binary)` en tu PATH.\r\n\r\n  Para instalar \(kind.label):\r\n    \(kind.installHint)\r\n\r\n  Después tocá «Reanudar».\r\n")
+                terminal.feed(text: "\r\n  No encontré `\(binary)` en tu PATH.\r\n\r\n  Para instalar \(kind.label):\r\n    \(kind.installHint)\r\n\r\n  Después tocá «Reintentar».\r\n")
                 started = false
             }
         } else {

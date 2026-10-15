@@ -120,4 +120,23 @@ struct IntegracionFinalTests {
         ImageCache.forget(broken)
         #expect(ImageCache.image(at: broken) == nil)
     }
+
+    @Test("Si falta el agente, la terminal dice que toques «Reintentar», como el botón de abajo")
+    func missingAgentText() async throws {
+        let world = TestWorld()
+        world.processes.installed = []
+        let repo = GitRepo(name: "tienda")
+        defer { withExtendedLifetime(repo) {} }
+        let store = world.makeStore()
+        await store.addProject(at: repo.path)
+        let project = try #require(store.repoProjects.first)
+        store.requestNewSession(branchId: project.branches[0].id, kind: .codex)
+        let session = try #require(store.project(project.id)?.branches[0].sessions.first)
+        store.activate(session.id)
+        #expect(await waitUntil { store.runtimes[session.id]?.terminal != nil })
+        let text = store.runtimes[session.id]?.terminal?.fullText() ?? ""
+        #expect(text.contains("No encontré `codex`"))
+        #expect(text.contains("«Reintentar»"))
+        #expect(!text.contains("Reanudar"))
+    }
 }
