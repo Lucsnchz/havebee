@@ -19,7 +19,11 @@ extension AppStore {
         guard !name.isEmpty else { return }
         switch request.item {
         case .project(let id): projects.updateProject(id) { $0.name = name }
-        case .session(let id): projects.updateSession(id) { $0.name = name }
+        case .session(let id):
+            projects.updateSession(id) { session in
+                session.name = name
+                session.autoNamed = false // la nombraste vos: Hive no la vuelve a renombrar
+            }
         case .branch: return
         }
         scheduleSave()

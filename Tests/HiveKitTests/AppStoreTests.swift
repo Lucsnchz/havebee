@@ -489,7 +489,7 @@ struct AppStoreSessionTests {
         #expect(s.world.badge == "1")
         let post = try #require(s.world.notifier.posts.last)
         #expect(post.title == "repo › main")
-        #expect(post.subtitle == "Claude 1 · Tu turno")
+        #expect(post.subtitle == "Hacé el login · Tu turno") // tomó el nombre del primer pedido
         #expect(post.body == "Listo, hice el login.")
         let updated = try #require(s.store.sessionContext(session.id)?.session)
         #expect(updated.lastMessage == "Listo, hice el login.")

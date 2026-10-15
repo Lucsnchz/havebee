@@ -122,4 +122,43 @@ struct StoreAgentInputTests {
         #expect(rt.status == .waiting && rt.notice == nil)
         #expect(s.world.notifier.posts.last?.subtitle.hasSuffix("· Tu turno") == true)
     }
+
+    @Test("La primera sesión de Claude se renombra sola con el primer pedido, una sola vez")
+    func autoName() async throws {
+        let s = try await AgentSetup()
+        let (session, _) = try s.open(.claude)
+        func prompt(_ text: String) {
+            s.store.handle([HiveEvent(sessionId: session.id, source: "claude", name: "UserPromptSubmit", payload: ["prompt": .string(text)])])
+        }
+        prompt("/clear")
+        #expect(s.store.sessionContext(session.id)?.session.name == "Claude 1") // un comando no da nombre
+        prompt("Agregá validación de stock al checkout")
+        #expect(s.store.sessionContext(session.id)?.session.name == "Agregá validación de stock al")
+        prompt("Ahora corré los tests")
+        #expect(s.store.sessionContext(session.id)?.session.name == "Agregá validación de stock al")
+        // Se guardó.
+        #expect(s.world.makeStore().sessionContext(session.id)?.session.name == "Agregá validación de stock al")
+    }
+
+    @Test("Una sesión renombrada a mano no se toca, aunque se llame «Claude 3»")
+    func manualNameIsKept() async throws {
+        let s = try await AgentSetup()
+        let (session, _) = try s.open(.claude)
+        s.store.beginRename(.session(session.id))
+        s.store.renameText = "Claude 3"
+        s.store.commitRename(try #require(s.store.rename))
+        #expect(s.store.sessionContext(session.id)?.session.autoNamed == false)
+        s.store.handle([HiveEvent(sessionId: session.id, source: "claude", name: "UserPromptSubmit", payload: ["prompt": "Arreglá el login"])])
+        #expect(s.store.sessionContext(session.id)?.session.name == "Claude 3")
+    }
+
+    @Test("Codex también toma el nombre de lo primero que le pediste")
+    func autoNameCodex() async throws {
+        let s = try await AgentSetup()
+        let (session, _) = try s.open(.codex)
+        s.store.handle([HiveEvent(sessionId: session.id, source: "codex", name: "notify",
+                                  payload: ["type": "agent-turn-complete", "thread-id": "t-1", "input-messages": ["Subí la versión a 2.0"],
+                                            "last-assistant-message": "Hecho"])])
+        #expect(s.store.sessionContext(session.id)?.session.name == "Subí la versión a 2.0")
+    }
 }

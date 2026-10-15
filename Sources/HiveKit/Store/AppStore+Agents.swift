@@ -37,6 +37,7 @@ extension AppStore {
                                    sessionId: ctx.session.id, agentName: ctx.session.kind.label)
                 }
                 historyVersions[ctx.session.id, default: 0] += 1
+                if let prompt = outcome.history.first(where: { $0.role == .user })?.text { autoName(ctx.session, prompt: prompt) }
             }
             if outcome.agentSessionId != nil || outcome.reply != nil || outcome.touchesActivity {
                 let now = environment.now()
@@ -49,6 +50,13 @@ extension AppStore {
             }
             if let status = outcome.status { setStatus(rt, status, notify: outcome.notification) }
         }
+    }
+
+    /// La primera vez que le pedís algo a un agente, la sesión toma ese nombre (si no la renombraste vos).
+    func autoName(_ session: Session, prompt: String) {
+        guard SessionTitle.canRename(session), let title = SessionTitle.from(prompt: prompt) else { return }
+        projects.updateSession(session.id) { $0.name = title }
+        scheduleSave()
     }
 
     /// Cambia el estado de una sesión. Si pasa a esperarte y no la estás mirando, la marca como

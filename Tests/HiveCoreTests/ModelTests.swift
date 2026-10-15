@@ -71,7 +71,7 @@ struct ModelTests {
     @Test("El estado guardado ida y vuelta queda igual")
     func stateRoundTrip() throws {
         let session = Session(name: "Claude 1", kind: .claude, createdAt: .reference, agentSessionId: "abc",
-                              lastMessage: "Listo", lastActivityAt: .reference, archivedAt: nil)
+                              lastMessage: "Listo", lastActivityAt: .reference, archivedAt: nil, autoNamed: false)
         let branch = Branch(name: "main", mode: .main, sessions: [session], color: .red)
         let project = Project(name: "demo", path: "/repo", branches: [branch], ignoredWorktrees: ["/x"], color: .green,
                               icon: .image("/logo.png"), commands: [ProjectCommand(name: "Dev", command: "npm run dev")])
@@ -109,6 +109,7 @@ struct ModelTests {
         let session = try #require(project.branches.first?.sessions.first)
         #expect(session.lastMessage == nil)
         #expect(!session.isArchived)
+        #expect(session.autoNamed == nil) // cuenta como automático
     }
 
     @Test("Íconos de proyecto se guardan y leen", arguments: [
