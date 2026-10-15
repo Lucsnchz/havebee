@@ -199,6 +199,12 @@ extension AppStore {
         let known = gitDirectories()
         status = status.filter { known.contains($0.key) }
         if dirStatus != status { dirStatus = status }
+        var missing = missingWorktrees
+        for dir in dirs {
+            if scan.missing.contains(dir) { missing.insert(dir) } else { missing.remove(dir) }
+        }
+        missing = missing.filter { known.contains($0) }
+        if missingWorktrees != missing { missingWorktrees = missing }
         // Hive cambió git mientras leíamos: lo leído puede ser viejo. La pasada que pidió ese cambio lo corrige.
         guard generation == gitGeneration else { return }
         var merged = mainHeads
@@ -252,6 +258,8 @@ private struct GitScan: Sendable {
     var statuses: [String: GitStatus] = [:]
     var heads: [UUID: String] = [:]
     var worktrees: [UUID: [GitWorktree]] = [:]
+    /// Carpetas que no existen.
+    var missing: Set<String> = []
 
     private enum Job: Sendable {
         case status(String)
@@ -259,7 +267,7 @@ private struct GitScan: Sendable {
     }
 
     private enum Outcome: Sendable {
-        case status(String, GitStatus?)
+        case status(String, GitStatus?, exists: Bool)
         case head(UUID, String, [GitWorktree]?)
     }
 
@@ -271,7 +279,8 @@ private struct GitScan: Sendable {
             func perform(_ job: Job) -> Outcome {
                 switch job {
                 case .status(let dir):
-                    return .status(dir, git.status(dir))
+                    guard FileManager.default.fileExists(atPath: dir) else { return .status(dir, nil, exists: false) }
+                    return .status(dir, git.status(dir), exists: true)
                 case .head(let id, let path):
                     return .head(id, git.currentBranch(path) ?? "", worktrees ? git.worktrees(path) : nil)
                 }
@@ -284,8 +293,9 @@ private struct GitScan: Sendable {
             var scan = GitScan()
             while let outcome = await group.next() {
                 switch outcome {
-                case .status(let dir, let status):
+                case .status(let dir, let status, let exists):
                     scan.statuses[dir] = status
+                    if !exists { scan.missing.insert(dir) }
                 case .head(let id, let head, let trees):
                     scan.heads[id] = head
                     if let trees { scan.worktrees[id] = trees }

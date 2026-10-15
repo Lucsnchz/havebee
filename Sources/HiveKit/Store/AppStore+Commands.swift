@@ -51,10 +51,7 @@ extension AppStore {
             return
         }
         let dir = project.directory(for: branch)
-        guard FileManager.default.fileExists(atPath: dir) else {
-            alert = AppAlert(title: "La carpeta no existe", message: dir)
-            return
-        }
+        guard folderExists(dir, branch: branch, warnKey: command.id) else { return }
         let run = CommandRun(projectId: project.id, branchId: branch.id, branchName: branch.name, commandId: command.id,
                              name: command.name, command: command.command, directory: dir)
         start(run)

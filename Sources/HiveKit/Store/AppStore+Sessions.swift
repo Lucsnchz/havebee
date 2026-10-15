@@ -35,10 +35,7 @@ extension AppStore {
     func launch(_ id: UUID) {
         guard let ctx = sessionContext(id), let rt = runtimes[id], !rt.isRunning else { return }
         let dir = ctx.project.directory(for: ctx.branch)
-        guard FileManager.default.fileExists(atPath: dir) else {
-            alert = AppAlert(title: "La carpeta no existe", message: dir)
-            return
-        }
+        guard folderExists(dir, branch: ctx.branch, warnKey: id) else { return }
         let plan = LaunchPlanner.plan(launchContext(for: ctx.session, project: ctx.project, branch: ctx.branch, directory: dir))
 
         let terminal = HiveTerminalView(frame: NSRect(x: 0, y: 0, width: 900, height: 600))

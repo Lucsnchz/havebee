@@ -16,6 +16,8 @@ public final class AppStore {
     var dirStatus: [String: GitStatus] = [:]
     /// Rama que tiene hoy la carpeta principal de cada proyecto ("" si HEAD está desacoplado).
     var mainHeads: [UUID: String] = [:]
+    /// Carpetas de worktrees que ya no existen (se borraron o movieron por fuera de Hive).
+    public internal(set) var missingWorktrees: Set<String> = []
     public internal(set) var runtimes: [UUID: SessionRuntime] = [:]
     var lastSessionByProject: [UUID: UUID] = [:]
     /// Sube cada vez que se agrega algo al historial de una sesión (para refrescar el panel).
@@ -70,6 +72,8 @@ public final class AppStore {
     @ObservationIgnored var gitGeneration = 0
     /// Última revisión de git hecha con la app en segundo plano.
     @ObservationIgnored var lastBackgroundRefresh = Date.distantPast
+    /// Sesiones y comandos a los que ya avisamos que su carpeta no existe (para no repetirlo).
+    @ObservationIgnored var warnedMissing: Set<UUID> = []
 
     /// Carga el estado guardado. No arranca nada: eso lo hace `start()`.
     public init(environment: AppEnvironment) {
@@ -131,6 +135,27 @@ public final class AppStore {
     }
 
     public func mainHead(of projectId: UUID) -> String { mainHeads[projectId] ?? "" }
+
+    /// El worktree de la rama ya no está en disco.
+    public func isMissing(_ branch: Branch) -> Bool {
+        guard branch.mode == .worktree, let path = branch.worktreePath else { return false }
+        return missingWorktrees.contains(path)
+    }
+
+    /// Revisa que exista la carpeta donde se va a lanzar algo. Si no está, avisa una sola vez por
+    /// sesión o comando (`warnKey`), no cada vez que se vuelve a mirar.
+    func folderExists(_ dir: String, branch: Branch, warnKey: UUID) -> Bool {
+        guard !FileManager.default.fileExists(atPath: dir) else {
+            warnedMissing.remove(warnKey)
+            return true
+        }
+        if branch.mode == .worktree { missingWorktrees.insert(dir) }
+        if warnedMissing.insert(warnKey).inserted {
+            alert = AppAlert(title: "No encuentro la carpeta de «\(branch.name)»",
+                             message: "\(dir)\n\nSe borró o se movió por fuera de Hive. Si ya no la usás, quitá la rama de Hive.")
+        }
+        return false
+    }
 
     public var workingCount: Int { runtimes.values.filter { $0.status == .working }.count }
     public var runningCommandsCount: Int { commandRuns.filter(\.running).count }
