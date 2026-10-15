@@ -65,6 +65,8 @@ public final class AppStore {
     @ObservationIgnored var loginPATH: String?
     @ObservationIgnored var saveWork: DispatchWorkItem?
     @ObservationIgnored var watcher: EventWatcher?
+    /// Cola serie donde el watcher lee los eventos de los agentes (fuera del hilo principal).
+    nonisolated static let eventsQueue = DispatchQueue(label: "hive.events", qos: .userInitiated)
     @ObservationIgnored var timers: [Timer] = []
     @ObservationIgnored var refreshTask: Task<Void, Never>?
     /// Llegó un pedido de revisión mientras otra corría: al terminar se hace otra pasada.
@@ -122,8 +124,10 @@ public final class AppStore {
         // Lo que se eliminó del historial hace más de 30 días se borra de verdad.
         let history = self.history
         Task.detached(priority: .background) { history.purge() }
-        watcher = EventWatcher(directory: environment.paths.eventsDir) { [weak self] events in
-            Task { @MainActor in self?.handle(events) }
+        // Los archivos de eventos se leen y se borran en una cola propia; al hilo principal solo se
+        // salta para procesarlos, en el mismo orden en que llegaron.
+        watcher = EventWatcher(directory: environment.paths.eventsDir, queue: Self.eventsQueue) { [weak self] events in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.handle(events) } }
         }
         watcher?.start()
         environment.notifier.onOpen = { [weak self] id in self?.openFromNotification(id) }

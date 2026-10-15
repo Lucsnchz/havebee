@@ -124,6 +124,9 @@ public final class EventWatcher: @unchecked Sendable {
 
     deinit { stop() }
 
+    /// La cola donde se leen los archivos y se llama a `handler`.
+    public var queueLabel: String { queue.label }
+
     /// Empieza a mirar la carpeta. Llamarlo otra vez reemplaza lo anterior: nunca quedan dos fuentes.
     public func start() {
         stop()

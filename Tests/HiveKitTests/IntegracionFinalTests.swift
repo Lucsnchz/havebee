@@ -225,4 +225,31 @@ struct IntegracionFinalTests {
                                  size: CGSize(width: 520, height: 40), name: "comandos-sugeridos")
         #expect(drawn.allSatisfy { $0 > 1 })
     }
+
+    @Test("Los eventos de los agentes se leen en una cola propia y se procesan en orden")
+    func eventsOffMain() async throws {
+        let world = TestWorld()
+        let repo = GitRepo(name: "tienda")
+        defer { withExtendedLifetime(repo) {} }
+        let store = world.makeStore()
+        await store.addProject(at: repo.path)
+        let project = try #require(store.repoProjects.first)
+        store.requestNewSession(branchId: project.branches[0].id, kind: .claude)
+        let session = try #require(store.project(project.id)?.allSessions.first)
+        store.activate(session.id)
+        store.select(nil)
+        store.start()
+        defer { store.shutdown() }
+        #expect(store.watcher?.queueLabel == "hive.events")
+        let dir = world.paths.eventsDir
+        let prompt = "\(session.id.uuidString)\tclaude\tUserPromptSubmit\n{\"prompt\": \"Revisá los tests\"}"
+        let stop = "\(session.id.uuidString)\tclaude\tStop\n{\"last_assistant_message\": \"Pasan todos.\"}"
+        let first = dir.appendingPathComponent("1.evt")
+        let second = dir.appendingPathComponent("2.evt")
+        try prompt.write(to: first, atomically: true, encoding: .utf8)
+        try stop.write(to: second, atomically: true, encoding: .utf8)
+        // Primero el pedido (trabajando) y después el Stop: queda esperándote, con el nombre del pedido.
+        #expect(await waitUntil { store.runtimes[session.id]?.status == .waiting })
+        #expect(store.sessionContext(session.id)?.session.name == "Revisá los tests")
+    }
 }
