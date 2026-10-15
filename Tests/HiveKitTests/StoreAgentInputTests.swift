@@ -112,8 +112,13 @@ struct StoreAgentInputTests {
         s.permission(session.id, "Permiso para Bash: npm test")
         #expect(rt.notice == "Permiso para Bash: npm test")
         #expect(s.world.notifier.posts.last?.subtitle.hasSuffix("· Necesita permiso") == true)
-        s.permission(session.id, "Permiso para editar app.php") // otro pedido lo reemplaza
-        #expect(rt.notice == "Permiso para editar app.php")
+        // Otro pedido lo reemplaza. Llega como PermissionRequest: un Notification permission_prompt
+        // mientras ya pide permiso es el aviso repetido de Claude (a los 6 s) y no cambia nada.
+        s.store.handle([HiveEvent(sessionId: session.id, source: "claude", name: "PermissionRequest",
+                                  payload: ["tool_name": "Edit", "tool_input": ["file_path": "app.php"]])])
+        #expect(rt.notice == "Pide permiso para editar app.php")
+        s.permission(session.id, "Claude needs your permission to use Edit")
+        #expect(rt.notice == "Pide permiso para editar app.php")
         s.type(session.id, [13]) // lo aprobaste
         #expect(rt.status == .working)
         #expect(rt.notice == nil)
