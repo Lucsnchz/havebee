@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import HiveCore
+import SwiftUI
 import Testing
 @testable import HiveKit
 
@@ -188,5 +189,132 @@ struct StoreLifecycleTests {
         #expect(!rt.unseen)
         #expect(world.badge == nil)
         #expect(world.notifier.cleared.contains(session.id))
+    }
+}
+
+/// Dibuja una vista fuera de pantalla (como las capturas de ViewRenderTests) y la guarda en PNG si
+/// está `HIVE_SNAPSHOTS`. Devuelve cuántos colores distintos tiene (una vista vacía tiene uno).
+@MainActor
+private func renderNucleoSnapshot(_ view: some View, size: CGSize, name: String, dark: Bool = true) async -> Int {
+    _ = NSApplication.shared
+    let appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+    let host = NSHostingView(rootView: view.frame(width: size.width, height: size.height)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .environment(\.colorScheme, dark ? .dark : .light))
+    let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled, .closable], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.contentView = host
+    window.appearance = appearance
+    host.appearance = appearance
+    host.layoutSubtreeIfNeeded()
+    try? await Task.sleep(nanoseconds: 400_000_000)
+    host.layoutSubtreeIfNeeded()
+    defer { window.close() }
+    guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return 0 }
+    host.cacheDisplay(in: host.bounds, to: rep)
+    if let dir = ProcessInfo.processInfo.environment["HIVE_SNAPSHOTS"], let png = rep.representation(using: .png, properties: [:]) {
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        try? png.write(to: URL(fileURLWithPath: dir).appendingPathComponent("\(name).png"))
+    }
+    var colors = Set<String>()
+    for x in stride(from: 0, to: rep.pixelsWide, by: max(rep.pixelsWide / 40, 1)) {
+        for y in stride(from: 0, to: rep.pixelsHigh, by: max(rep.pixelsHigh / 40, 1)) {
+            if let c = rep.colorAt(x: x, y: y) { colors.insert(String(format: "%.2f-%.2f-%.2f", c.redComponent, c.greenComponent, c.blueComponent)) }
+        }
+    }
+    return colors.count
+}
+
+@MainActor
+@Suite("Inicio y bienvenida", .serialized)
+struct HomeAndWelcomeTests {
+    /// Dos repos con sesiones en distintos estados.
+    @MainActor
+    private final class Demo {
+        let world = TestWorld()
+        let shop = GitRepo(name: "tienda")
+        let api = GitRepo(name: "api")
+        let store: AppStore
+        var sessions: [String: Session] = [:]
+
+        init() async throws {
+            store = world.makeStore()
+            await store.addProject(at: shop.path)
+            await store.addProject(at: api.path)
+            let shop = try #require(store.repoProjects.first), api = try #require(store.repoProjects.last)
+            func open(_ branch: Branch, _ kind: SessionKind, _ key: String) throws {
+                store.requestNewSession(branchId: branch.id, kind: kind)
+                sessions[key] = try #require(store.branchContext(branch.id)?.branch.sessions.last)
+                store.activate(sessions[key]!.id)
+            }
+            try open(shop.branches[0], .claude, "permiso")
+            try open(shop.branches[0], .codex, "turno")
+            try open(api.branches[0], .claude, "trabaja")
+            try open(api.branches[0], .shell, "terminal")
+            store.select(nil)
+            for (key, prompt) in [("permiso", "Agregá validación de stock al checkout"), ("trabaja", "Migrá la API de pagos a la v2")] {
+                store.handle([HiveEvent(sessionId: sessions[key]!.id, source: "claude", name: "UserPromptSubmit", payload: ["prompt": .string(prompt)])])
+            }
+            store.handle([
+                HiveEvent(sessionId: sessions["permiso"]!.id, source: "claude", name: "Notification",
+                          payload: ["notification_type": "permission_prompt", "message": "Claude necesita permiso para usar Bash"]),
+                HiveEvent(sessionId: sessions["turno"]!.id, source: "codex", name: "notify",
+                          payload: ["type": "agent-turn-complete", "thread-id": "t-1", "input-messages": ["Revisá los tests de pagos"],
+                                    "last-assistant-message": "Listo: los tests de pagos pasan y agregué dos casos nuevos."]),
+            ])
+        }
+    }
+
+    @Test("Los grupos del Inicio: permiso, tu turno, trabajando y recientes, sin grupos vacíos")
+    func groups() async throws {
+        let demo = try await Demo()
+        let store = demo.store
+        let groups = HomeSessionGroups.build(projects: store.projects, status: { store.runtimes[$0]?.status })
+        #expect(groups.map(\.title) == ["Necesitan permiso", "Tu turno", "Trabajando", "Recientes"])
+        #expect(groups[0].items.map(\.id) == [demo.sessions["permiso"]!.id])
+        #expect(groups[1].items.map(\.id) == [demo.sessions["turno"]!.id])
+        #expect(groups[2].items.map(\.id) == [demo.sessions["trabaja"]!.id])
+        #expect(groups[3].items.map(\.id) == [demo.sessions["terminal"]!.id])
+        #expect(groups[0].items[0].project.name == "tienda")
+
+        // Recientes: como mucho 6, primero la más reciente, sin las archivadas.
+        let project = try #require(store.repoProjects.first)
+        for _ in 0..<8 {
+            demo.world.advance(60)
+            store.requestNewSession(branchId: project.branches[0].id, kind: .shell)
+        }
+        let newest = try #require(store.project(project.id)?.branches[0].sessions.last)
+        store.archive(newest.id)
+        let regrouped = HomeSessionGroups.build(projects: store.projects, status: { store.runtimes[$0]?.status })
+        let recent = try #require(regrouped.last)
+        #expect(recent.items.count == HomeSessionGroups.recentLimit)
+        #expect(!recent.items.contains { $0.id == newest.id })
+        #expect(recent.items.map(\.session.recency) == recent.items.map(\.session.recency).sorted(by: >))
+        #expect(HomeSessionGroups.build(projects: [], status: { _ in nil }).isEmpty)
+    }
+
+    @Test("Sin selección se ve el Inicio en las dos vistas; sin proyectos, la bienvenida")
+    func emptyDetail() async throws {
+        let demo = try await Demo()
+        #expect(await renderNucleoSnapshot(EmptyDetailView().environment(demo.store), size: CGSize(width: 1100, height: 820), name: "nucleo-01-inicio") > 3)
+        #expect(await renderNucleoSnapshot(EmptyDetailView().environment(demo.store), size: CGSize(width: 1100, height: 820),
+                                           name: "nucleo-02-inicio-claro", dark: false) > 3)
+        let empty = TestWorld().makeStore()
+        #expect(await renderNucleoSnapshot(EmptyDetailView().environment(empty), size: CGSize(width: 1000, height: 760), name: "nucleo-03-bienvenida") > 3)
+        #expect(await renderNucleoSnapshot(EmptyDetailView().environment(empty), size: CGSize(width: 1000, height: 760),
+                                           name: "nucleo-04-bienvenida-clara", dark: false) > 3)
+        #expect(await renderNucleoSnapshot(CompactLayout().environment(demo.store), size: CGSize(width: 1180, height: 760), name: "nucleo-05-compacta-inicio") > 3)
+    }
+
+    @Test("La cápsula de deshacer")
+    func undoToast() async throws {
+        let demo = try await Demo()
+        demo.store.archive(demo.sessions["turno"]!.id)
+        let view = ZStack(alignment: .bottom) {
+            Color.black
+            UndoToastView().padding(.bottom, 18)
+        }
+        #expect(await renderNucleoSnapshot(view.environment(demo.store), size: CGSize(width: 700, height: 160), name: "nucleo-06-deshacer") > 3)
+        #expect(demo.store.undoAction?.message == "Archivaste “Revisá los tests de pagos”")
     }
 }

@@ -26,7 +26,10 @@ struct ContentView: View {
                 CompactLayout()
             }
         }
-        .overlay(alignment: .bottomTrailing) { CommandsDock() }
+        .overlay(alignment: .bottomTrailing) {
+            // En una sesión los comandos van en su barra de abajo: la esquinita taparía el prompt.
+            if !showsSession { CommandsDock() }
+        }
         .overlay(alignment: .bottom) {
             UndoToastView()
                 .padding(.bottom, 18)
@@ -53,6 +56,11 @@ struct ContentView: View {
         .tint(.honey)
         .modifier(StoreDialogs())
     }
+
+    private var showsSession: Bool {
+        if case .session? = store.selection { return true }
+        return false
+    }
 }
 
 struct DetailView: View {
@@ -74,21 +82,15 @@ struct DetailView: View {
     }
 }
 
+/// Sin nada elegido: el Inicio si ya hay proyectos, la bienvenida si no.
 struct EmptyDetailView: View {
     @Environment(AppStore.self) private var store
 
     var body: some View {
-        ContentUnavailableView {
-            Label("Hive", systemImage: "hexagon")
-        } description: {
-            Text(store.repoProjects.isEmpty
-                 ? "Agregá un repositorio para empezar. Después creá ramas y abrí sesiones de Claude Code, Codex o terminal."
-                 : "Elegí un proyecto, una rama o una sesión en la barra lateral.")
-        } actions: {
-            if store.repoProjects.isEmpty {
-                Button("Agregar proyecto…") { store.addProjectInteractive() }
-                    .buttonStyle(.borderedProminent)
-            }
+        if store.repoProjects.isEmpty {
+            WelcomeView()
+        } else {
+            HomeView()
         }
     }
 }
