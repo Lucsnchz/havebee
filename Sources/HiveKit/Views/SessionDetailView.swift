@@ -261,6 +261,11 @@ private struct ExitedBar: View {
                     copied = true
                 }
                 .help(kind.installHint)
+                .task(id: copied) {
+                    guard copied else { return }
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    copied = false
+                }
                 Button("Reintentar", action: onResume)
                     .keyboardShortcut(.defaultAction)
             } else {
@@ -275,16 +280,23 @@ private struct ExitedBar: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .background(.bar)
-        .task(id: code) { missing = isMissing }
+        .task(id: code) {
+            let environment = store.environment
+            let path = environment.cachedLoginPATH
+                ?? LoginShell.fallbackPATH(home: environment.home.path, inherited: environment.inheritedEnvironment["PATH"])
+            missing = MissingAgent.isMissing(kind: kind, exitCode: code) { environment.processes.resolve($0, path: path) }
+        }
     }
+}
 
-    /// El agente no está en el PATH (el mismo que usa el store para lanzarlo).
-    private var isMissing: Bool {
-        guard kind.isAgent, let binary = kind.binary else { return false }
-        let environment = store.environment
-        let path = environment.cachedLoginPATH
-            ?? LoginShell.fallbackPATH(home: environment.home.path, inherited: environment.inheritedEnvironment["PATH"])
-        return environment.processes.resolve(binary, path: path) == nil
+/// Si una sesión que terminó es de un agente que no está instalado.
+enum MissingAgent {
+    /// Solo cuenta un agente que no llegó a arrancar (sin código de salida) y cuyo programa no está
+    /// en el PATH. Si salió con un código, existía: el PATH guardado puede ser el de la vez anterior
+    /// y no tener, por ejemplo, la carpeta de nvm donde está Codex.
+    static func isMissing(kind: SessionKind, exitCode: Int32?, resolve: (String) -> String?) -> Bool {
+        guard kind.isAgent, exitCode == nil, let binary = kind.binary else { return false }
+        return resolve(binary) == nil
     }
 }
 

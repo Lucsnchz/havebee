@@ -142,6 +142,19 @@ struct TerminalSessionViewTests {
                     size: CGSize(width: 1000, height: 500), name: "ts-sesion-sin-agente", settle: 0.8)
     }
 
+    @Test("«No se encontró» solo si el agente no arrancó y no está en el PATH")
+    func missingAgentRule() {
+        let nowhere: (String) -> String? = { _ in nil }
+        let found: (String) -> String? = { "/fake/bin/\($0)" }
+        #expect(MissingAgent.isMissing(kind: .gemini, exitCode: nil, resolve: nowhere))
+        #expect(!MissingAgent.isMissing(kind: .gemini, exitCode: nil, resolve: found))
+        // Salió con un código (por ejemplo /quit): existía, aunque el PATH guardado sea viejo.
+        #expect(!MissingAgent.isMissing(kind: .codex, exitCode: 0, resolve: nowhere))
+        #expect(!MissingAgent.isMissing(kind: .claude, exitCode: 1, resolve: nowhere))
+        // Una terminal común nunca «falta».
+        #expect(!MissingAgent.isMissing(kind: .shell, exitCode: nil, resolve: nowhere))
+    }
+
     @Test("Comandos: el panel de salida, la esquinita y el editor")
     func commandViews() async throws {
         let demo = try await SessionDemo()
