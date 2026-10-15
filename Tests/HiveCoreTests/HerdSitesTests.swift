@@ -19,7 +19,7 @@ struct HerdSitesTests {
         try FileManager.default.createSymbolicLink(atPath: sites + "/relativo", withDestinationPath: "../../../../otros/relativo")
         let certs = valet.appendingPathComponent("Certificates").path
         try FileManager.default.createDirectory(atPath: certs, withIntermediateDirectories: true)
-        for name in ["ecommerce.test.crt", "ecommerce.test.key", "emplag-512.test.crt"] {
+        for name in ["ecommerce.test.crt", "ecommerce.test.key", "emplag-512.test.crt", "Mayusculas.test.crt"] {
             FileManager.default.createFile(atPath: certs + "/" + name, contents: Data())
         }
         return root
@@ -34,7 +34,9 @@ struct HerdSitesTests {
         #expect(herd.parkedPaths.count == 1 && samePath(herd.parkedPaths[0], parked))
         #expect(Set(herd.links.keys) == ["emplag-512", "relativo"])
         #expect(samePath(try #require(herd.links["emplag-512"]), dir.path + "/otros/emplag-reporte-512"))
-        #expect(herd.securedHosts == ["ecommerce.test", "emplag-512.test"])
+        // Los hosts no distinguen mayúsculas: `herd secure Mayusculas` sirve https://mayusculas.test.
+        #expect(herd.securedHosts == ["ecommerce.test", "emplag-512.test", "mayusculas.test"])
+        #expect(herd.url(for: parked + "/Mayusculas") == "https://mayusculas.test")
     }
 
     @Test("Sin Herd instalado devuelve nil")

@@ -46,7 +46,8 @@ public struct HerdSites: Equatable, Sendable {
         let certificates = valet.appendingPathComponent("Certificates", isDirectory: true).path
         let secured = ((try? fm.contentsOfDirectory(atPath: certificates)) ?? [])
             .filter { $0.hasSuffix(".crt") }
-            .map { String($0.dropLast(".crt".count)) }
+            // Los hosts no distinguen mayúsculas: `herd secure Ecommerce` deja «Ecommerce.test.crt».
+            .map { String($0.dropLast(".crt".count)).lowercased() }
         return HerdSites(tld: tld, parkedPaths: parked, links: links, securedHosts: Set(secured))
     }
 
@@ -65,7 +66,7 @@ public struct HerdSites: Equatable, Sendable {
         "\(folder.lowercased()).\(tld)"
     }
 
-    public func isSecured(_ host: String) -> Bool { securedHosts.contains(host) }
+    public func isSecured(_ host: String) -> Bool { securedHosts.contains(host) || securedHosts.contains(host.lowercased()) }
 
     /// URL completa de una carpeta, con https si tiene certificado.
     public func url(for dir: String) -> String? {

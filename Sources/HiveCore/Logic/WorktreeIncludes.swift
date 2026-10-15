@@ -48,25 +48,31 @@ public enum WorktreeIncludes {
             },
             write: { text, path in try text.write(toFile: path, atomically: true, encoding: .utf8) })
 
-        /// Recorre la carpeta sin seguir enlaces y con un tope, para no tardar en repos enormes.
-        private static func liveFiles(root: String, skipping: Set<String>, limit: Int = 50_000) -> [String] {
-            let base = URL(fileURLWithPath: root)
+        /// Recorre la carpeta sin seguir enlaces y con un tope, para no tardar en repos enormes. Va por
+        /// niveles: si se llega al tope en una carpeta gigante (storage, .next…), los archivos de arriba,
+        /// como el .env de la raíz, ya se encontraron.
+        static func liveFiles(root: String, skipping: Set<String>, limit: Int = 50_000) -> [String] {
             let keys: [URLResourceKey] = [.isDirectoryKey, .isRegularFileKey]
-            guard let enumerator = FileManager.default.enumerator(at: base, includingPropertiesForKeys: keys) else { return [] }
+            var queue: [(url: URL, relative: String)] = [(URL(fileURLWithPath: root, isDirectory: true), "")]
             var result: [String] = []
             var seen = 0
-            let prefix = base.standardizedFileURL.path + "/"
-            while let url = enumerator.nextObject() as? URL {
-                seen += 1
-                if seen > limit { break }
-                let values = try? url.resourceValues(forKeys: Set(keys))
-                if values?.isDirectory == true {
-                    if skipping.contains(url.lastPathComponent) { enumerator.skipDescendants() }
-                    continue
+            var next = 0
+            while next < queue.count && seen < limit {
+                let folder = queue[next]
+                next += 1
+                guard let entries = try? FileManager.default.contentsOfDirectory(at: folder.url, includingPropertiesForKeys: keys) else { continue }
+                for url in entries.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+                    seen += 1
+                    if seen > limit { break }
+                    let name = url.lastPathComponent
+                    let relative = folder.relative.isEmpty ? name : folder.relative + "/" + name
+                    let values = try? url.resourceValues(forKeys: Set(keys))
+                    if values?.isDirectory == true {
+                        if !skipping.contains(name) { queue.append((url, relative)) }
+                    } else if values?.isRegularFile == true {
+                        result.append(relative)
+                    }
                 }
-                guard values?.isRegularFile == true else { continue }
-                let path = url.standardizedFileURL.path
-                if path.hasPrefix(prefix) { result.append(String(path.dropFirst(prefix.count))) }
             }
             return result.sorted()
         }

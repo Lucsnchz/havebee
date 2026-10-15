@@ -84,17 +84,49 @@ struct CommandRunnerTimeoutTests {
         #expect(Date().timeIntervalSince(start) < 20)
     }
 
+    /// git falso que imprime GIT_SSH_COMMAND|GIT_TERMINAL_PROMPT y responde core.sshCommand con `sshCommand`.
+    func environmentGit(_ dir: TempDir, name: String, sshCommand: String?) -> GitCLI {
+        let config = sshCommand.map { "echo '\($0)'; exit 0" } ?? "exit 1"
+        let script = """
+        #!/bin/sh
+        case "$*" in *"config --get core.sshCommand"*) \(config);; esac
+        printf '%s|%s' "$GIT_SSH_COMMAND" "$GIT_TERMINAL_PROMPT"
+
+        """
+        let fakeGit = dir.write(name, script).path
+        #expect(chmod(fakeGit, 0o755) == 0)
+        return GitCLI(executable: fakeGit)
+    }
+
     @Test("Las llamadas de red van sin preguntas: BatchMode de ssh y sin prompt de la terminal")
     func networkEnvironment() throws {
         let dir = TempDir()
-        let fakeGit = dir.write("git-entorno", "#!/bin/sh\nprintf '%s|%s' \"$GIT_SSH_COMMAND\" \"$GIT_TERMINAL_PROMPT\"\n").path
-        #expect(chmod(fakeGit, 0o755) == 0)
-        let git = GitCLI(executable: fakeGit)
+        let git = environmentGit(dir, name: "git-entorno", sshCommand: nil)
         let fetched = git.fetch(dir.path)
-        let inherited = ProcessInfo.processInfo.environment["GIT_SSH_COMMAND"]
-        #expect(fetched.stdout == "\(inherited ?? "ssh -o BatchMode=yes")|0")
+        let env = ProcessInfo.processInfo.environment
+        let inherited = env["GIT_SSH_COMMAND"]
+        let keepsOwn = inherited != nil || env["GIT_SSH"] != nil
+        #expect(fetched.stdout == "\(keepsOwn ? inherited ?? "" : "ssh -o BatchMode=yes")|0")
         // Las que no van por la red no tocan ssh.
         #expect(git.run(["status"], in: dir.path).stdout == "\(inherited ?? "")|0")
+    }
+
+    @Test("Con core.sshCommand (una clave propia) se usa ese mismo ssh, con BatchMode")
+    func keepsConfiguredSSHCommand() throws {
+        let env = ProcessInfo.processInfo.environment
+        let dir = TempDir()
+        let git = environmentGit(dir, name: "git-clave", sshCommand: "ssh -i ~/.ssh/trabajo")
+        if env["GIT_SSH_COMMAND"] == nil && env["GIT_SSH"] == nil {
+            #expect(git.fetch(dir.path).stdout == "ssh -i ~/.ssh/trabajo -o BatchMode=yes|0")
+            #expect(git.push(branch: "x", setUpstream: true, in: dir.path).stdout == "ssh -i ~/.ssh/trabajo -o BatchMode=yes|0")
+        }
+        // La decisión, sin procesos.
+        #expect(GitCLI.batchSSHCommand(configured: nil) == "ssh -o BatchMode=yes")
+        #expect(GitCLI.batchSSHCommand(configured: "  ") == "ssh -o BatchMode=yes")
+        #expect(GitCLI.batchSSHCommand(configured: "ssh -i ~/.ssh/trabajo") == "ssh -i ~/.ssh/trabajo -o BatchMode=yes")
+        #expect(GitCLI.batchSSHCommand(configured: "/usr/bin/ssh -p 2222") == "/usr/bin/ssh -p 2222 -o BatchMode=yes")
+        // Otro programa (un envoltorio propio) se respeta tal cual: GIT_SSH_COMMAND no se pone.
+        #expect(GitCLI.batchSSHCommand(configured: "/usr/local/bin/mi-ssh") == nil)
     }
 }
 

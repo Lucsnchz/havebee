@@ -103,8 +103,12 @@ public struct GitCLI: GitClient {
     @discardableResult
     public func run(_ args: [String], in dir: String, timeout limit: TimeInterval, network: Bool = false) -> CommandResult {
         var env = environment
-        if network && ProcessInfo.processInfo.environment["GIT_SSH_COMMAND"] == nil {
-            env["GIT_SSH_COMMAND"] = "ssh -o BatchMode=yes"
+        let inherited = ProcessInfo.processInfo.environment
+        if network && inherited["GIT_SSH_COMMAND"] == nil && inherited["GIT_SSH"] == nil {
+            // GIT_SSH_COMMAND le gana a core.sshCommand: se parte del que tenga el repo (una clave
+            // propia con -i, por ejemplo) para no cambiar la cuenta con la que se conecta.
+            let configured = run(["config", "--get", "core.sshCommand"], in: dir)
+            env["GIT_SSH_COMMAND"] = Self.batchSSHCommand(configured: configured.ok ? configured.output : nil)
         }
         let r = runner.run(executable, ["-C", dir, "-c", "core.quotePath=false"] + args, cwd: nil, environment: env, timeout: limit)
         if r.timedOut {
@@ -286,10 +290,17 @@ public struct GitCLI: GitClient {
             let chunk = Array(paths[start..<min(start + 200, paths.count)])
             start += 200
             // (-z solo va con --stdin, y el runner no tiene entrada: las rutas raras vienen entre comillas.)
-            let r = run(["check-ignore", "--"] + chunk, in: dir)
-            // 0: alguno está ignorado; 1: ninguno; otro: error.
-            guard r.status == 0 else { continue }
-            result += r.stdout.split(separator: "\n").map { GitParsing.unquotePath(String($0)) }.filter { !$0.isEmpty }
+            switch checkIgnore(chunk, in: dir) {
+            case .found(let found):
+                result += found
+            case .failed where chunk.count > 1:
+                // Una ruta mala no tiene que dejar afuera a las demás: de a una, salteando las que fallan.
+                for path in chunk {
+                    if case .found(let found) = checkIgnore([path], in: dir) { result += found }
+                }
+            case .failed, .timedOut:
+                continue
+            }
         }
         return result
     }
@@ -322,6 +333,29 @@ public struct GitCLI: GitClient {
 
     // MARK: - Auxiliares
 
+    /// GIT_SSH_COMMAND para las llamadas de red. Sin core.sshCommand, ssh con BatchMode; con uno que
+    /// es ssh («ssh -i ~/.ssh/trabajo»), ese mismo más BatchMode; con otro programa, nil (se respeta tal cual).
+    public static func batchSSHCommand(configured: String?) -> String? {
+        let command = configured?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !command.isEmpty else { return "ssh -o BatchMode=yes" }
+        let program = command.split(whereSeparator: \.isWhitespace).first.map(String.init) ?? ""
+        guard program == "ssh" || program.hasSuffix("/ssh") else { return nil }
+        return command + " -o BatchMode=yes"
+    }
+
+    private enum CheckIgnoreResult { case found([String]), failed, timedOut }
+
+    /// `git check-ignore` de una tanda. Falla entera si una ruta está adentro de un submódulo, por ejemplo.
+    private func checkIgnore(_ paths: [String], in dir: String) -> CheckIgnoreResult {
+        let r = run(["check-ignore", "--"] + paths, in: dir)
+        // 0: alguno está ignorado; 1: ninguno; otro: error.
+        switch r.status {
+        case 0: return .found(r.stdout.split(separator: "\n").map { GitParsing.unquotePath(String($0)) }.filter { !$0.isEmpty })
+        case 1: return .found([])
+        default: return r.timedOut ? .timedOut : .failed
+        }
+    }
+
     /// origin si existe; si no, el primer remoto.
     private func primaryRemote(_ dir: String) -> String? {
         let all = remotes(dir)
@@ -351,7 +385,9 @@ public struct GitCLI: GitClient {
     }
 
     private func rebasingBranch(_ dir: String) -> String? {
-        guard let gitDir = gitDirectory(dir) else { return nil }
+        // Una carpeta que ya no existe no está en un rebase: sin otro proceso de git (load() lo llama
+        // en el hilo principal para cada proyecto).
+        guard FileManager.default.fileExists(atPath: dir), let gitDir = gitDirectory(dir) else { return nil }
         return rebasingBranch(gitDir: gitDir)
     }
 

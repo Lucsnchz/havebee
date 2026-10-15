@@ -20,6 +20,26 @@ struct RemoteHostTests {
         #expect(remote.webURL == "https://\(host)/\(path)")
     }
 
+    @Test("El puerto de https queda en la web; el de ssh no")
+    func ports() throws {
+        let https = try #require(RemoteHost.parse("https://git.empresa.com:8443/equipo/app.git"))
+        #expect(https.webURL == "https://git.empresa.com:8443/equipo/app")
+        #expect(try #require(RemoteHost.parse("https://gitlab.com:443/dizeg/bevo.git")).webURL == "https://gitlab.com/dizeg/bevo")
+        #expect(try #require(RemoteHost.parse("ssh://git@gitlab.empresa.com:2222/equipo/app.git")).webURL == "https://gitlab.empresa.com/equipo/app")
+    }
+
+    @Test("Publicada: sigue a su par en el remoto, que existe, y sin commits sin subir")
+    func published() {
+        #expect(RemoteHost.isPublished(branch: "feature/x", upstream: "origin/feature/x", gone: false, ahead: 0))
+        #expect(!RemoteHost.isPublished(branch: "feature/x", upstream: "origin/feature/x", gone: false, ahead: 2))
+        #expect(!RemoteHost.isPublished(branch: "feature/x", upstream: "origin/feature/x", gone: true, ahead: 0))
+        #expect(!RemoteHost.isPublished(branch: "feature/x", upstream: nil, gone: false, ahead: 0))
+        // `git checkout -b feature/x origin/main` deja origin/main como upstream: eso no es estar publicada.
+        #expect(!RemoteHost.isPublished(branch: "feature/x", upstream: "origin/main", gone: false, ahead: 0))
+        #expect(!RemoteHost.isPublished(branch: "x", upstream: "origin/feature/x", gone: false, ahead: 0))
+        #expect(RemoteHost.isPublished(branch: "x", upstream: "upstream/x", gone: false, ahead: 0))
+    }
+
     @Test("Lo que no es un remoto web devuelve nil", arguments: ["/ruta/local/repo.git", "", "file:///tmp/r.git", "git@gitlab.com:solo"])
     func invalid(url: String) {
         #expect(RemoteHost.parse(url) == nil)

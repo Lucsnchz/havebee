@@ -39,6 +39,10 @@ public struct RemoteHost: Equatable, Sendable {
                   ["https", "http", "ssh", "git", "git+ssh", "ssh+git"].contains(components.scheme?.lowercased() ?? "") else { return nil }
             host = parsedHost
             path = components.path
+            // El puerto de ssh no es el de la web; el de https sí (un GitLab propio en :8443).
+            if let port = components.port, ["https", "http"].contains(components.scheme?.lowercased() ?? ""), port != 443, port != 80 {
+                host += ":\(port)"
+            }
         } else if let colon = url.firstIndex(of: ":"), !url.hasPrefix("/") {
             // Sintaxis scp: [usuario@]host:ruta
             var authority = String(url[..<colon])
@@ -90,6 +94,12 @@ public struct RemoteHost: Equatable, Sendable {
     /// GitHub: comparar `branch` contra `base`, con el formulario de PR abierto.
     public func compareURL(base: String, branch: String) -> String {
         "\(webURL)/compare/\(Self.encode(base))...\(Self.encode(branch))?expand=1"
+    }
+
+    /// Si la rama ya está publicada tal cual: sigue a «<remoto>/<rama>», que existe, y no tiene commits sin subir.
+    public static func isPublished(branch: String, upstream: String?, gone: Bool, ahead: Int) -> Bool {
+        guard let upstream, !gone, ahead == 0, let slash = upstream.firstIndex(of: "/") else { return false }
+        return upstream[upstream.index(after: slash)...] == branch
     }
 
     /// Escapa un valor de la query: deja letras, números, «-._~» y «/» (los nombres de rama los usan mucho).

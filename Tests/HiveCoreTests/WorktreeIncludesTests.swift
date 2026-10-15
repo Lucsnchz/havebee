@@ -68,6 +68,40 @@ struct WorktreeIncludesTests {
         #expect(FileManager.default.fileExists(atPath: destination + "/.claude/settings.local.json"))
     }
 
+    @Test("Por niveles y con tope: el .env de la raíz se encuentra aunque haya una carpeta enorme; los enlaces no se siguen")
+    func breadthFirstWithLimit() throws {
+        let dir = TempDir()
+        dir.write(".env", "A=1")
+        for i in 0..<30 { dir.write("aaa-enorme/\(i)/archivo.txt", "x") }
+        dir.write("aaa-enorme/.env", "profundo")
+        let outside = TempDir()
+        outside.write(".env", "afuera")
+        try FileManager.default.createSymbolicLink(atPath: dir.path + "/enlace", withDestinationPath: outside.path)
+        // Con un tope chico, lo de arriba ya está; lo profundo puede quedar afuera.
+        let limited = WorktreeIncludes.FileSystem.liveFiles(root: dir.path, skipping: [], limit: 5)
+        #expect(limited.contains(".env"))
+        // Sin tope: todo, menos lo que está detrás del enlace.
+        let all = WorktreeIncludes.FileSystem.liveFiles(root: dir.path, skipping: [])
+        #expect(all.contains(".env") && all.contains("aaa-enorme/.env") && all.count == 32)
+        #expect(!all.contains { $0.hasPrefix("enlace") })
+    }
+
+    @Test("Repo real con un submódulo: una ruta adentro del submódulo no deja afuera al .env de la raíz")
+    func submoduleDoesNotBreakTheRest() throws {
+        let library = GitRepo(name: "libreria")
+        library.write(".env.example", "X=1\n")
+        library.commit("Ejemplo")
+        let repo = GitRepo()
+        repo.write(".gitignore", ".env\n")
+        repo.commit("Ignorar")
+        let added = repo.sh("git -c protocol.file.allow=always submodule add -q \(shellQuote(library.path)) libreria && git commit -q -m submodulo")
+        #expect(added.ok, "\(added.errorMessage)")
+        repo.write(".env", "APP_URL=https://repo.test\n")
+        // git check-ignore falla entero («Pathspec … is in submodule») si una ruta está en el submódulo.
+        #expect(WorktreeIncludes.candidates(root: repo.path, patterns: WorktreeIncludes.defaultPatterns).contains("libreria/.env.example"))
+        #expect(WorktreeIncludes.files(in: repo.path, git: repo.git) == [".env"])
+    }
+
     @Test("Con un sistema de archivos falso: lee, filtra y copia por la interfaz inyectada")
     func injectedFileSystem() {
         let disk = IncludesFakeDisk(files: ["/r/.env": "X=1", "/r/.worktreeinclude": ".env\n", "/r/notas.txt": "n"])
