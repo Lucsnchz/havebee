@@ -1,6 +1,6 @@
 import Foundation
 
-/// Comandos típicos según lo que tenga el repo: scripts de package.json, Laravel, composer, Docker.
+/// Comandos típicos según lo que tenga el repo: scripts de package.json, Laravel, composer, Docker y Android (Gradle).
 public enum CommandSuggestions {
     public struct Suggestion: Equatable, Sendable {
         public let name: String
@@ -23,18 +23,53 @@ public enum CommandSuggestions {
                 found.append(Suggestion(name: name.capitalized, command: "\(runner) \(name)"))
             }
         }
+        let composer = json("composer.json")
         if exists("artisan") {
             found.append(Suggestion(name: "Servidor Laravel", command: "php artisan serve"))
             found.append(Suggestion(name: "Cola", command: "php artisan queue:work"))
+            found.append(Suggestion(name: "Tests", command: "php artisan test"))
+            if composer?["require"]?["laravel/pail"] != nil || composer?["require-dev"]?["laravel/pail"] != nil {
+                found.append(Suggestion(name: "Logs", command: "php artisan pail"))
+            }
         }
-        if json("composer.json")?["scripts"]?["dev"] != nil {
+        if composer?["scripts"]?["dev"] != nil {
             found.append(Suggestion(name: "Composer dev", command: "composer run dev"))
+        }
+        if exists("gradlew") {
+            found.append(Suggestion(name: "Compilar debug", command: "./gradlew assembleDebug"))
+            found.append(Suggestion(name: "Instalar en el teléfono", command: "./gradlew installDebug"))
+            found.append(Suggestion(name: "Tests", command: "./gradlew testDebugUnitTest"))
+            found.append(Suggestion(name: "Lint", command: "./gradlew lint"))
+            if let id = androidApplicationId(projectPath: root) {
+                found.append(Suggestion(name: "Logcat de la app", command: "adb logcat --pid=$(adb shell pidof -s \(id))"))
+            }
         }
         if ["docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"].contains(where: exists) {
             found.append(Suggestion(name: "Docker", command: "docker compose up"))
         }
         let taken = Set(existing.map(\.command))
         return found.filter { !taken.contains($0.command) }
+    }
+
+    /// El applicationId de la app Android, leído de `app/build.gradle.kts` o `app/build.gradle`.
+    /// Si no está, Gradle usa el `namespace`, así que ese es el respaldo.
+    public static func androidApplicationId(projectPath root: String) -> String? {
+        for file in ["app/build.gradle.kts", "app/build.gradle"] {
+            let path = (root as NSString).appendingPathComponent(file)
+            guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { continue }
+            if let id = gradleString("applicationId", in: text) ?? gradleString("namespace", in: text) { return id }
+        }
+        return nil
+    }
+
+    /// El valor de `clave = "x"`, `clave "x"` o `clave("x")` al principio de una línea (no en un comentario).
+    /// Solo acepta un nombre de paquete válido, así se puede usar sin comillas en un comando.
+    static func gradleString(_ key: String, in text: String) -> String? {
+        let pattern = #"(?m)^\s*"# + key + #"\s*(?:=\s*|\(\s*)?["']([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+)["']"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+              let range = Range(match.range(at: 1), in: text) else { return nil }
+        return String(text[range])
     }
 }
 
