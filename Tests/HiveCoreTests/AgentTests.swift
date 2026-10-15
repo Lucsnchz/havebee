@@ -284,7 +284,7 @@ struct LaunchPlannerTests {
 
     @Test("Codex reanuda: «resume» primero, opciones y el thread al final")
     func codexResume() {
-        let known = LaunchPlanner.plan(context(.codex, agentId: "t-1") { $0.historyHint = false })
+        let known = LaunchPlanner.plan(context(.codex, agentId: "t-1") { $0.historyHint = false; $0.claudeInline = false })
         #expect(known.args.first == "resume")
         #expect(known.args.last == "t-1")
         #expect(known.args.count == 4) // resume, -c, notify, thread
@@ -295,7 +295,7 @@ struct LaunchPlannerTests {
 
     @Test("Gemini: reanuda lo encontrado y recibe los MCP por sus ajustes")
     func gemini() {
-        let plan = LaunchPlanner.plan(context(.gemini, agentId: "viejo") {
+        let plan = LaunchPlanner.plan(context(.gemini) {
             $0.discoveredAgentId = "g-2"
             $0.geminiSettingsPath = "/datos/Hive/gemini/x.json"
         })

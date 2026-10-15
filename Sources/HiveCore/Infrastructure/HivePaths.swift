@@ -22,6 +22,10 @@ public struct HivePaths: Sendable, Equatable {
     public var binDir: URL { root.appendingPathComponent("bin", isDirectory: true) }
     public var eventBin: URL { binDir.appendingPathComponent("hive-event") }
     public var claudeSettings: URL { root.appendingPathComponent("claude-settings.json") }
+    /// Los mismos ajustes más el statusLine de Hive, que guarda el uso de contexto y los límites de Claude.
+    public var claudeSettingsWithUsage: URL { root.appendingPathComponent("claude-settings-usage.json") }
+    /// Lo último que Claude le pasó al statusLine de cada sesión (usage/<sesión>.json).
+    public var usageDir: URL { root.appendingPathComponent("usage", isDirectory: true) }
     public var historyDir: URL { root.appendingPathComponent("history", isDirectory: true) }
     public var iconsDir: URL { root.appendingPathComponent("icons", isDirectory: true) }
     public var geminiDir: URL { root.appendingPathComponent("gemini", isDirectory: true) }
