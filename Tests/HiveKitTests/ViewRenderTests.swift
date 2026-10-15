@@ -322,6 +322,33 @@ struct TerminalFocusTests {
         #expect(!TerminalHostView.shouldTakeFocus(from: NSTextView(), in: window))
         #expect(!TerminalHostView.shouldTakeFocus(from: NSTextField(), in: window))
     }
+
+    @Test("Con un clic sí lo toma (también desde el sidebar), pero nunca se lo saca a un campo de texto")
+    func focusAfterClick() {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 100), styleMask: [.titled], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        #expect(TerminalHostView.shouldTakeFocus(from: NSOutlineView(), in: window, afterClick: true))
+        #expect(TerminalHostView.shouldTakeFocus(from: window, in: window, afterClick: true))
+        #expect(!TerminalHostView.shouldTakeFocus(from: NSTextView(), in: window, afterClick: true))
+        #expect(!TerminalHostView.shouldTakeFocus(from: NSTextField(), in: window, afterClick: true))
+    }
+
+    @Test("Solo cuenta un clic reciente: ni una tecla ni un clic viejo")
+    func recentClick() throws {
+        func mouse(_ type: NSEvent.EventType, at time: TimeInterval) throws -> NSEvent {
+            try #require(NSEvent.mouseEvent(with: type, location: .zero, modifierFlags: [], timestamp: time, windowNumber: 0,
+                                            context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+        }
+        #expect(TerminalHostView.isRecentClick(try mouse(.leftMouseDown, at: 100), now: 100.3))
+        #expect(TerminalHostView.isRecentClick(try mouse(.leftMouseUp, at: 100), now: 100.9))
+        #expect(!TerminalHostView.isRecentClick(try mouse(.leftMouseUp, at: 100), now: 105))
+        #expect(!TerminalHostView.isRecentClick(try mouse(.mouseMoved, at: 100), now: 100.1))
+        let key = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 100, windowNumber: 0,
+                                                context: nil, characters: "\u{F701}", charactersIgnoringModifiers: "\u{F701}",
+                                                isARepeat: false, keyCode: 125))
+        #expect(!TerminalHostView.isRecentClick(key, now: 100.1))
+        #expect(!TerminalHostView.isRecentClick(nil))
+    }
 }
 
 @MainActor

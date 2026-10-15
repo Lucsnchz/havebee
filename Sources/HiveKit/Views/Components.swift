@@ -145,20 +145,31 @@ final class TerminalHostView: NSView {
         view.frame = terminalFrame
         addSubview(view)
         needsLayout = true
+        // Se mira acá, mientras se procesa el evento que cambió de sesión.
+        let clicked = Self.isRecentClick(NSApplication.shared.currentEvent)
         DispatchQueue.main.async { [weak view] in
             guard let view, let window = view.window,
-                  Self.shouldTakeFocus(from: window.firstResponder, in: window) else { return }
+                  Self.shouldTakeFocus(from: window.firstResponder, in: window, afterClick: clicked) else { return }
             window.makeFirstResponder(view)
         }
     }
 
-    /// La terminal toma el foco solo si nadie lo tiene (la ventana o nil) o si lo tenía otra
-    /// terminal. Si estás en el sidebar o escribiendo en un campo, no te lo saca: si no, la
-    /// próxima flecha le llegaría al agente.
-    static func shouldTakeFocus(from responder: NSResponder?, in window: NSWindow?) -> Bool {
+    /// La terminal toma el foco si nadie lo tiene (la ventana o nil) o si lo tenía otra terminal.
+    /// Si estás recorriendo el sidebar con las flechas, no te lo saca: si no, la próxima flecha le
+    /// llegaría al agente. Un clic (en el sidebar, en una tarjeta o en una pestaña) sí lo da, como
+    /// antes, porque es elegir la sesión para escribirle. Nunca se lo saca a un campo de texto.
+    static func shouldTakeFocus(from responder: NSResponder?, in window: NSWindow?, afterClick: Bool = false) -> Bool {
         guard let responder else { return true }
         if let window, responder === window { return true }
-        return responder is HiveTerminalView
+        if responder is HiveTerminalView { return true }
+        return afterClick && !(responder is NSText || responder is NSTextField)
+    }
+
+    /// Si el evento es un clic de hace menos de un segundo (no una tecla, ni un clic viejo que
+    /// quedó como último evento mientras la terminal cambió por otro motivo).
+    static func isRecentClick(_ event: NSEvent?, now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Bool {
+        guard let event, event.type == .leftMouseDown || event.type == .leftMouseUp else { return false }
+        return now - event.timestamp < 1
     }
 
     // El tamaño se recalcula en cada layout. Antes dependía del autoresizing a partir del primer
