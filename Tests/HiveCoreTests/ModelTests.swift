@@ -202,3 +202,31 @@ struct JSONValueTests {
         #expect(JSONValue.string("x")["clave"] == nil)
     }
 }
+
+@Suite("Estado guardado que no se puede leer")
+struct StateStoreUnreadableTests {
+    @Test("Un archivo sin permiso de lectura no se toma como vacío ni se aparta")
+    func unreadableFile() throws {
+        let dir = TempDir()
+        let file = dir.write("state.json", "{\"projects\": []}")
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: file.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: file.path) }
+        let store = StateStore(file: file)
+        guard case .unreadable(let reason) = store.load() else {
+            Issue.record("Esperaba un estado ilegible")
+            return
+        }
+        #expect(!reason.isEmpty)
+        #expect(FileManager.default.fileExists(atPath: file.path))
+    }
+
+    @Test("Una carpeta en lugar del archivo tampoco se pisa")
+    func directoryInsteadOfFile() throws {
+        let dir = TempDir()
+        let file = dir.subdir("state.json")
+        guard case .unreadable = StateStore(file: file).load() else {
+            Issue.record("Esperaba un estado ilegible")
+            return
+        }
+    }
+}

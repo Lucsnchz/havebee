@@ -77,6 +77,10 @@ public final class AppStore {
     /// Sesiones que se están reiniciando (esperando a que termine el proceso viejo).
     @ObservationIgnored var relaunching: Set<UUID> = []
     /// Quienes esperan que termine el proceso de una terminal (ver `waitForExit`).
+    /// El estado guardado existe pero no se pudo leer: no se guarda nada para no pisarlo.
+    @ObservationIgnored var persistenceBlocked = false
+    /// El último guardado falló (y ya se avisó).
+    @ObservationIgnored var saveFailed = false
     @ObservationIgnored var exitWaiters: [ObjectIdentifier: [CheckedContinuation<Void, Never>]] = [:]
 
     /// Carga el estado guardado. No arranca nada: eso lo hace `start()`.
@@ -90,7 +94,12 @@ public final class AppStore {
 
     /// Arranca lo que corre en segundo plano: eventos de los agentes, avisos, revisión de git.
     public func start() {
-        try? EventBridge.install(paths: environment.paths)
+        do {
+            try EventBridge.install(paths: environment.paths)
+        } catch {
+            alert = AppAlert(title: "No pude instalar el puente de eventos de los agentes",
+                             message: "No vas a ver sus estados (trabajando, tu turno, necesita permiso).\n\n\(error.localizedDescription)")
+        }
         let resolve = environment.resolveLoginPATH
         Task { [weak self] in
             guard let path = await Task.detached(priority: .utility, operation: { resolve() }).value else { return }

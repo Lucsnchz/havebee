@@ -14,16 +14,30 @@ public struct StateStore: Sendable {
         case loaded(HiveState)
         /// El archivo estaba roto: se movió a `backup` para no pisarlo.
         case corrupted(backup: URL)
+        /// El archivo existe pero no se pudo leer (permisos, disco) o no se pudo apartar:
+        /// no hay que escribir encima. `reason` es el error, para mostrarlo.
+        case unreadable(reason: String)
     }
 
     public func load(now: Date = Date()) -> LoadResult {
-        guard let data = try? Data(contentsOf: file) else { return .empty }
+        guard FileManager.default.fileExists(atPath: file.path) else { return .empty }
+        let data: Data
+        do {
+            data = try Data(contentsOf: file)
+        } catch {
+            return .unreadable(reason: error.localizedDescription)
+        }
         do {
             return .loaded(try Self.decoder.decode(HiveState.self, from: data))
         } catch {
             let backup = file.deletingLastPathComponent()
                 .appendingPathComponent("state-\(Int(now.timeIntervalSince1970)).bak.json")
-            try? FileManager.default.moveItem(at: file, to: backup)
+            do {
+                try FileManager.default.moveItem(at: file, to: backup)
+            } catch {
+                // Si no se puede apartar, tampoco se puede pisar: sería perderlo.
+                return .unreadable(reason: error.localizedDescription)
+            }
             return .corrupted(backup: backup)
         }
     }
