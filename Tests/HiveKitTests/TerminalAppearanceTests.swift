@@ -157,4 +157,12 @@ struct TerminalAppearanceTests {
         #expect(TerminalPreferences.Cursor(shape: .underline, blinking: true) == .blinkUnderline)
         #expect(TerminalPreferences.monospacedFamilies().first == "SF Mono")
     }
+
+    @Test("Las familias monoespaciadas se pueden pedir fuera del hilo principal y traen Menlo")
+    func familiesOffMain() async {
+        let families = await Task.detached { TerminalPreferences.monospacedFamilies() }.value
+        #expect(families.first == "SF Mono")
+        #expect(families.contains("Menlo"))
+        #expect(Set(families).count == families.count)
+    }
 }

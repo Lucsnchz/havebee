@@ -1,4 +1,5 @@
 import AppKit
+import CoreText
 import SwiftTerm
 
 /// Ajustes de la terminal guardados en UserDefaults. Los cambian Ajustes › Terminal y el zoom
@@ -134,10 +135,14 @@ struct TerminalPreferences: Equatable {
         }
     }
 
-    /// Las familias monoespaciadas instaladas (para elegir en Ajustes), con SF Mono primero.
+    /// Las familias monoespaciadas instaladas (para elegir en Ajustes), con SF Mono primero. Usa
+    /// CoreText y no NSFontManager: Ajustes la llama fuera del hilo principal.
     static func monospacedFamilies() -> [String] {
-        let names = NSFontManager.shared.availableFontNames(with: .fixedPitchFontMask) ?? []
-        let families = Set(names.compactMap { NSFont(name: $0, size: 12)?.familyName })
+        let monospaced = CTFontDescriptorCreateWithAttributes(
+            [kCTFontTraitsAttribute: [kCTFontSymbolicTrait: CTFontSymbolicTraits.traitMonoSpace.rawValue]] as CFDictionary)
+        let collection = CTFontCollectionCreateWithFontDescriptors([monospaced] as CFArray, nil)
+        let descriptors = (CTFontCollectionCreateMatchingFontDescriptors(collection) as? [CTFontDescriptor]) ?? []
+        let families = Set(descriptors.compactMap { CTFontDescriptorCopyAttribute($0, kCTFontFamilyNameAttribute) as? String })
             .filter { !$0.hasPrefix(".") && $0 != systemFontName }
         return [systemFontName] + families.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
