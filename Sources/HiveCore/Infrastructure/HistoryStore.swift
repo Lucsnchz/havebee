@@ -81,22 +81,47 @@ public struct HistoryStore: Sendable {
 
     /// Aparta los archivos de la sesión en history/deleted/ (no a la Papelera del sistema).
     /// Quedan ahí hasta que `purge(olderThan:)` los borra.
+    /// Queda anotada como eliminada: una copia del transcript que estaba en camino (en segundo plano)
+    /// ya no vuelve a crear sus archivos.
     public func delete(_ sessionId: UUID, now: Date = Date()) {
-        let fm = FileManager.default
-        let files = [jsonlURL(sessionId), markdownURL(sessionId), fullURL(sessionId), segmentsURL(sessionId)]
-            .filter { fm.fileExists(atPath: $0.path) }
-        guard !files.isEmpty else { return }
-        try? fm.createDirectory(at: deletedDirectory, withIntermediateDirectories: true)
-        for file in files {
-            let target = deletedDirectory.appendingPathComponent(file.lastPathComponent)
-            try? fm.removeItem(at: target)
-            do {
-                try fm.moveItem(at: file, to: target)
-                // La fecha de modificación pasa a ser la del borrado: es la que mira `purge`.
-                try? fm.setAttributes([.modificationDate: now], ofItemAtPath: target.path)
-            } catch {
-                try? fm.removeItem(at: file)
+        Self.tombstones.withLock { deleted in
+            deleted.insert(tombstoneKey(sessionId))
+            let fm = FileManager.default
+            let files = [jsonlURL(sessionId), markdownURL(sessionId), fullURL(sessionId), segmentsURL(sessionId)]
+                .filter { fm.fileExists(atPath: $0.path) }
+            guard !files.isEmpty else { return }
+            try? fm.createDirectory(at: deletedDirectory, withIntermediateDirectories: true)
+            for file in files {
+                let target = deletedDirectory.appendingPathComponent(file.lastPathComponent)
+                try? fm.removeItem(at: target)
+                do {
+                    try fm.moveItem(at: file, to: target)
+                    // La fecha de modificación pasa a ser la del borrado: es la que mira `purge`.
+                    try? fm.setAttributes([.modificationDate: now], ofItemAtPath: target.path)
+                } catch {
+                    try? fm.removeItem(at: file)
+                }
             }
+        }
+    }
+
+    /// Si la sesión se eliminó (en esta ejecución de la app).
+    public func isDeleted(_ sessionId: UUID) -> Bool {
+        Self.tombstones.withLock { $0.contains(tombstoneKey(sessionId)) }
+    }
+
+    private func tombstoneKey(_ sessionId: UUID) -> String {
+        directory.standardizedFileURL.path + "|" + sessionId.uuidString
+    }
+
+    /// Escribe solo si la sesión no se eliminó. El candado de las eliminadas es corto: se toma para
+    /// escribir lo ya preparado, nunca mientras se lee un transcript, así `delete` (que corre en el
+    /// hilo principal) no espera.
+    private func writeUnlessDeleted(_ sessionId: UUID, _ write: () -> Void) -> Bool {
+        Self.tombstones.withLock { deleted in
+            guard !deleted.contains(tombstoneKey(sessionId)) else { return false }
+            write()
+            return true
         }
     }
 
@@ -135,7 +160,7 @@ public struct HistoryStore: Sendable {
     /// Anota el transcript de la conversación actual (en history/<id>.segments.json). Si es la misma
     /// conversación que la última, solo actualiza la ruta.
     public func recordTranscript(sessionId: UUID, agent: SessionKind, conversationId: String, path: String, now: Date = Date()) {
-        guard !conversationId.isEmpty, !path.isEmpty else { return }
+        guard !conversationId.isEmpty, !path.isEmpty, !isDeleted(sessionId) else { return }
         Self.writeLock.lock()
         defer { Self.writeLock.unlock() }
         var segments = transcriptSegments(sessionId)
@@ -145,14 +170,18 @@ public struct HistoryStore: Sendable {
         } else {
             segments.append(TranscriptSegment(agent: agent, conversationId: conversationId, path: path, since: now))
         }
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        if let data = try? Self.encoder.encode(segments) { try? data.write(to: segmentsURL(sessionId), options: .atomic) }
+        guard let data = try? Self.encoder.encode(segments) else { return }
+        _ = writeUnlessDeleted(sessionId) {
+            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try? data.write(to: segmentsURL(sessionId), options: .atomic)
+        }
     }
 
     /// Copia los textos del transcript (con TranscriptReader) a history/<id>.full.jsonl, sin repetir lo que
     /// ya estaba. Así sobreviven aunque el agente borre sus archivos. Devuelve cuántos mensajes agregó.
     @discardableResult
     public func archiveTranscript(sessionId: UUID, agent: SessionKind, path: String, now: Date = Date()) -> Int {
+        guard !isDeleted(sessionId) else { return 0 }
         let messages = TranscriptReader.read(URL(fileURLWithPath: path), agent: agent)
         guard !messages.isEmpty else { return 0 }
         Self.writeLock.lock()
@@ -170,9 +199,12 @@ public struct HistoryStore: Sendable {
             added += 1
         }
         guard added > 0 else { return 0 }
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        Self.appendData(data, to: fullURL(sessionId))
-        return added
+        // Si la eliminaron mientras se leía el transcript, no se vuelve a crear su copia.
+        let written = writeUnlessDeleted(sessionId) {
+            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            Self.appendData(data, to: fullURL(sessionId))
+        }
+        return written ? added : 0
     }
 
     /// La copia completa de Hive, como entradas del historial (con IDs que no cambian entre lecturas).
@@ -222,6 +254,20 @@ public struct HistoryStore: Sendable {
     /// Las escrituras de la copia completa y de los segmentos corren en tareas en segundo plano:
     /// el candado evita duplicados si dos llegan juntas.
     private static let writeLock = NSLock()
+
+    /// Las sesiones eliminadas (carpeta del historial + id), con su propio candado.
+    private static let tombstones = Tombstones()
+
+    private final class Tombstones: @unchecked Sendable {
+        private let lock = NSLock()
+        private var deleted = Set<String>()
+
+        func withLock<T>(_ body: (inout Set<String>) -> T) -> T {
+            lock.lock()
+            defer { lock.unlock() }
+            return body(&deleted)
+        }
+    }
 
     // MARK: - Búsqueda
 
