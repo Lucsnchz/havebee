@@ -30,7 +30,7 @@ struct HiveCommands: Commands {
                 Text("Compacta").tag(HiveLayout.compact)
             }
             .pickerStyle(.inline)
-            Divider()
+            // (el selector en línea ya trae sus separadores)
             Button("Agrandar texto") { FontSize.change(by: 1) }
                 .hiveShortcut(.zoomIn)
                 .disabled(fontSize >= FontSize.range.upperBound)
@@ -122,31 +122,30 @@ struct HiveCommands: Commands {
             if !HiveNavigator.goToNextWaiting(store) { NSSound.beep() }
         }
         .hiveShortcut(.nextWaiting)
+        // Sin Section: dos secciones seguidas dejan dos separadores juntos en el menú.
+        Divider()
         Button("Sesión siguiente") { HiveNavigator.goToAdjacentSession(store, delta: 1) }
             .hiveShortcut(.nextSession)
             .disabled(tabs.isEmpty)
         Button("Sesión anterior") { HiveNavigator.goToAdjacentSession(store, delta: -1) }
             .hiveShortcut(.previousSession)
             .disabled(tabs.isEmpty)
+        // Las pestañas del proyecto abierto (⌘1…⌘9).
+        ForEach(Array(tabs.prefix(Shortcut.tabs.count).enumerated()), id: \.element.id) { index, tab in
+            Button(showBranch ? "\(tab.session.name) · \(tab.branch.name)" : tab.session.name) {
+                HiveNavigator.goToTab(store, index: index)
+            }
+            .hiveShortcut(Shortcut.tabs[index])
+        }
+        Divider()
         Button("Proyecto siguiente") { HiveNavigator.goToAdjacentProject(store, delta: 1) }
             .hiveShortcut(.nextProject)
         Button("Proyecto anterior") { HiveNavigator.goToAdjacentProject(store, delta: -1) }
             .hiveShortcut(.previousProject)
-        if !tabs.isEmpty {
-            Section("Pestañas") {
-                ForEach(Array(tabs.prefix(Shortcut.tabs.count).enumerated()), id: \.element.id) { index, tab in
-                    Button(showBranch ? "\(tab.session.name) · \(tab.branch.name)" : tab.session.name) {
-                        HiveNavigator.goToTab(store, index: index)
-                    }
-                    .hiveShortcut(Shortcut.tabs[index])
-                }
-            }
-        }
-        Section("Proyectos") {
-            ForEach(Array(store.projects.prefix(Shortcut.projects.count).enumerated()), id: \.element.id) { index, project in
-                Button(project.name) { HiveNavigator.goToProject(store, index: index) }
-                    .hiveShortcut(Shortcut.projects[index])
-            }
+        // Los proyectos en el orden del sidebar (⌃⌘1…⌃⌘9).
+        ForEach(Array(store.projects.prefix(Shortcut.projects.count).enumerated()), id: \.element.id) { index, project in
+            Button(project.name) { HiveNavigator.goToProject(store, index: index) }
+                .hiveShortcut(Shortcut.projects[index])
         }
     }
 
@@ -156,7 +155,7 @@ struct HiveCommands: Commands {
         let selected = HiveNavigator.selectedSession(store)
         let hasTerminal = selected != nil || !store.commandRuns.isEmpty
         Menu("Buscar") {
-            Button("Buscar…") { HiveNavigator.find(.showFindInterface, store: store) }
+            Button("Buscar en la terminal…") { HiveNavigator.find(.showFindInterface, store: store) }
                 .hiveShortcut(.find)
             Button("Buscar siguiente") { HiveNavigator.find(.nextMatch, store: store) }
                 .hiveShortcut(.findNext)
@@ -172,7 +171,6 @@ struct HiveCommands: Commands {
         }
         .hiveShortcut(.clearTerminal)
         .disabled(selected.map { $0.session.kind.isAgent } ?? store.commandRuns.isEmpty)
-        Divider()
     }
 }
 

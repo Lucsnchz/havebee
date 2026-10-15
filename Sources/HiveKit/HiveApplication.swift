@@ -105,7 +105,7 @@ private struct WindowChrome: NSViewRepresentable {
     }
 }
 
-final class WindowChromeView: NSView {
+private final class WindowChromeView: NSView {
     var compact = false {
         didSet { if compact != oldValue { apply() } }
     }
