@@ -9,6 +9,10 @@ struct DiffSheet: View {
     let target: DiffTarget
     @State private var selected: Int
     @State private var diff: FileDiff?
+    /// Conflictos que resolviste en esta hoja (ruta → cómo), para no volver a ofrecerlo.
+    @State private var resolved: [String: String] = [:]
+    @State private var resolving = false
+    @State private var copied = false
 
     init(target: DiffTarget) {
         self.target = target
@@ -28,7 +32,7 @@ struct DiffSheet: View {
                 content
             }
         }
-        .frame(width: 1060, height: 680)
+        .frame(minWidth: 800, idealWidth: 1060, maxWidth: .infinity, minHeight: 500, idealHeight: 680, maxHeight: .infinity)
         .task(id: selected) { await load() }
         .background {
             // Flechas para pasar de archivo, Esc para cerrar.
@@ -77,7 +81,7 @@ struct DiffSheet: View {
                         }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 4)
-                        .background(index == selected ? Color.accentColor.opacity(0.22) : .clear)
+                        .background(index == selected ? Color.honey.opacity(0.18) : .clear)
                         .contentShape(Rectangle())
                         .onTapGesture { selected = index }
                         .id(index)
@@ -91,35 +95,78 @@ struct DiffSheet: View {
 
     private func header(_ file: DiffTarget.File) -> some View {
         let badge = file.change.badge(staged: file.staged)
-        return HStack(spacing: 8) {
-            FileIcon(path: file.change.path, size: 18)
-            Text(file.change.path)
+        return VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                FileIcon(path: file.change.path, size: 18)
+                Group {
+                    if let original = file.change.originalPath {
+                        Text(original).foregroundStyle(.secondary) + Text("  →  ").foregroundStyle(.tertiary) + Text(file.change.path)
+                    } else {
+                        Text(file.change.path)
+                    }
+                }
                 .font(.system(size: 13, weight: .semibold))
                 .lineLimit(1)
                 .truncationMode(.head)
                 .textSelection(.enabled)
-            Text(badge)
-                .font(.system(size: 12, weight: .semibold).monospaced())
-                .foregroundStyle(ChangeColors.color(for: badge))
-            if file.staged { Chip(text: "Preparado") }
-            Spacer()
-            if let diff, !diff.lines.isEmpty {
-                let added = diff.lines.filter { $0.kind == .added }.count
-                let removed = diff.lines.filter { $0.kind == .removed }.count
-                Text("+\(added)").foregroundStyle(ChangeColors.color(for: "A"))
-                Text("−\(removed)").foregroundStyle(ChangeColors.color(for: "D"))
+                Text(badge)
+                    .font(.system(size: 12, weight: .semibold).monospaced())
+                    .foregroundStyle(ChangeColors.color(for: badge))
+                if file.staged { Chip(text: "Preparado") }
+                Spacer()
+                if let diff, !diff.lines.isEmpty {
+                    Text("+\(diff.addedCount)").foregroundStyle(ChangeColors.color(for: "A"))
+                    Text("−\(diff.removedCount)").foregroundStyle(ChangeColors.color(for: "D"))
+                }
+                Button(copied ? "Copiado" : "Copiar diff") { copyDiff(file) }
+                    .disabled(diff?.raw.isEmpty ?? true)
+                    .help("Copiar el diff de este archivo, por ejemplo para pegárselo a la IA")
+                Button("Abrir en editor") { openInEditor(file) }
+                Button("Cerrar") { dismiss() }
             }
-            Button("Abrir en editor") { openInEditor(file) }
-            Button("Cerrar") { dismiss() }
+            .font(.system(size: 12.5))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            if file.change.isConflict {
+                conflictBar(file)
+            }
         }
-        .font(.system(size: 12.5))
+    }
+
+    /// Barra para resolver un conflicto sin salir de la hoja.
+    private func conflictBar(_ file: DiffTarget.File) -> some View {
+        let operation = store.dirStatus[target.directory]?.operation
+        let done = resolved[file.change.path]
+        return HStack(spacing: 8) {
+            Image(systemName: done == nil ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                .foregroundStyle(done == nil ? Color.orange : Color.green)
+            Text(done ?? "Archivo en conflicto" + (operation.map { " · \($0.label)" } ?? ""))
+                .font(.system(size: 12, weight: .medium))
+                .lineLimit(1)
+            Spacer()
+            if done == nil {
+                if resolving { ProgressView().controlSize(.small) }
+                Button("Usar la mía") { resolve(file, mine: true, operation: operation) }
+                    .help(operation == .rebase ? "Quedarte con tu versión (en un rebase, «theirs»)" : "Quedarte con la versión de HEAD (--ours)")
+                Button("Usar la de ellos") { resolve(file, mine: false, operation: operation) }
+                    .help(operation == .rebase ? "Quedarte con la versión de la rama de destino (en un rebase, «ours»)" : "Quedarte con la versión que se está trayendo (--theirs)")
+                Button("Marcar resuelto") { resolve(file, resolution: .markResolved, message: "Marcado como resuelto: quedó preparado para el commit.") }
+                    .help("Ya lo arreglaste a mano: git add")
+            }
+        }
+        .font(.system(size: 12))
+        .disabled(resolving)
         .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.vertical, 7)
+        .background(Color.orange.opacity(done == nil ? 0.12 : 0.04))
     }
 
     @ViewBuilder private var content: some View {
         if let diff {
-            if let message = diff.message {
+            if let file = target.files.indices.contains(selected) ? target.files[selected] : nil,
+               let done = resolved[file.change.path], diff.lines.isEmpty {
+                placeholder(done)
+            } else if let message = diff.message {
                 placeholder(message)
             } else if diff.isBinary && diff.lines.isEmpty {
                 placeholder("Archivo binario: no se puede mostrar el diff.")
@@ -166,6 +213,41 @@ struct DiffSheet: View {
         if target.files.indices.contains(next) { selected = next }
     }
 
+    private func resolve(_ file: DiffTarget.File, mine: Bool, operation: GitOperation?) {
+        // En un rebase, «ours» es la rama de destino y «theirs» tu commit.
+        let swapped = operation?.swapsOursAndTheirs == true
+        let resolution: ConflictResolution = mine != swapped ? .ours : .theirs
+        resolve(file, resolution: resolution, message: mine ? "Te quedaste con tu versión." : "Te quedaste con la versión de ellos.")
+    }
+
+    private func resolve(_ file: DiffTarget.File, resolution: ConflictResolution, message: String) {
+        let git = store.git
+        let dir = target.directory
+        let path = file.change.path
+        resolving = true
+        Task {
+            let r = await Task.detached { git.resolveConflict(path: path, using: resolution, in: dir) }.value
+            resolving = false
+            if r.ok {
+                resolved[path] = message
+            } else {
+                store.alert = AppAlert(title: "No se pudo resolver el conflicto de «\(file.change.fileName)»", message: r.errorMessage)
+            }
+            store.refreshGit()
+            await load()
+        }
+    }
+
+    private func copyDiff(_ file: DiffTarget.File) {
+        guard let diff, !diff.raw.isEmpty else { return }
+        ExternalApps.copyToPasteboard(diff.raw)
+        copied = true
+        Task {
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            copied = false
+        }
+    }
+
     private func openInEditor(_ file: DiffTarget.File) {
         let path = (target.directory as NSString).appendingPathComponent(file.change.path)
         ExternalApps.openInEditor(path)
@@ -175,15 +257,22 @@ struct DiffSheet: View {
 private struct DiffLineRow: View {
     let line: DiffLine
 
+    /// Azul de los encabezados de cada parte, legible en claro y en oscuro.
+    static let hunkColor = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(srgbRed: 0.55, green: 0.70, blue: 1.0, alpha: 1)
+            : NSColor(srgbRed: 0.16, green: 0.36, blue: 0.78, alpha: 1)
+    })
+
     var body: some View {
         if line.kind == .hunk {
             Text(line.text)
                 .font(.system(size: 11.5, design: .monospaced))
-                .foregroundStyle(Color(red: 0.45, green: 0.62, blue: 0.95))
+                .foregroundStyle(Self.hunkColor)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 4)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color(red: 0.45, green: 0.62, blue: 0.95).opacity(0.1))
+                .background(Self.hunkColor.opacity(0.1))
         } else {
             HStack(alignment: .top, spacing: 0) {
                 Text(line.oldNumber.map(String.init) ?? "")
@@ -197,6 +286,7 @@ private struct DiffLineRow: View {
                     .foregroundStyle(prefixColor)
                 Text(line.text.isEmpty ? " " : line.text.replacingOccurrences(of: "\t", with: "    "))
                     .foregroundStyle(line.kind == .note ? Color.secondary : Color.primary)
+                    .fontWeight(line.kind == .conflictMarker ? .semibold : .regular)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .font(.system(size: 12, design: .monospaced))
@@ -209,18 +299,24 @@ private struct DiffLineRow: View {
         switch line.kind {
         case .added: "+"
         case .removed: "−"
+        case .conflictMarker: "!"
         default: ""
         }
     }
 
     private var prefixColor: Color {
-        line.kind == .added ? ChangeColors.color(for: "A") : ChangeColors.color(for: "D")
+        switch line.kind {
+        case .added: ChangeColors.color(for: "A")
+        case .conflictMarker: .orange
+        default: ChangeColors.color(for: "D")
+        }
     }
 
     private var background: Color {
         switch line.kind {
         case .added: Color(red: 0.25, green: 0.75, blue: 0.45).opacity(0.16)
         case .removed: Color(red: 0.90, green: 0.30, blue: 0.30).opacity(0.16)
+        case .conflictMarker: Color.orange.opacity(0.28)
         default: .clear
         }
     }

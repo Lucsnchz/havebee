@@ -1,0 +1,132 @@
+import AppKit
+import HiveCore
+import SwiftUI
+
+/// Traer, publicar y abrir el MR de la rama en GitLab (o el PR en GitHub) sin instalar nada.
+/// Si el repo no tiene remotos, no se muestra.
+struct RemoteActionsMenu: View {
+    @Environment(AppStore.self) private var store
+    let project: Project
+    let branch: Branch
+    @State private var hasRemote = false
+    @State private var remote: RemoteHost?
+    /// Rama por defecto del remoto, sin el prefijo ("main").
+    @State private var defaultBase: String?
+    /// Lo que se está haciendo, para el spinner.
+    @State private var busy: String?
+
+    var body: some View {
+        content
+            .task(id: project.path) { await load() }
+    }
+
+    @ViewBuilder private var content: some View {
+        if hasRemote {
+            HStack(spacing: 6) {
+                if let busy {
+                    ProgressView()
+                        .controlSize(.small)
+                        .help(busy)
+                }
+                Menu {
+                    menuItems
+                } label: {
+                    Label(remote?.kind == .gitlab ? "GitLab" : remote?.kind == .github ? "GitHub" : "Remoto",
+                          systemImage: "arrow.up.arrow.down")
+                }
+                .disabled(busy != nil)
+                .help("Traer, publicar y crear el MR de «\(branch.name)»")
+            }
+        } else {
+            Color.clear.frame(width: 0, height: 0)
+        }
+    }
+
+    @ViewBuilder private var menuItems: some View {
+        let active = store.isActive(branch, in: project)
+        Button {
+            perform("Trayendo cambios…", title: "No se pudieron traer los cambios") { git, dir, _ in
+                git.pull(ffOnly: true, in: dir)
+            }
+        } label: {
+            Label("Traer cambios", systemImage: "arrow.down.circle")
+        }
+        .disabled(!active)
+        .help(active ? "git pull --ff-only" : "Hacé checkout de la rama para traer sus cambios")
+        Button {
+            perform("Publicando…", title: "No se pudo publicar la rama") { git, dir, name in
+                git.push(branch: name, setUpstream: true, in: dir)
+            }
+        } label: {
+            Label("Publicar rama", systemImage: "arrow.up.circle")
+        }
+        if let remote, remote.kind != .other {
+            Divider()
+            Button {
+                createMergeRequest(remote)
+            } label: {
+                Label(remote.newRequestLabel, systemImage: "arrow.triangle.pull")
+            }
+            if let mergeRequests = remote.branchMergeRequestsURL(branch.name) {
+                Button {
+                    BrowserLink.open(mergeRequests)
+                } label: {
+                    Label(remote.kind == .gitlab ? "Ver MRs de la rama" : "Ver PRs de la rama", systemImage: "list.bullet")
+                }
+            }
+            if let pipelines = remote.pipelinesURL(branch.name) {
+                Button {
+                    BrowserLink.open(pipelines)
+                } label: {
+                    Label(remote.kind == .gitlab ? "Ver pipelines" : "Ver Actions", systemImage: "gearshape.2")
+                }
+            }
+        }
+    }
+
+    private func load() async {
+        let git = store.git
+        let path = project.path
+        let (url, base) = await Task.detached(priority: .utility) {
+            (git.remoteURL(path), git.defaultRemoteBranch(path))
+        }.value
+        hasRemote = url != nil
+        remote = url.flatMap(RemoteHost.parse)
+        defaultBase = base.map { ref in ref.firstIndex(of: "/").map { String(ref[ref.index(after: $0)...]) } ?? ref }
+    }
+
+    /// Corre una operación de git fuera del hilo principal; si falla, avisa con una alerta.
+    private func perform(_ label: String, title: String,
+                         _ operation: @escaping @Sendable (GitClient, String, String) -> CommandResult,
+                         then success: (() -> Void)? = nil) {
+        let git = store.git
+        let dir = project.directory(for: branch)
+        let name = branch.name
+        busy = label
+        Task {
+            let result = await Task.detached { operation(git, dir, name) }.value
+            busy = nil
+            if result.ok {
+                success?()
+            } else {
+                store.alert = AppAlert(title: title, message: result.errorMessage.isEmpty ? "git terminó con el código \(result.status)." : result.errorMessage)
+            }
+            store.refreshGit()
+        }
+    }
+
+    /// Publica la rama si hace falta y abre la página del MR nuevo contra la rama por defecto.
+    private func createMergeRequest(_ remote: RemoteHost) {
+        let status = store.gitStatus(for: branch, in: project)
+        let target = defaultBase ?? "main"
+        guard let url = remote.newMergeRequestURL(source: branch.name, target: target) else { return }
+        let published = status.map { $0.upstream != nil && !$0.upstreamGone && $0.ahead == 0 } ?? false
+        if published {
+            BrowserLink.open(url)
+            return
+        }
+        perform("Publicando…", title: "No se pudo publicar la rama", { git, dir, name in
+            git.push(branch: name, setUpstream: true, in: dir)
+        }, then: { BrowserLink.open(url) })
+    }
+}
