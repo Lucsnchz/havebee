@@ -60,6 +60,16 @@ struct TerminalKeysTests {
         #expect(TerminalKeys.modifiedReturn(shift: false, option: false, kittyActive: false) == nil)
     }
 
+    @Test("⌥← y ⌥→: ESC b y ESC f, salvo con Shift o con kitty")
+    func wordJump() {
+        let codes = TerminalKeys.Code.self
+        #expect(TerminalKeys.optionWordJump(keyCode: codes.leftArrow, shift: false, kittyActive: false) == [0x1B, 0x62])
+        #expect(TerminalKeys.optionWordJump(keyCode: codes.rightArrow, shift: false, kittyActive: false) == [0x1B, 0x66])
+        #expect(TerminalKeys.optionWordJump(keyCode: codes.leftArrow, shift: true, kittyActive: false) == nil)
+        #expect(TerminalKeys.optionWordJump(keyCode: codes.leftArrow, shift: false, kittyActive: true) == nil)
+        #expect(TerminalKeys.optionWordJump(keyCode: codes.upArrow, shift: false, kittyActive: false) == nil)
+    }
+
     @Test("⌥ compone letras y símbolos; flechas, Return, ⌫, Esc y Tab siguen como Meta")
     func optionCompose() {
         let q: UInt16 = 0x0C, e: UInt16 = 0x0E, n: UInt16 = 0x2D, two: UInt16 = 0x13

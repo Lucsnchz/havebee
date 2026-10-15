@@ -110,6 +110,17 @@ public enum TerminalKeys {
         return [0x1B, 0x0D]
     }
 
+    /// ⌥← y ⌥→ sin Shift: ESC b y ESC f (palabra anterior y siguiente en zsh, bash, Claude y
+    /// Codex). Si el programa activó el protocolo de kitty, lo codifica la terminal.
+    public static func optionWordJump(keyCode: UInt16, shift: Bool, kittyActive: Bool) -> [UInt8]? {
+        guard !shift, !kittyActive else { return nil }
+        switch keyCode {
+        case Code.leftArrow: return [0x1B, 0x62]
+        case Code.rightArrow: return [0x1B, 0x66]
+        default: return nil
+        }
+    }
+
     /// Si ⌥ con esta tecla tiene que escribir un carácter (ñ, tildes, @, corchetes) en lugar de
     /// funcionar como Meta. Las flechas, Return, ⌫, Esc, Tab y las teclas de función siguen
     /// siendo Meta: ⌥← y ⌥→ saltan palabras, ⌥⌫ borra una palabra.
