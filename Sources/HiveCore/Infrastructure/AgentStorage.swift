@@ -28,11 +28,19 @@ public struct AgentStorage: Sendable {
     /// Claude guarda cada conversación en <config>/projects/<carpeta>/<id>.jsonl.
     /// Si no existe, la sesión nunca recibió un mensaje y hay que arrancarla de cero.
     public func claudeConversationExists(_ id: String) -> Bool {
+        claudeTranscriptURL(id) != nil
+    }
+
+    /// El transcript de una conversación de Claude (<config>/projects/<carpeta>/<id>.jsonl), si existe.
+    public func claudeTranscriptURL(_ id: String) -> URL? {
+        guard !id.isEmpty else { return nil }
         let base = claudeConfigDir.appendingPathComponent("projects")
-        guard let dirs = try? FileManager.default.contentsOfDirectory(atPath: base.path) else { return false }
-        return dirs.contains { dir in
-            FileManager.default.fileExists(atPath: base.appendingPathComponent(dir).appendingPathComponent("\(id).jsonl").path)
+        guard let dirs = try? FileManager.default.contentsOfDirectory(atPath: base.path) else { return nil }
+        for dir in dirs.sorted() {
+            let file = base.appendingPathComponent(dir).appendingPathComponent("\(id).jsonl")
+            if FileManager.default.fileExists(atPath: file.path) { return file }
         }
+        return nil
     }
 
     /// El `notify` que ya tenías en el config.toml de Codex (para seguir llamándolo).
@@ -43,31 +51,77 @@ public struct AgentStorage: Sendable {
 
     /// Plan B para reanudar Codex: si nunca llegó un thread-id (por ejemplo, cortaste el primer turno),
     /// buscamos el archivo de sesión que Codex creó en esa carpeta después del último arranque.
+    /// Se descartan los subagentes y las ventanas de VS Code, y gana el creado más cerca del arranque
+    /// (no el último modificado: un subagente o un thread ajeno puede escribir después).
     public func discoverCodexThread(cwd: String, since: Date, excluding: Set<String>, now: Date = Date()) -> String? {
         let fm = FileManager.default
         let calendar = Calendar.current
         var day = calendar.startOfDay(for: since.addingTimeInterval(-86_400))
         let threshold = since.addingTimeInterval(-5)
-        var best: (date: Date, id: String)?
+        var best: (distance: TimeInterval, id: String)?
         while day <= now {
             let c = calendar.dateComponents([.year, .month, .day], from: day)
             let dir = codexHome.appendingPathComponent(String(format: "sessions/%04d/%02d/%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0))
             let files = (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
             for file in files where file.pathExtension == "jsonl" {
+                // Lo que no se escribió desde el arranque tampoco se creó después: ni lo abrimos.
                 guard let modified = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate,
                       modified >= threshold,
                       let meta = Self.firstLineJSON(file),
-                      let id = meta["payload"]?["id"]?.string,
-                      let sessionDir = meta["payload"]?["cwd"]?.string,
+                      let payload = meta["payload"],
+                      let id = payload["id"]?.string,
+                      let sessionDir = payload["cwd"]?.string,
                       samePath(sessionDir, cwd),
-                      !excluding.contains(id) else { continue }
-                if best == nil || modified > best!.date { best = (modified, id) }
+                      !excluding.contains(id),
+                      !Self.isSubagentMeta(payload),
+                      payload["source"]?.string != "vscode" else { continue }
+                let created = (payload["timestamp"]?.string ?? meta["timestamp"]?.string).flatMap(AgentTimestamp.parse) ?? modified
+                guard created >= threshold else { continue }
+                let distance = abs(created.timeIntervalSince(since))
+                if best == nil || distance < best!.distance { best = (distance, id) }
             }
             guard let next = calendar.date(byAdding: .day, value: 1, to: day) else { break }
             day = next
         }
         return best?.id
     }
+
+    /// Si un thread de Codex es de un subagente (su session_meta dice `source.subagent`).
+    /// Sus avisos llegan por el mismo notify que el padre y no tienen que cambiar la sesión.
+    public func isCodexSubagentThread(_ id: String) -> Bool {
+        guard let url = codexRolloutURL(id), let meta = Self.firstLineJSON(url) else { return false }
+        return Self.isSubagentMeta(meta["payload"])
+    }
+
+    /// El archivo de un thread de Codex: sessions/AAAA/MM/DD/rollout-<fecha>-<thread>.jsonl
+    /// (o archived_sessions/ si lo archivaste).
+    public func codexRolloutURL(_ threadId: String) -> URL? {
+        guard !threadId.isEmpty else { return nil }
+        let key = codexHome.path + "|" + threadId
+        if let cached = Self.rolloutCache.get(key), FileManager.default.fileExists(atPath: cached.path) { return cached }
+        let suffix = "-\(threadId).jsonl"
+        for folder in ["sessions", "archived_sessions"] {
+            let root = codexHome.appendingPathComponent(folder)
+            guard let walker = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil) else { continue }
+            for case let file as URL in walker where file.lastPathComponent.hasSuffix(suffix) {
+                Self.rolloutCache.set(key, file)
+                return file
+            }
+        }
+        return nil
+    }
+
+    static func isSubagentMeta(_ payload: JSONValue?) -> Bool {
+        guard let payload else { return false }
+        if payload["thread_source"]?.string == "subagent" { return true }
+        switch payload["source"] {
+        case .object(let source)?: return source["subagent"] != nil
+        case .string(let source)?: return source == "subagent"
+        default: return false
+        }
+    }
+
+    private static let rolloutCache = AgentStorageURLCache()
 
     /// Gemini no deja fijar el ID de sesión al arrancar: buscamos el chat que guardó en esa carpeta
     /// (<home>/tmp/<hash>/chats/*.json) después del último arranque. Si no hay, arranca de cero.
@@ -104,5 +158,31 @@ public struct AgentStorage: Sendable {
         let data = handle.readData(ofLength: 512 * 1024)
         let line = data.split(separator: UInt8(ascii: "\n"), maxSplits: 1).first ?? data[...]
         return JSONValue.parse(Data(line))
+    }
+}
+
+/// Rutas ya encontradas (recorrer ~/.codex/sessions entero cada vez es caro).
+final class AgentStorageURLCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [String: URL] = [:]
+
+    func get(_ key: String) -> URL? {
+        lock.lock()
+        defer { lock.unlock() }
+        return values[key]
+    }
+
+    func set(_ key: String, _ url: URL) {
+        lock.lock()
+        values[key] = url
+        lock.unlock()
+    }
+}
+
+/// Fechas ISO 8601 de los archivos de los agentes, con o sin fracciones de segundo.
+enum AgentTimestamp {
+    static func parse(_ text: String) -> Date? {
+        if let date = try? Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse(text) { return date }
+        return try? Date.ISO8601FormatStyle().parse(text)
     }
 }

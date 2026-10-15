@@ -371,7 +371,7 @@ struct AgentStorageTests {
         #expect(storage.codexExistingNotify() == ["/x", "y"])
     }
 
-    @Test("Encuentra el thread de Codex de esa carpeta, el más reciente y sin repetir")
+    @Test("Encuentra el thread de Codex de esa carpeta, el más cercano al arranque y sin repetir")
     func codexThread() throws {
         let (storage, _, codex, _) = storage()
         let now = Date()
@@ -386,8 +386,10 @@ struct AgentStorageTests {
         try rollout("c", id: "bueno", cwd: "/code/x", modified: now.addingTimeInterval(-10))
         try rollout("d", id: "tomado", cwd: "/code/x", modified: now)
         let since = now.addingTimeInterval(-60)
+        // Sin fecha de creación en el session_meta, cuenta la de modificación.
         #expect(storage.discoverCodexThread(cwd: "/code/x", since: since, excluding: ["tomado"], now: now) == "bueno")
-        #expect(storage.discoverCodexThread(cwd: "/code/x", since: since, excluding: [], now: now) == "tomado")
+        #expect(storage.discoverCodexThread(cwd: "/code/x", since: since, excluding: [], now: now) == "bueno")
+        #expect(storage.discoverCodexThread(cwd: "/code/x", since: since, excluding: ["bueno"], now: now) == "tomado")
         #expect(storage.discoverCodexThread(cwd: "/code/z", since: since, excluding: [], now: now) == nil)
     }
 
