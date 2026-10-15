@@ -207,4 +207,22 @@ struct IntegracionFinalTests {
         first.show(nil)
         #expect(terminal.superview == nil)
     }
+
+    @Test("Las sugerencias de comandos se leen en segundo plano y no repiten los que ya están")
+    func commandSuggestionsOffMain() async throws {
+        let dir = TempDir()
+        dir.write("package.json", #"{"scripts": {"dev": "vite", "build": "vite build"}}"#)
+        let all = await CommandsSection.loadSuggestions(path: dir.path, existing: [])
+        #expect(all.map(\.command) == ["npm run dev", "npm run build"])
+        let rest = await CommandsSection.loadSuggestions(path: dir.path, existing: [ProjectCommand(name: "Dev", command: "npm run dev")])
+        #expect(rest.map(\.command) == ["npm run build"])
+
+        // Y la sección las muestra como chips (sin «Agregar comando» la fila es solo de sugeridos).
+        let world = TestWorld()
+        let store = world.makeStore()
+        let project = Project(name: "web", path: dir.path)
+        let drawn = await colors(CommandsSection(project: project, showsAddButton: false).environment(store),
+                                 size: CGSize(width: 520, height: 40), name: "comandos-sugeridos")
+        #expect(drawn.allSatisfy { $0 > 1 })
+    }
 }

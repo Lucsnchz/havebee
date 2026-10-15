@@ -286,10 +286,16 @@ struct CommandsSection: View {
                 }
             }
         }
-        // Las sugerencias leen package.json y composer.json: una vez por cambio, no en cada dibujo.
+        // Las sugerencias leen package.json, composer.json y build.gradle: una vez por cambio (no en
+        // cada dibujo) y fuera del hilo principal.
         .task(id: SuggestionsKey(path: project.path, commands: project.commands.map(\.command), editable: editable)) {
-            suggestions = editable ? store.commandSuggestions(for: project) : []
+            suggestions = editable ? await Self.loadSuggestions(path: project.path, existing: project.commands) : []
         }
+    }
+
+    /// Detecta los comandos sugeridos en segundo plano.
+    static func loadSuggestions(path: String, existing: [ProjectCommand]) async -> [CommandSuggestions.Suggestion] {
+        await Task.detached(priority: .utility) { CommandSuggestions.detect(projectPath: path, existing: existing) }.value
     }
 
     private struct SuggestionsKey: Equatable {
