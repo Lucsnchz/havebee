@@ -76,6 +76,17 @@ struct TomlNotifyTests {
         #expect(notify(text) == .unreadable)
     }
 
+    @Test("Un config.toml roto no cuelga la lectura", .timeLimit(.minutes(1)), arguments: [
+        "otra = [1}\nnotify = ['x']",
+        "otra = {a = 1]\nnotify = ['x']",
+        "otra = [{a = [1}]\nnotify = ['x']",
+        "otra = [1,\nnotify = ['x']",
+    ])
+    func brokenConfig(text: String) {
+        // Lo que viene después de un valor roto ya no se puede ubicar: no está, pero tampoco se cuelga.
+        #expect(notify(text) == .missing)
+    }
+
     @Test("El notify del usuario con comillas simples o en varias líneas se sigue encadenando")
     func chained() {
         let config = """

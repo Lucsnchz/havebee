@@ -196,6 +196,8 @@ private struct TOMLArrayScanner {
                     i += 1
                     return true
                 }
+                // Un cierre que no corresponde (`[1}`): el TOML está roto y no hay cómo seguir.
+                if d == "]" || d == "}" { return false }
                 if d == "," || d == "=" {
                     i += 1
                 } else if d == "\"" || d == "'" || d == "[" || d == "{" {
