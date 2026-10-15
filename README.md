@@ -25,7 +25,7 @@ Los worktrees que ya existían (creados por Warp, Claude, a mano…) se detectan
 Se cambia con el botón de la izquierda de la barra de herramientas o desde *Visualización → Vista*.
 
 - **Árbol**: la barra lateral con Proyectos → Ramas → Sesiones.
-- **Compacta**: una barra angosta con los íconos de los proyectos en grande. Al tocar uno se abre en su última sesión activa. Arriba, las sesiones del proyecto como pestañas, una pestaña «Resumen» con las ramas y un **+** para crear sesiones en la rama actual o en otra.
+- **Compacta**: una barra angosta con los íconos de los proyectos en grande y, arriba de todo, «Inicio». Al tocar un proyecto se abre en su última sesión activa. Arriba, las sesiones del proyecto como pestañas, una pestaña «Resumen» con las ramas y un **+** para crear sesiones en la rama actual o en otra.
 
 En las dos, el ícono de cada proyecto tiene un borde de estado: un arco que gira si alguna sesión está trabajando, verde si alguna terminó y te espera, naranja si alguna necesita permiso. En la vista compacta, además, un globito con cuántas sesiones te esperan.
 
@@ -33,11 +33,39 @@ La vista de cada rama muestra botones para crear sesiones, una tarjeta por sesi�
 
 ## Más funciones
 
-- **Buscador (⌘K o la lupa)**: escribí parte del nombre de un proyecto, rama, sesión o comando y abrilo con Enter.
+- **Buscador (⌘K o la lupa)**: escribí parte del nombre de un proyecto, rama, sesión o comando y abrilo con Enter. También encuentra las sesiones archivadas (al final): al elegir una ves su historial y la podés restaurar. Empezá con `>` para ver acciones: `>nueva claude` crea una sesión de Claude en la rama que elijas, y también hay «Nueva rama en…», «Agregar proyecto…», «Cambiar a vista compacta» y «Ajustes…».
+- **Responder desde el aviso**: cuando Claude o Codex terminan su turno, la notificación tiene «Responder». Lo que escribís va directo a la sesión, como si lo tipearas, y la sesión pasa a «Trabajando». Si la sesión no está corriendo, Hive la abre y deja tu respuesta en el portapapeles. Los avisos de permiso solo tienen «Abrir».
 - **Terminales**: abajo de todo, un «proyecto» con terminales y agentes sueltos que arrancan en tu carpeta personal, fuera de cualquier repo.
 - **Comandos por proyecto**: en el Resumen del proyecto guardás comandos como `npm run dev` o `php artisan serve` (Hive sugiere los del `package.json`, `artisan`, `composer.json` y `docker-compose`). Corren en la rama abierta y aparecen en la esquina de abajo a la derecha, donde ves su salida, los detenés (Ctrl+C) o los reiniciás.
 - **Diff**: clic en un archivo de «Cambios» y ves qué cambió, con la lista de archivos al costado (↑/↓ para pasar de uno a otro).
-- **Archivar**: la ✕ de una pestaña archiva la sesión: deja de correr pero conserva su conversación. Las archivadas están al final de la vista de la rama, con «Restaurar».
+- **Archivar**: la ✕ de una pestaña (o ⌘W) archiva la sesión: deja de correr pero conserva su conversación. Las archivadas están al final de la vista de la rama, con «Restaurar», y también en el buscador.
+
+## Atajos
+
+Todo Hive se maneja con el teclado. Los atajos están en los menús **Sesión** e **Ir** (y algunos en Edición y Visualización).
+
+| Atajo | Qué hace |
+|---|---|
+| ⌘T | Nueva sesión del mismo agente que la abierta (o Claude) en la rama actual |
+| ⇧⌘N | Nueva rama… |
+| ⌘R | Reiniciar la sesión (o reanudarla si terminó) |
+| ⌘. | Detener la sesión |
+| ⌘W | Archivar la sesión abierta (en Ajustes o en otra ventana, cierra) |
+| ⇧⌘W | Cerrar la ventana |
+| ⌥⌘1 / ⌥⌘2 | Mostrar u ocultar el Historial / los Cambios |
+| ⇧⌘H | Inicio |
+| ⌘K | Buscar (con `>`, acciones) |
+| ⌘J | Siguiente que te espera: primero la que pide permiso, después la que terminó hace más |
+| ⌘1 … ⌘9 | Pestaña 1 a 9 del proyecto abierto |
+| ⌃⌘1 … ⌃⌘9 | Proyecto 1 a 9 |
+| ⇧⌘] / ⇧⌘[ | Sesión siguiente / anterior (da la vuelta) |
+| ⌥⌘↓ / ⌥⌘↑ | Proyecto siguiente / anterior |
+| ⌘F, ⌘G, ⇧⌘G, ⌘E | Buscar en la terminal, siguiente, anterior y usar la selección |
+| ⌥⌘K | Limpiar la terminal (en los agentes se usa `/clear`) |
+| ⌘+ (o ⌘=), ⌘−, ⌘0 | Agrandar, achicar y volver al tamaño normal del texto de las terminales |
+| ⌘O | Agregar proyecto |
+
+Al saltar a una sesión con el teclado, el árbol se despliega hasta ella. En la vista compacta, el atajo de cada pestaña y de cada proyecto aparece al dejar el puntero encima; doble clic en una pestaña la renombra, y podés soltar carpetas en la barra de proyectos para agregarlas.
 
 ## Historial que sobrevive a /clear
 
@@ -109,7 +137,8 @@ Principios:
   - `LaunchPlanner` arma el comando y el entorno de cada sesión.
   - `WorktreeSync` agrega los worktrees creados por fuera.
   - `BranchPlanner` prepara las ramas.
-  - `SwitcherIndex` resuelve el buscador.
+  - `SwitcherIndex` resuelve el buscador (resultados, acciones y qué resaltar).
+  - `SessionNavigation` y `ProjectTabs` deciden a dónde llevan los atajos (pestañas, sesión vecina, siguiente que te espera).
   - `ClearPreserver` es el filtro de `/clear`.
   - `ProjectTree` agrupa las consultas y los cambios sobre el árbol de proyectos.
 - **Los efectos van detrás de protocolos inyectados** (`AppEnvironment`): `GitClient` (git real o falso), `CommandRunning`, `ProcessStarting`, `SessionNotifying`, el reloj, la carpeta de datos (`HivePaths`) y la de cada agente (`AgentStorage`). En la app se usa `AppEnvironment.live()`; en los tests, carpetas temporales y versiones falsas.
