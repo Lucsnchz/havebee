@@ -315,6 +315,12 @@ struct HomeAndWelcomeTests {
             UndoToastView().padding(.bottom, 18)
         }
         #expect(await renderNucleoSnapshot(view.environment(demo.store), size: CGSize(width: 700, height: 160), name: "nucleo-06-deshacer") > 3)
+        let light = ZStack(alignment: .bottom) {
+            Color.white
+            UndoToastView().padding(.bottom, 18)
+        }
+        #expect(await renderNucleoSnapshot(light.environment(demo.store), size: CGSize(width: 700, height: 160),
+                                           name: "nucleo-07-deshacer-claro", dark: false) > 3)
         #expect(demo.store.undoAction?.message == "Archivaste “Revisá los tests de pagos”")
     }
 }

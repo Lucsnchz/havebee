@@ -36,6 +36,8 @@ struct UndoToastView: View {
                 .padding(.vertical, 9)
                 .background(.regularMaterial, in: Capsule())
                 .overlay(Capsule().strokeBorder(Color.primary.opacity(0.12)))
+                // Siempre oscura, como un HUD: en modo claro el «Deshacer» miel no se leía sobre blanco.
+                .environment(\.colorScheme, .dark)
                 .shadow(color: .black.opacity(0.25), radius: 10, y: 3)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .id(action.id)
