@@ -91,4 +91,54 @@ struct IntegracionViewTests {
         await check(BranchWebActions(project: plain.3, branch: plain.3.branches[0]).environment(plain.2).padding(20),
                     size: CGSize(width: 300, height: 80), name: "23-sin-sitio-ni-remoto", empty: true)
     }
+
+    @Test("Límites de las cuentas: al pie del sidebar y, en chiquito, en el riel compacto")
+    func usageSummary() async throws {
+        let (world, repo, store, _, session) = try await storeWithClaude()
+        defer { withExtendedLifetime((world, repo)) {} }
+        let soon = Int(Date().addingTimeInterval(2 * 3600).timeIntervalSince1970)
+        let later = Int(Date().addingTimeInterval(3 * 86_400).timeIntervalSince1970)
+        try FileManager.default.createDirectory(at: world.paths.usageDir, withIntermediateDirectories: true)
+        try #"{"context_window":{"used_percentage":72},"rate_limits":{"five_hour":{"used_percentage":23,"resets_at":\#(soon)},"seven_day":{"used_percentage":87,"resets_at":\#(later)}}}"#
+            .write(to: world.paths.usageDir.appendingPathComponent("\(session.id.uuidString).json"), atomically: true, encoding: .utf8)
+        let monitor = UsageMonitor(interval: 3600)
+        monitor.attach(store)
+        #expect(await waitUntil { monitor.claude != nil })
+        #expect(monitor.sessions[session.id]?.contextPercent == 72)
+        await check(UsageSummary(monitor: monitor, compact: true).environment(store).frame(width: 72).padding(.vertical, 12),
+                    size: CGSize(width: 72, height: 60), name: "24-uso-riel")
+        await check(UsageSummary(monitor: monitor).environment(store).padding(12),
+                    size: CGSize(width: 240, height: 70), name: "25-uso-sidebar")
+        await check(UsageBadge(sessionId: session.id, monitor: monitor).environment(store).padding(12),
+                    size: CGSize(width: 100, height: 44), name: "26-uso-sesion")
+        // Sin datos no ocupa lugar.
+        let empty = UsageMonitor(interval: 3600)
+        await check(UsageSummary(monitor: empty, compact: true, insets: EdgeInsets(top: 12, leading: 0, bottom: 0, trailing: 0))
+                        .environment(TestWorld().makeStore()),
+                    size: CGSize(width: 72, height: 40), name: "27-uso-vacio", empty: true)
+    }
+
+    @Test("La ayuda del riel lista cada límite con su reinicio")
+    func usageRailHelp() {
+        let now = Date(timeIntervalSince1970: 1_790_942_400)
+        let resets = now.addingTimeInterval(3 * 86_400)
+        let limits = [UsageLimit(windowMinutes: 300, usedPercent: 23.4, resetsAt: nil),
+                      UsageLimit(windowMinutes: 10080, usedPercent: 87, resetsAt: resets)]
+        #expect(UsageRailRow.helpText(.codex, limits: limits, now: now)
+                == "Codex · 5 horas: 23 % usado · semana: 87 % usado, \(UsageReader.resetText(resets, now: now))")
+    }
+
+    @Test("Ajustes avisa si el notify de Codex no se puede leer (y no se va a llamar)")
+    func codexNotifyWarning() async throws {
+        let dir = TempDir("hive-codex-notify")
+        let agents = AgentStorage(claudeConfigDir: dir.subdir("claude"), codexHome: dir.subdir("codex"), geminiHome: dir.subdir("gemini"))
+        #expect(SettingsGeneralPane.codexNotifyWarning(agents) == nil) // sin config.toml
+        dir.write("codex/config.toml", "notify = ['/usr/local/bin/aviso', 'turno']\n")
+        #expect(SettingsGeneralPane.codexNotifyWarning(agents) == nil)
+        dir.write("codex/config.toml", "notify = '/usr/local/bin/aviso'\n")
+        let warning = try #require(SettingsGeneralPane.codexNotifyWarning(agents))
+        #expect(warning.contains("config.toml"))
+        await check(SettingsGeneralPane(dataFolder: dir.url, agents: agents), size: CGSize(width: 540, height: 520),
+                    name: "28-ajustes-notify-codex")
+    }
 }

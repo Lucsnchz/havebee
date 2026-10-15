@@ -9,10 +9,13 @@ public struct AppSettings: Equatable, Sendable {
     public var claudeInline: Bool
     /// Decirle a Claude y Codex dónde está el historial completo de la sesión.
     public var historyHint: Bool
+    /// Claude muestra en su barra de estado cuánto contexto y cuánto de tus límites usaste.
+    public var showClaudeUsage: Bool
 
-    public init(claudeInline: Bool = true, historyHint: Bool = true) {
+    public init(claudeInline: Bool = true, historyHint: Bool = true, showClaudeUsage: Bool = true) {
         self.claudeInline = claudeInline
         self.historyHint = historyHint
+        self.showClaudeUsage = showClaudeUsage
     }
 
     static let claudeInlineKey = "claudeInlineTerminal"
@@ -24,20 +27,25 @@ public struct AppSettings: Equatable, Sendable {
 
     public static func read(_ defaults: UserDefaults = .standard) -> AppSettings {
         AppSettings(claudeInline: defaults.object(forKey: claudeInlineKey) as? Bool ?? true,
-                    historyHint: defaults.object(forKey: historyHintKey) as? Bool ?? true)
+                    historyHint: defaults.object(forKey: historyHintKey) as? Bool ?? true,
+                    showClaudeUsage: defaults.object(forKey: showClaudeUsageKey) as? Bool ?? true)
     }
 }
 
 public struct SettingsView: View {
     private let dataFolder: URL
+    private let agents: AgentStorage?
 
-    public init(dataFolder: URL) {
+    /// - Parameter agents: dónde guardan su configuración los agentes, para revisarla (por ejemplo, el
+    ///   notify de Codex). Sin él no se revisa nada.
+    public init(dataFolder: URL, agents: AgentStorage? = nil) {
         self.dataFolder = dataFolder
+        self.agents = agents
     }
 
     public var body: some View {
         TabView {
-            SettingsGeneralPane(dataFolder: dataFolder)
+            SettingsGeneralPane(dataFolder: dataFolder, agents: agents)
                 .tabItem { Label("General", systemImage: "gearshape") }
             SettingsTerminalPane()
                 .tabItem { Label("Terminal", systemImage: "terminal") }
@@ -54,6 +62,9 @@ struct SettingsGeneralPane: View {
     @AppStorage(AppSettings.historyHintKey) private var historyHint = true
     @AppStorage(AppSettings.showClaudeUsageKey) private var showClaudeUsage = true
     let dataFolder: URL
+    var agents: AgentStorage?
+    /// El aviso de que el notify de Codex no se pudo leer (nil si está bien o no hay).
+    @State private var codexNotifyWarning: String?
 
     var body: some View {
         Form {
@@ -76,6 +87,15 @@ struct SettingsGeneralPane: View {
                     Text("Mostrar uso de Claude en su barra")
                     Text("La barra de estado de Claude muestra cuánto usaste de tu límite. Se aplica al abrir o reiniciar la sesión.")
                 }
+                if let codexNotifyWarning {
+                    Label {
+                        Text("No pude leer tu notify de Codex; no se va a llamar")
+                        Text(codexNotifyWarning)
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(Theme.attention)
+                    }
+                }
             }
             Section {
                 Button("Mostrar los datos de Hive en Finder") { NSWorkspace.shared.open(dataFolder) }
@@ -83,6 +103,24 @@ struct SettingsGeneralPane: View {
         }
         .formStyle(.grouped)
         .fixedSize(horizontal: false, vertical: true)
+        .task { await refreshCodexNotify() }
+        // Al volver (por ejemplo, después de arreglar el config.toml).
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task { await refreshCodexNotify() }
+        }
+    }
+
+    /// Lee el config.toml de Codex fuera del hilo principal.
+    private func refreshCodexNotify() async {
+        guard let agents else { return }
+        codexNotifyWarning = await Task.detached(priority: .utility) { Self.codexNotifyWarning(agents) }.value
+    }
+
+    /// Si Codex tiene un `notify` que no se entiende, Hive no lo puede seguir llamando: dónde mirar.
+    nonisolated static func codexNotifyWarning(_ agents: AgentStorage) -> String? {
+        guard agents.codexNotifyStatus().unreadable else { return nil }
+        let file = agents.codexHome.appendingPathComponent("config.toml").path.tildePath
+        return "Revisá la línea notify de \(file): tiene que ser una lista, como notify = [\"programa\", \"argumento\"]."
     }
 }
 

@@ -27,7 +27,7 @@ public struct HiveApplication: App {
         }
 
         Settings {
-            SettingsView(dataFolder: store.environment.paths.root)
+            SettingsView(dataFolder: store.environment.paths.root, agents: store.environment.agents)
         }
     }
 }

@@ -58,15 +58,19 @@ struct SidebarView: View {
                 .padding(.bottom, 4)
         }
         .safeAreaInset(edge: .bottom) {
-            HStack {
-                Button {
-                    store.addProjectInteractive()
-                } label: {
-                    Label("Agregar proyecto", systemImage: "plus")
+            VStack(alignment: .leading, spacing: 0) {
+                // Los límites de las cuentas de Claude y Codex (nada mientras no haya datos).
+                UsageSummary(insets: EdgeInsets(top: 0, leading: 0, bottom: 10, trailing: 0))
+                HStack {
+                    Button {
+                        store.addProjectInteractive()
+                    } label: {
+                        Label("Agregar proyecto", systemImage: "plus")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Agregar un repositorio (también podés arrastrar carpetas acá)")
+                    Spacer()
                 }
-                .buttonStyle(.borderless)
-                .help("Agregar un repositorio (también podés arrastrar carpetas acá)")
-                Spacer()
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)

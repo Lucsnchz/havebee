@@ -421,7 +421,8 @@ struct AppStoreSessionTests {
         #expect(launch.directory == s.repo.path)
         let agentId = try #require(s.store.sessionContext(session.id)?.session.agentSessionId)
         #expect(Array(launch.args.prefix(2)) == ["--session-id", agentId])
-        #expect(launch.args.contains(s.world.paths.claudeSettings.path))
+        // «Mostrar uso de Claude en su barra» está prendido por defecto: los ajustes con statusLine.
+        #expect(launch.args.contains(s.world.paths.claudeSettingsWithUsage.path))
         #expect(launch.args.contains("--append-system-prompt"))
         #expect(launch.environment["HIVE_SESSION_ID"] == session.id.uuidString)
         #expect(launch.environment["CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN"] == "1")
@@ -435,6 +436,26 @@ struct AppStoreSessionTests {
         // Abrirla de nuevo no la relanza.
         s.store.activate(session.id)
         #expect(s.world.processes.launches.count == 1)
+    }
+
+    @Test("El uso de Claude en su barra: encadena el statusLine del usuario y, apagado, usa los ajustes de siempre")
+    func launchClaudeUsage() async throws {
+        let s = try await Setup()
+        try #"{"statusLine": {"type": "command", "command": "npx ccstatusline"}}"#
+            .write(to: s.world.agents.claudeConfigDir.appendingPathComponent("settings.json"), atomically: true, encoding: .utf8)
+        let on = try s.newSession(.claude)
+        s.store.activate(on.id)
+        let launch = try #require(s.world.processes.launches.last)
+        #expect(launch.args.contains(s.world.paths.claudeSettingsWithUsage.path))
+        #expect(launch.environment["HIVE_USER_STATUSLINE"] == "npx ccstatusline")
+
+        s.world.settings.showClaudeUsage = false
+        let off = try s.newSession(.claude)
+        s.store.activate(off.id)
+        let plain = try #require(s.world.processes.launches.last)
+        #expect(plain.args.contains(s.world.paths.claudeSettings.path))
+        #expect(!plain.args.contains(s.world.paths.claudeSettingsWithUsage.path))
+        #expect(plain.environment["HIVE_USER_STATUSLINE"] == nil)
     }
 
     @Test("Codex y Gemini reciben los MCP del proyecto")
@@ -811,9 +832,13 @@ struct AppStoreToolsTests {
 
     @Test("Ajustes por defecto y leídos de UserDefaults")
     func settings() async throws {
-        let defaults = try #require(UserDefaults(suiteName: "hive-tests-\(UUID().uuidString)"))
-        #expect(AppSettings.read(defaults) == AppSettings(claudeInline: true, historyHint: true))
+        // Un dominio propio en una carpeta temporal (nunca UserDefaults.standard), que se borra al terminar.
+        let preferences = SnapshotDefaults()
+        let defaults = preferences.defaults
+        #expect(AppSettings.read(defaults) == AppSettings(claudeInline: true, historyHint: true, showClaudeUsage: true))
         defaults.set(false, forKey: AppSettings.claudeInlineKey)
         #expect(AppSettings.read(defaults).claudeInline == false)
+        defaults.set(false, forKey: AppSettings.showClaudeUsageKey)
+        #expect(AppSettings.read(defaults).showClaudeUsage == false)
     }
 }

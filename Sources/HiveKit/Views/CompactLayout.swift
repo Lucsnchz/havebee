@@ -50,6 +50,8 @@ private struct ProjectRail: View {
                          shortcut: store.projects.firstIndex(where: \.isScratch).flatMap(HiveCommands.Shortcut.project))
                     .padding(.top, 10)
             }
+            // Los límites de las cuentas, en chiquito (nada mientras no haya datos).
+            UsageSummary(compact: true, insets: EdgeInsets(top: 12, leading: 0, bottom: 0, trailing: 0))
             Button {
                 store.addProjectInteractive()
             } label: {

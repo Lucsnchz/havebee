@@ -94,4 +94,31 @@ struct LaunchPlannerExtraTests {
         let inherited = LaunchPlanner.plan(context(.claude) { $0.inheritedEnvironment["HIVE_USER_STATUSLINE"] = "viejo" })
         #expect(inherited.environment["HIVE_USER_STATUSLINE"] == nil)
     }
+
+    @Test("LaunchContextBuilder: con el uso de Claude prendido busca el statusLine del usuario; apagado, ni lo mira")
+    func builderClaudeUsage() {
+        let root = TempDir("hive-builder")
+        let claudeDir = root.subdir("claude")
+        root.write("claude/settings.json", #"{"statusLine": {"type": "command", "command": "~/.claude/statusline.sh"}}"#)
+        let repo = root.subdir("repo").path
+        let agents = AgentStorage(claudeConfigDir: claudeDir, codexHome: root.subdir("codex"), geminiHome: root.subdir("gemini"))
+        func build(_ kind: SessionKind, usage: Bool) -> LaunchContext {
+            LaunchContextBuilder(session: Session(name: "S", kind: kind), project: Project(name: "app", path: repo),
+                                 branch: Branch(name: "main", mode: .main), directory: repo, path: "/bin",
+                                 inheritedEnvironment: [:], paths: HivePaths(root: root.url.appendingPathComponent("Hive")),
+                                 agents: agents, historyHint: false, claudeUsage: usage).build()
+        }
+        let on = build(.claude, usage: true)
+        #expect(on.claudeUsage)
+        #expect(on.claudeUserStatusLine == "~/.claude/statusline.sh")
+        #expect(LaunchPlanner.plan(on).environment["HIVE_USER_STATUSLINE"] == "~/.claude/statusline.sh")
+        let off = build(.claude, usage: false)
+        #expect(!off.claudeUsage && off.claudeUserStatusLine == nil)
+        // Solo Claude tiene statusLine.
+        #expect(build(.codex, usage: true).claudeUserStatusLine == nil)
+        // Por defecto, apagado.
+        #expect(!LaunchContextBuilder(session: Session(name: "S", kind: .claude), project: Project(name: "app", path: repo),
+                                      branch: Branch(name: "main", mode: .main), directory: repo, path: "/bin",
+                                      inheritedEnvironment: [:], paths: HivePaths(root: root.url), agents: agents).claudeUsage)
+    }
 }

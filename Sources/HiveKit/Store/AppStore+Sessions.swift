@@ -60,7 +60,7 @@ extension AppStore {
         return LaunchContextBuilder(
             session: session, project: project, branch: branch, directory: directory, path: currentPATH,
             inheritedEnvironment: environment.inheritedEnvironment, paths: environment.paths, agents: environment.agents,
-            claudeInline: settings.claudeInline, historyHint: settings.historyHint,
+            claudeInline: settings.claudeInline, historyHint: settings.historyHint, claudeUsage: settings.showClaudeUsage,
             claimedAgentIds: projects.claimedAgentIds(session.kind, except: session.id), now: environment.now())
     }
 

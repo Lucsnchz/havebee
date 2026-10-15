@@ -56,6 +56,10 @@ struct SessionDetailView: View {
                 }
                 ToolbarItemGroup {
                     StatusPill(status: rt.status, kind: ctx.session.kind)
+                    // «ctx 72%» en Claude y Codex (nada mientras no informen).
+                    if ctx.session.kind == .claude || ctx.session.kind == .codex {
+                        UsageBadge(sessionId: sessionId)
+                    }
                     SessionPanelToggles(sidePanel: $sidePanel,
                                         showsChanges: !ctx.project.isScratch,
                                         changes: store.gitStatus(for: ctx.branch, in: ctx.project)?.changes.count ?? 0)

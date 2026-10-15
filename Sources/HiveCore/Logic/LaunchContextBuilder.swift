@@ -14,13 +14,16 @@ public struct LaunchContextBuilder: Sendable {
     public var agents: AgentStorage
     public var claudeInline: Bool
     public var historyHint: Bool
+    /// Claude arranca con el statusLine de Hive (uso de contexto y límites): ajuste `showClaudeUsage`.
+    public var claudeUsage: Bool
     /// IDs de conversación que ya usan otras sesiones del mismo tipo (no se los roba).
     public var claimedAgentIds: Set<String>
     public var now: Date
 
     public init(session: Session, project: Project, branch: Branch, directory: String, path: String,
                 inheritedEnvironment: [String: String], paths: HivePaths, agents: AgentStorage,
-                claudeInline: Bool = true, historyHint: Bool = true, claimedAgentIds: Set<String> = [], now: Date = Date()) {
+                claudeInline: Bool = true, historyHint: Bool = true, claudeUsage: Bool = false,
+                claimedAgentIds: Set<String> = [], now: Date = Date()) {
         self.session = session
         self.project = project
         self.branch = branch
@@ -31,6 +34,7 @@ public struct LaunchContextBuilder: Sendable {
         self.agents = agents
         self.claudeInline = claudeInline
         self.historyHint = historyHint
+        self.claudeUsage = claudeUsage
         self.claimedAgentIds = claimedAgentIds
         self.now = now
     }
@@ -57,6 +61,8 @@ public struct LaunchContextBuilder: Sendable {
                 break
             }
         }
+        // Con el uso de Hive, el statusLine que ya tenías en Claude se sigue mostrando (Hive lo llama).
+        let userStatusLine = session.kind == .claude && claudeUsage ? agents.claudeUserStatusLine(directory: directory) : nil
         let geminiSettings = session.kind == .gemini
             ? MCPConfig.writeGeminiSettings(mcpServers, to: paths.geminiDir.appendingPathComponent("\(session.id.uuidString).json"))
             : nil
@@ -66,6 +72,7 @@ public struct LaunchContextBuilder: Sendable {
             claudeInline: claudeInline, historyHint: historyHint,
             claudeConversationExists: session.kind == .claude && session.agentSessionId.map(agents.claudeConversationExists) == true,
             discoveredAgentId: discovered, mcpFile: mcpFile, mcpServers: mcpServers, geminiSettingsPath: geminiSettings,
-            codexExistingNotify: session.kind == .codex ? agents.codexExistingNotify() : nil)
+            codexExistingNotify: session.kind == .codex ? agents.codexExistingNotify() : nil,
+            claudeUsage: claudeUsage, claudeUserStatusLine: userStatusLine)
     }
 }

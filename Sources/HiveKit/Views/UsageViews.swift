@@ -125,22 +125,70 @@ struct UsageBadge: View {
 }
 
 /// Barritas con los límites de las cuentas: «Claude 5h · sem» y «Codex sem 80% · se reinicia el jue 14:00».
-/// No muestra nada mientras no haya datos.
+/// No muestra nada mientras no haya datos. `compact`: para el riel angosto de la vista compacta, un logo
+/// con el límite más usado de cada cuenta. `insets` solo se suman si hay algo que mostrar.
 struct UsageSummary: View {
     @Environment(AppStore.self) private var store
     var monitor: UsageMonitor = .shared
     var now: () -> Date = Date.init
+    var compact = false
+    var insets = EdgeInsets()
 
     var body: some View {
         let date = now()
         let rows = [monitor.claude, monitor.codex].compactMap { $0 }.filter { !$0.activeLimits(now: date).isEmpty }
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: compact ? .center : .leading, spacing: compact ? 8 : 7) {
             ForEach(rows, id: \.agent) { snapshot in
-                UsageAccountRow(snapshot: snapshot, now: date)
+                if compact {
+                    UsageRailRow(snapshot: snapshot, now: date)
+                } else {
+                    UsageAccountRow(snapshot: snapshot, now: date)
+                }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: compact ? .center : .leading)
+        .padding(rows.isEmpty ? EdgeInsets() : insets)
         .task { monitor.attach(store) }
+    }
+}
+
+/// En el riel: el logo de la cuenta, su límite más usado y una barrita. El detalle va en la ayuda.
+struct UsageRailRow: View {
+    let snapshot: UsageSnapshot
+    let now: Date
+
+    var body: some View {
+        let limits = snapshot.activeLimits(now: now)
+        let top = limits.max { $0.usedPercent < $1.usedPercent }
+        let percent = min(max(top?.usedPercent ?? 0, 0), 100)
+        VStack(spacing: 3) {
+            HStack(spacing: 3) {
+                AgentLogo(kind: snapshot.agent, size: 11)
+                Text("\(Int(percent.rounded()))%")
+                    .font(.system(size: 10, weight: .medium).monospacedDigit())
+                    .foregroundStyle(percent >= 80 ? AnyShapeStyle(UsageMonitor.color(percent)) : AnyShapeStyle(.secondary))
+                    .fixedSize()
+            }
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.primary.opacity(0.1))
+                Capsule().fill(UsageMonitor.color(percent))
+                    .frame(width: max(36 * percent / 100, percent > 0 ? 2 : 0))
+            }
+            .frame(width: 36, height: 3)
+        }
+        .help(UsageRailRow.helpText(snapshot.agent, limits: limits, now: now))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(UsageRailRow.helpText(snapshot.agent, limits: limits, now: now))
+    }
+
+    /// «Claude · 5 horas: 23 % usado · semana: 41 % usado, se reinicia el jue 14:00».
+    static func helpText(_ agent: SessionKind, limits: [UsageLimit], now: Date) -> String {
+        let parts = limits.map { limit in
+            var text = "\(limit.longLabel): \(Int(min(max(limit.usedPercent, 0), 100).rounded())) % usado"
+            if let resets = limit.resetsAt { text += ", " + UsageReader.resetText(resets, now: now) }
+            return text
+        }
+        return ([agent.defaultName] + parts).joined(separator: " · ")
     }
 }
 
