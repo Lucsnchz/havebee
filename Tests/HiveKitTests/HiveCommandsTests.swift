@@ -53,6 +53,22 @@ struct HiveCommandsTests {
         #expect(HiveCommands.Shortcut.project(-1) == nil)
     }
 
+    @Test("Soltar en el riel: solo carpetas que existen, aunque la URL no termine en barra")
+    func droppedFolders() throws {
+        let dir = TempDir("hive-drop")
+        let repo = dir.subdir("ecommerce").path
+        let file = dir.write("notas.txt", "hola").path
+        let urls = [
+            try #require(URL(string: "file://\(repo)")), // sin la barra final de las carpetas
+            URL(fileURLWithPath: file),
+            URL(fileURLWithPath: dir.url.appendingPathComponent("no-existe").path),
+            try #require(URL(string: "https://gitlab.com/equipo/ecommerce")),
+        ]
+        #expect(!urls[0].hasDirectoryPath)
+        #expect(CompactLayout.droppedFolders(urls) == [repo])
+        #expect(CompactLayout.droppedFolders([URL(fileURLWithPath: repo, isDirectory: true)]) == [repo])
+    }
+
     @Test("⌘W archiva solo en la ventana principal, sin hojas y con una sesión abierta")
     func closeDecision() {
         let id = UUID()
@@ -61,6 +77,16 @@ struct HiveCommandsTests {
         #expect(HiveNavigator.closeDecision(selection: .session(id), keyWindowIsMain: true, sheetOpen: true) == .closeWindow)
         #expect(HiveNavigator.closeDecision(selection: .project(id), keyWindowIsMain: true, sheetOpen: false) == .closeWindow)
         #expect(HiveNavigator.closeDecision(selection: nil, keyWindowIsMain: true, sheetOpen: false) == .closeWindow)
+    }
+
+    @Test("⌘. detiene la sesión solo en la ventana principal; en una hoja u otra ventana cancela")
+    func stopDecision() {
+        let id = UUID()
+        #expect(HiveNavigator.stopDecision(selection: .session(id), keyWindowIsMain: true, sheetOpen: false) == .stop(id))
+        // En el buscador (⌘K) o en Ajustes, ⌘. no corta la sesión que quedó detrás.
+        #expect(HiveNavigator.stopDecision(selection: .session(id), keyWindowIsMain: false, sheetOpen: false) == .cancel)
+        #expect(HiveNavigator.stopDecision(selection: .session(id), keyWindowIsMain: true, sheetOpen: true) == .cancel)
+        #expect(HiveNavigator.stopDecision(selection: .project(id), keyWindowIsMain: true, sheetOpen: false) == .cancel)
     }
 
     @Test("Tamaño de letra: un punto por vez, entre 9 y 28")

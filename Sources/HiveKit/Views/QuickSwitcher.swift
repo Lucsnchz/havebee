@@ -186,7 +186,8 @@ struct QuickSwitcher: View {
     private func perform(_ action: SwitcherAction) {
         switch action {
         case .newSession(let branch, let kind):
-            store.requestNewSession(branchId: branch, kind: kind)
+            // Si la rama no está activa pide el checkout con un diálogo: que aparezca con la hoja ya cerrada.
+            afterDismiss = { [store] in store.requestNewSession(branchId: branch, kind: kind) }
         case .newBranch(let project):
             // Otra hoja: se abre cuando termina de cerrarse esta.
             afterDismiss = { [store] in store.newBranchTarget = NewBranchTarget(id: project) }

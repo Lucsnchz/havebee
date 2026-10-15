@@ -75,13 +75,27 @@ private struct ProjectRail: View {
         }
         // Soltar carpetas de repos agrega cada una como proyecto.
         .dropDestination(for: URL.self) { urls, _ in
-            let folders = urls.filter(\.hasDirectoryPath)
+            let folders = CompactLayout.droppedFolders(urls)
             guard !folders.isEmpty else { return false }
             Task {
-                for url in folders { await store.addProject(at: url.path) }
+                for path in folders { await store.addProject(at: path) }
             }
             return true
         } isTargeted: { dropTargeted = $0 }
+    }
+}
+
+extension CompactLayout {
+    /// Las carpetas entre lo que se soltó en el riel, como rutas. Se mira el disco y no la barra
+    /// final de la URL: Finder a veces manda referencias (file:///.file/id=…) o rutas sin la barra.
+    static func droppedFolders(_ urls: [URL]) -> [String] {
+        urls.compactMap { url in
+            guard url.isFileURL else { return nil }
+            let path = ((url as NSURL).filePathURL ?? url).path
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue else { return nil }
+            return path
+        }
     }
 }
 

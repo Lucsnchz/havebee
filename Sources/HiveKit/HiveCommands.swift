@@ -83,9 +83,7 @@ struct HiveCommands: Commands {
         }
         .hiveShortcut(.restart)
         .disabled(!(runtime?.isRunning == true || runtime?.status.isExited == true))
-        Button("Detener") {
-            if let id = selected?.session.id { store.stop(id) }
-        }
+        Button("Detener") { HiveNavigator.stopOrCancel(store) }
         .hiveShortcut(.stop)
         .disabled(runtime?.isRunning != true)
         Divider()
@@ -370,11 +368,38 @@ enum HiveNavigator {
 
     static func archiveOrClose(_ store: AppStore) {
         let window = NSApp?.keyWindow
-        let isMain = window?.identifier?.rawValue == HiveApplication.mainWindowId
-        switch closeDecision(selection: store.selection, keyWindowIsMain: isMain, sheetOpen: window?.attachedSheet != nil) {
+        switch closeDecision(selection: store.selection, keyWindowIsMain: isMain(window), sheetOpen: window?.attachedSheet != nil) {
         case .archive(let id): store.requestArchive(id)
         case .closeWindow: window?.performClose(nil)
         }
+    }
+
+    /// Qué hace «Detener» (⌘.).
+    enum StopDecision: Equatable {
+        case stop(UUID)
+        /// En una hoja (el buscador, renombrar…) o en otra ventana, ⌘. es «Cancelar», como en todo
+        /// macOS: cortar la sesión que quedó detrás sería una sorpresa fea.
+        case cancel
+    }
+
+    static func stopDecision(selection: SidebarItem?, keyWindowIsMain: Bool, sheetOpen: Bool) -> StopDecision {
+        if keyWindowIsMain, !sheetOpen, case .session(let id)? = selection { return .stop(id) }
+        return .cancel
+    }
+
+    static func stopOrCancel(_ store: AppStore) {
+        let window = NSApp?.keyWindow
+        switch stopDecision(selection: store.selection, keyWindowIsMain: isMain(window), sheetOpen: window?.attachedSheet != nil) {
+        case .stop(let id): store.stop(id)
+        case .cancel:
+            // Por el mismo camino que esc: así un campo de texto se lo avisa a su vista (onExitCommand).
+            window?.firstResponder?.doCommand(by: #selector(NSResponder.cancelOperation(_:)))
+        }
+    }
+
+    /// Si la ventana es la principal de Hive (y no Ajustes, una hoja u otra).
+    private static func isMain(_ window: NSWindow?) -> Bool {
+        window?.identifier?.rawValue == HiveApplication.mainWindowId
     }
 
     /// Abre una sesión y despliega su proyecto y su rama en el árbol.
@@ -435,7 +460,8 @@ enum HiveNavigator {
         return true
     }
 
-    /// Busca en la terminal con foco o, si el foco está en otro lado, en la de la sesión abierta.
+    /// Busca en la terminal con foco o, si el foco está en otro lado de la ventana principal, en la
+    /// de la sesión abierta. En una hoja o en Ajustes no le saca el foco a la ventana de atrás.
     static func find(_ action: NSTextFinder.Action, store: AppStore) {
         let sender = NSMenuItem()
         sender.tag = action.rawValue
@@ -444,7 +470,8 @@ enum HiveNavigator {
             NSApp.sendAction(selector, to: nil, from: sender)
             return
         }
-        if let id = selectedSession(store)?.session.id, let terminal = store.runtimes[id]?.terminal, let window = terminal.window {
+        if let id = selectedSession(store)?.session.id, let terminal = store.runtimes[id]?.terminal,
+           let window = terminal.window, window === NSApp.keyWindow {
             window.makeFirstResponder(terminal)
             NSApp.sendAction(selector, to: terminal, from: sender)
             return
