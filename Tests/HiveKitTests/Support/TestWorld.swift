@@ -116,8 +116,10 @@ private final class LockedLogos: @unchecked Sendable {
 }
 
 /// Espera (cediendo el hilo principal) hasta que se cumpla una condición.
+/// El margen es amplio porque, con todos los tests juntos, las capturas de vistas ocupan el hilo
+/// principal varios segundos seguidos; si la condición se cumple antes, no se espera de más.
 @MainActor
-func waitUntil(timeout: TimeInterval = 5, _ condition: () -> Bool) async -> Bool {
+func waitUntil(timeout: TimeInterval = 15, _ condition: () -> Bool) async -> Bool {
     let deadline = Date().addingTimeInterval(timeout)
     while !condition() {
         if Date() > deadline { return false }
