@@ -296,7 +296,7 @@ private struct BranchRow: View {
     }
 }
 
-private struct SessionRow: View {
+struct SessionRow: View {
     @Environment(AppStore.self) private var store
     let project: Project
     let branch: Branch
@@ -313,6 +313,8 @@ private struct SessionRow: View {
                 StatusIndicator(status: rt.status, unseen: rt.unseen, kind: session.kind)
             }
         }
+        // Al pasar el mouse, lo que pide el agente si espera tu permiso.
+        .help(Self.helpText(notice: rt?.notice) ?? "")
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityText(rt))
     }
@@ -322,7 +324,14 @@ private struct SessionRow: View {
         if let rt, rt.status != .dormant {
             text += ", " + StatusIndicator.accessibilityText(status: rt.status, unseen: rt.unseen, kind: session.kind)
         }
+        if let notice = Self.helpText(notice: rt?.notice) { text += ". " + notice }
         return text
+    }
+
+    /// «Necesita permiso: Pide permiso para editar app.php», o nil si no pide nada.
+    static func helpText(notice: String?) -> String? {
+        guard let notice = notice?.trimmingCharacters(in: .whitespacesAndNewlines), !notice.isEmpty else { return nil }
+        return "Necesita permiso: \(notice)"
     }
 }
 

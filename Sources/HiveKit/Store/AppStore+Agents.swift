@@ -100,7 +100,7 @@ extension AppStore {
         } else if status.needsYou && !quiet {
             if !isFocused(rt.sessionId) {
                 rt.unseen = true
-                if let body { postNotification(rt.sessionId, body: body, attention: status == .attention) }
+                if let body { postNotification(rt.sessionId, body: body, kind: status == .attention ? .permission : .turn) }
             }
             updateBadge()
         }
@@ -115,12 +115,13 @@ extension AppStore {
         }
     }
 
-    func postNotification(_ id: UUID, body: String, attention: Bool) {
+    /// Aviso del sistema: con .permission solo se abre; con .turn se puede responder desde el aviso.
+    func postNotification(_ id: UUID, body: String, kind: NotificationKind) {
         guard let ctx = sessionContext(id) else { return }
         environment.notifier.post(sessionId: id,
                                   title: ctx.project.isScratch ? ctx.project.name : "\(ctx.project.name) › \(ctx.branch.name)",
-                                  subtitle: "\(ctx.session.name) · \(attention ? "Necesita permiso" : "Tu turno")",
-                                  body: body)
+                                  subtitle: "\(ctx.session.name) · \(kind == .permission ? "Necesita permiso" : "Tu turno")",
+                                  body: body, kind: kind)
     }
 
     func updateBadge() {

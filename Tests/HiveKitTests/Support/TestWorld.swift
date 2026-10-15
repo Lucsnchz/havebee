@@ -11,6 +11,8 @@ final class FakeNotifier: SessionNotifying {
         let title: String
         let subtitle: String
         let body: String
+        /// El tipo de aviso, si quien avisó lo pasó (define los botones del aviso).
+        var kind: NotificationKind?
     }
 
     var onOpen: ((UUID) -> Void)?
@@ -21,6 +23,9 @@ final class FakeNotifier: SessionNotifying {
     func setup() { setupCalls += 1 }
     func post(sessionId: UUID, title: String, subtitle: String, body: String) {
         posts.append(Post(sessionId: sessionId, title: title, subtitle: subtitle, body: body))
+    }
+    func post(sessionId: UUID, title: String, subtitle: String, body: String, kind: NotificationKind) {
+        posts.append(Post(sessionId: sessionId, title: title, subtitle: subtitle, body: body, kind: kind))
     }
     func clear(_ sessionId: UUID) { cleared.append(sessionId) }
 }

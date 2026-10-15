@@ -31,11 +31,7 @@ struct SessionCard: View {
                             .foregroundStyle(status.tint(unseen: unseen))
                     }
                 }
-                Text(summary(rt))
-                    .font(HiveFont.secondary)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2, reservesSpace: true)
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                summaryView(Self.summary(session: session, branchName: branch.name, title: rt?.title, notice: rt?.notice))
                 footer(status: status, rt: rt)
                     .font(HiveFont.meta)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -77,11 +73,40 @@ struct SessionCard: View {
         }
     }
 
-    private func summary(_ rt: SessionRuntime?) -> String {
-        if let message = session.lastMessage, !message.isEmpty { return message }
-        let title = (rt?.title ?? "").trimmingCharacters(in: .whitespaces)
-        if !title.isEmpty { return title }
-        return session.kind.isAgent ? "Todavía sin respuestas." : "Terminal en \(branch.name)."
+    /// Debajo del nombre: lo que pide el agente (en naranja, mientras espera tu permiso) o lo último que respondió.
+    @ViewBuilder
+    private func summaryView(_ summary: Summary) -> some View {
+        Group {
+            if summary.isNotice {
+                Text("\(Image(systemName: "hand.raised.fill")) \(summary.text)")
+                    .foregroundStyle(Theme.attention)
+                    .accessibilityLabel("Necesita permiso: \(summary.text)")
+            } else {
+                Text(summary.text)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .font(HiveFont.secondary)
+        .lineLimit(2, reservesSpace: true)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    /// El texto de la tarjeta y si es el pedido de permiso.
+    struct Summary: Equatable {
+        let text: String
+        let isNotice: Bool
+    }
+
+    /// Mientras pide permiso, el pedido le gana al último mensaje; si no, lo último que respondió el
+    /// agente, el título de la terminal o un texto de relleno.
+    static func summary(session: Session, branchName: String, title: String?, notice: String?) -> Summary {
+        if let notice = notice?.trimmingCharacters(in: .whitespacesAndNewlines), !notice.isEmpty {
+            return Summary(text: notice, isNotice: true)
+        }
+        if let message = session.lastMessage, !message.isEmpty { return Summary(text: message, isNotice: false) }
+        let title = (title ?? "").trimmingCharacters(in: .whitespaces)
+        if !title.isEmpty { return Summary(text: title, isNotice: false) }
+        return Summary(text: session.kind.isAgent ? "Todavía sin respuestas." : "Terminal en \(branchName).", isNotice: false)
     }
 
     private func accessibilityText(status: SessionStatus, unseen: Bool) -> String {

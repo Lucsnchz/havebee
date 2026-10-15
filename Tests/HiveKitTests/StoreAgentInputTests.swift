@@ -150,6 +150,42 @@ struct StoreAgentInputTests {
         #expect(s.world.notifier.posts.last?.subtitle.hasSuffix("· Tu turno") == true)
     }
 
+    @Test("Los avisos dicen su tipo: el de permiso solo se abre y el de tu turno se puede responder")
+    func notificationKinds() async throws {
+        let s = try await AgentSetup()
+        let (session, _) = try s.open(.claude)
+        s.permission(session.id, "Permiso para Bash")
+        #expect(s.world.notifier.posts.last?.kind == .permission)
+        #expect(s.world.notifier.posts.last?.subtitle == "Claude 1 · Necesita permiso")
+        s.store.handle([HiveEvent(sessionId: session.id, source: "claude", name: "Stop", payload: ["last_assistant_message": "Listo."])])
+        #expect(s.world.notifier.posts.last?.kind == .turn)
+        #expect(s.world.notifier.posts.last?.subtitle == "Claude 1 · Tu turno")
+        #expect(s.world.notifier.posts.last?.body == "Listo.")
+    }
+
+    @Test("La tarjeta y la fila muestran el pedido de permiso mientras dura; después, la última respuesta")
+    func noticeInCardAndRow() async throws {
+        let s = try await AgentSetup()
+        let (session, rt) = try s.open(.claude)
+        func card() throws -> SessionCard.Summary {
+            let current = try #require(s.store.sessionContext(session.id)?.session)
+            return SessionCard.summary(session: current, branchName: "main", title: rt.title, notice: rt.notice)
+        }
+        #expect(try card() == SessionCard.Summary(text: "Todavía sin respuestas.", isNotice: false))
+        #expect(SessionRow.helpText(notice: rt.notice) == nil)
+        s.store.handle([HiveEvent(sessionId: session.id, source: "claude", name: "Stop", payload: ["last_assistant_message": "Listo, revisé el checkout."])])
+        s.store.handle([HiveEvent(sessionId: session.id, source: "claude", name: "PermissionRequest",
+                                  payload: ["tool_name": "Edit", "tool_input": ["file_path": "app.php"]])])
+        #expect(try card() == SessionCard.Summary(text: "Pide permiso para editar app.php", isNotice: true))
+        #expect(SessionRow.helpText(notice: rt.notice) == "Necesita permiso: Pide permiso para editar app.php")
+        s.type(session.id, [13]) // lo aprobaste
+        #expect(try card() == SessionCard.Summary(text: "Listo, revisé el checkout.", isNotice: false))
+        #expect(SessionRow.helpText(notice: rt.notice) == nil)
+        // Una terminal sin título dice dónde está.
+        let shell = Session(name: "Terminal 1", kind: .shell)
+        #expect(SessionCard.summary(session: shell, branchName: "main", title: " ", notice: nil).text == "Terminal en main.")
+    }
+
     @Test("La primera sesión de Claude se renombra sola con el primer pedido, una sola vez")
     func autoName() async throws {
         let s = try await AgentSetup()
