@@ -136,6 +136,16 @@ struct HistorialViewTests {
         #expect(demo.defaults.bool(forKey: "historyShowEverything")) // pasó a «Todo» porque la entrada es intermedia
     }
 
+    @Test("Historial en el ancho mínimo del panel (260 pt), con una búsqueda")
+    func historyNarrow() async throws {
+        let demo = try Demo()
+        let entry = try #require(demo.store.history.fullTimeline(demo.claude.id, agent: .claude).first { $0.text.hasPrefix("## Listo") })
+        HistoryJumpRequest.shared.pending = .init(sessionId: demo.claude.id, entryId: entry.id, query: "validacion")
+        await check(HistoryPanel(session: demo.claude).environment(demo.store).defaultAppStorage(demo.defaults),
+                    size: CGSize(width: 260, height: 600), name: "ah-10-historial-angosto", settle: 1.2)
+        #expect(HistoryJumpRequest.shared.pending == nil)
+    }
+
     @Test("Historial vacío de Gemini con «Copiar el scroll de la terminal»")
     func historyGemini() async throws {
         let demo = try Demo()
