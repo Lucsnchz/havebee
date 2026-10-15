@@ -243,8 +243,10 @@ extension AppStore {
         for (id, head) in scan.heads where project(id) != nil { merged[id] = head }
         merged = merged.filter { project($0.key) != nil }
         if mainHeads != merged {
+            let before = mainHeads
             mainHeads = merged
             scheduleSave()
+            for (id, head) in merged { warnIfHeadMoved(projectId: id, from: before[id], to: head) }
         }
         // La sesión abierta estaba dormida en una rama inactiva y ahora la rama está activa: la lanzamos.
         if let selected, let ctx = sessionContext(selected), isActive(ctx.branch, in: ctx.project) {
@@ -254,6 +256,41 @@ extension AppStore {
         for (id, worktrees) in scan.worktrees where syncWorktrees(id, worktrees) { found = true }
         // Hay ramas nuevas: traemos su estado de git en esta misma pasada.
         if found { await refreshGitNow() }
+    }
+
+    /// Algo (vos en una terminal, otra app) cambió la rama de la carpeta principal sin pasar por
+    /// Hive. Si la rama de antes tenía sesiones corriendo, ahora están viendo otra: preguntamos.
+    private func warnIfHeadMoved(projectId: UUID, from old: String?, to new: String) {
+        guard let old, !old.isEmpty, !new.isEmpty, old != new, let project = project(projectId),
+              let branch = project.branches.first(where: { $0.mode == .main && $0.name == old }) else { return }
+        let running = branch.sessions.filter { runtimes[$0.id]?.isRunning == true }
+        guard !running.isEmpty else { return }
+        let branchId = branch.id
+        let sessions = running.count == 1 ? "La sesión «\(running[0].name)» quedó" : "Las \(running.count) sesiones de esa rama quedaron"
+        alert = AppAlert(title: "Algo cambió la carpeta principal de “\(old)” a “\(new)”",
+                         message: "\(sessions) viendo «\(new)» en «\(project.name)». ¿Las movés a esa rama en Hive?",
+                         actionTitle: "Mover las sesiones ahí", cancelTitle: "Dejar así",
+                         action: { [weak self] in self?.followHead(branchId: branchId, to: new) })
+    }
+
+    /// «Mover las sesiones ahí»: si Hive no tiene una rama con ese nombre, la rama se renombra;
+    /// si la tiene, le pasamos las sesiones que estaban corriendo.
+    func followHead(branchId: UUID, to name: String) {
+        guard let ctx = branchContext(branchId) else { return }
+        if let target = ctx.project.branches.first(where: { $0.name == name && $0.id != branchId }) {
+            let moving = Set(ctx.branch.sessions.filter { runtimes[$0.id]?.isRunning == true }.map(\.id))
+            projects.updateProject(ctx.project.id) { p in
+                guard let from = p.branches.firstIndex(where: { $0.id == branchId }),
+                      let to = p.branches.firstIndex(where: { $0.id == target.id }) else { return }
+                p.branches[to].sessions += p.branches[from].sessions.filter { moving.contains($0.id) }
+                p.branches[from].sessions.removeAll { moving.contains($0.id) }
+            }
+            expanded.formUnion([ctx.project.id, target.id])
+            if selection == .branch(branchId) { select(.branch(target.id)) }
+        } else {
+            projects.updateBranch(branchId) { $0.name = name }
+        }
+        scheduleSave()
     }
 
     /// La sesión abierta, si está dormida porque su rama no está activa.

@@ -119,3 +119,88 @@ struct StoreProjectsTests {
         #expect(store.alert?.title == "No es un repositorio git")
     }
 }
+
+@MainActor
+@Suite("Store: la carpeta principal cambió de rama por fuera")
+struct StoreMovedHeadTests {
+    @MainActor
+    private final class Setup {
+        let world = TestWorld()
+        let repo = GitRepo()
+        let store: AppStore
+        let project: Project
+        var session: Session!
+
+        init() async throws {
+            store = world.makeStore()
+            await store.addProject(at: repo.path)
+            project = try #require(store.repoProjects.first)
+        }
+
+        func runSession(on branchId: UUID) throws {
+            store.requestNewSession(branchId: branchId, kind: .claude)
+            session = try #require(store.branchContext(branchId)?.branch.sessions.last)
+            store.activate(session.id)
+        }
+    }
+
+    @Test("Si no hay una rama con ese nombre, «Mover las sesiones ahí» renombra la rama")
+    func renamesBranch() async throws {
+        let s = try await Setup()
+        let main = s.project.branches[0]
+        try s.runSession(on: main.id)
+        s.repo.sh("git checkout -q -b fix/bar")
+        await s.store.refreshGitNow()
+        let alert = try #require(s.store.alert)
+        #expect(alert.title == "Algo cambió la carpeta principal de “main” a “fix/bar”")
+        #expect(alert.message == "La sesión «Claude 1» quedó viendo «fix/bar» en «repo». ¿Las movés a esa rama en Hive?")
+        #expect(alert.actionTitle == "Mover las sesiones ahí" && alert.cancelTitle == "Dejar así")
+        #expect(!alert.isDestructive)
+        alert.action?()
+        let renamed = try #require(s.store.branchContext(main.id))
+        #expect(renamed.branch.name == "fix/bar")
+        #expect(renamed.branch.sessions.map(\.id) == [s.session.id])
+        #expect(s.store.isActive(renamed.branch, in: renamed.project))
+        await s.store.refreshGitNow()
+        #expect(s.store.alerts.count == 1) // no vuelve a preguntar
+    }
+
+    @Test("Si ya hay una rama con ese nombre, le pasa las sesiones que corrían")
+    func movesToExistingBranch() async throws {
+        let s = try await Setup()
+        #expect(await s.store.createBranch(NewBranchRequest(projectId: s.project.id, name: "otra", isNew: true, mode: .main)) == nil)
+        let main = s.project.branches[0]
+        s.store.requestNewSession(branchId: main.id, kind: .shell) // dormida: se queda donde está
+        let dormant = try #require(s.store.branchContext(main.id)?.branch.sessions.last)
+        try s.runSession(on: main.id)
+        s.repo.sh("git checkout -q otra")
+        await s.store.refreshGitNow()
+        let alert = try #require(s.store.alert)
+        #expect(alert.title == "Algo cambió la carpeta principal de “main” a “otra”")
+        alert.action?()
+        let otra = try #require(s.store.project(s.project.id)?.branches.first { $0.name == "otra" })
+        #expect(otra.sessions.map(\.id) == [s.session.id])
+        #expect(s.store.branchContext(main.id)?.branch.sessions.map(\.id) == [dormant.id])
+        #expect(s.store.branchContext(main.id)?.branch.name == "main")
+    }
+
+    @Test("Sin sesiones corriendo, o con un checkout de Hive, no pregunta nada")
+    func noQuestion() async throws {
+        let s = try await Setup()
+        s.repo.sh("git checkout -q -b afuera")
+        await s.store.refreshGitNow()
+        #expect(s.store.alert == nil)
+        #expect(s.store.mainHead(of: s.project.id) == "afuera")
+
+        s.repo.sh("git checkout -q main")
+        await s.store.refreshGitNow()
+        #expect(s.store.alert == nil)
+        #expect(await s.store.createBranch(NewBranchRequest(projectId: s.project.id, name: "de-hive", isNew: true, mode: .main)) == nil)
+        try s.runSession(on: s.project.branches[0].id)
+        let deHive = try #require(s.store.project(s.project.id)?.branches.first { $0.name == "de-hive" })
+        s.store.requestCheckout(branchId: deHive.id)
+        #expect(await s.store.performCheckout(try #require(s.store.pendingCheckout)))
+        await s.store.refreshGitNow()
+        #expect(s.store.alert == nil)
+    }
+}
