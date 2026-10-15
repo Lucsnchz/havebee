@@ -171,4 +171,18 @@ struct IntegracionFinalTests {
         #expect(launch.environment["ANDROID_HOME"] == world.home.appendingPathComponent("Library/Android/sdk").path)
         #expect(launch.environment["PATH"]?.split(separator: ":").contains(Substring(sdk.path)) == true)
     }
+
+    @Test("Limpiar la salida de un comando no le manda Ctrl+L al programa")
+    func clearCommandOutput() {
+        let suite = SnapshotDefaults()
+        let terminal = AppStore.makeCommandTerminal(defaults: suite.defaults)
+        var sent: [UInt8] = []
+        terminal.onProcessInput = { sent.append(contentsOf: $0) }
+        terminal.receive(Array("VITE v5 ready\r\n".utf8)[...])
+        #expect(terminal.validateUserInterfaceItem(NSMenuItem(title: "Limpiar", action: #selector(HiveTerminalView.clearTerminal(_:)),
+                                                              keyEquivalent: "")))
+        terminal.clearTerminal(nil)
+        #expect(!terminal.fullText().contains("VITE"))
+        #expect(sent.isEmpty)
+    }
 }

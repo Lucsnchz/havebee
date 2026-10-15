@@ -26,6 +26,9 @@ public final class HiveTerminalView: TerminalView, TerminalViewDelegate, LocalPr
     /// perder todo dejamos la pantalla en el scroll con una línea divisoria. Lo activa el store
     /// en las sesiones de agente, así que también dice si la terminal es de un agente.
     var preservesScrollbackOnClear = false
+    /// La terminal muestra la salida de un comando (`zsh -c`): no hay prompt que redibujar, así que
+    /// «Limpiar» borra solo lo que se ve y no le manda Ctrl+L al programa (llegaría a su entrada).
+    var isCommandOutput = false
     private var preserver = ClearPreserver()
     /// Reloj inyectable para las pruebas.
     var now: () -> Date = Date.init
@@ -156,7 +159,8 @@ public final class HiveTerminalView: TerminalView, TerminalViewDelegate, LocalPr
 
     // MARK: - Limpiar
 
-    /// Borra la pantalla y el scroll y le manda Ctrl+L al proceso para que redibuje su prompt.
+    /// Borra la pantalla y el scroll y le manda Ctrl+L al proceso para que redibuje su prompt (en
+    /// la salida de un comando, solo borra).
     /// En los agentes no se usa: el historial queda en el panel y ahí se limpia con /clear.
     @objc func clearTerminal(_ sender: Any?) {
         guard !preservesScrollbackOnClear else {
@@ -164,7 +168,7 @@ public final class HiveTerminalView: TerminalView, TerminalViewDelegate, LocalPr
             return
         }
         feed(text: "\u{1B}[H\u{1B}[2J\u{1B}[3J")
-        sendInput([0x0C])
+        if !isCommandOutput { sendInput([0x0C]) }
     }
 
     public override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {

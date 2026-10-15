@@ -103,6 +103,7 @@ extension AppStore {
     static func makeCommandTerminal(defaults: UserDefaults = .standard) -> HiveTerminalView {
         let terminal = HiveTerminalView(frame: NSRect(x: 0, y: 0, width: 600, height: 300), scrollback: 5_000)
         TerminalTheme.apply(to: terminal, defaults: defaults, sizeDelta: -1)
+        terminal.isCommandOutput = true
         return terminal
     }
 
