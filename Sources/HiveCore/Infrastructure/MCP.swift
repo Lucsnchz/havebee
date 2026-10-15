@@ -115,8 +115,8 @@ public enum MCPConfig {
 
     static func parseRoot(_ data: Data, path: String) throws -> [String: JSONValue] {
         if let root = JSONValue.parse(data)?.object {
-            // `mcpServers` tiene que ser un objeto: si es otra cosa, reemplazarlo perdería datos.
-            if let servers = root["mcpServers"], servers.object == nil { throw MCPConfigError.invalidJSON(path) }
+            // `mcpServers` tiene que ser un objeto (o null, que no tiene nada): si es otra cosa, reemplazarlo perdería datos.
+            if let servers = root["mcpServers"], servers != .null, servers.object == nil { throw MCPConfigError.invalidJSON(path) }
             return root
         }
         // Sin ninguna cadena entre comillas no puede haber servidores ni otros datos (vacío, `{roto`, `null`):

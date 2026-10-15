@@ -65,6 +65,16 @@ struct MCPSafetyTests {
         #expect(bytes(dir) == before)
     }
 
+    @Test("mcpServers en null es un archivo válido sin servidores: agregar conserva el resto")
+    func serversNull() throws {
+        let dir = TempDir()
+        dir.write(".mcp.json", #"{"mcpServers": null, "otro": 1}"#)
+        #expect(try MCPConfig.loadResult(dir: dir.path).get().isEmpty)
+        try MCPConfig.upsert(MCPServer(name: "a", config: ["command": "x"]), dir: dir.path)
+        #expect(MCPConfig.load(dir: dir.path).map(\.name) == ["a"])
+        #expect(dir.read(".mcp.json")?.contains(#""otro": 1"#) == true)
+    }
+
     @Test("Un archivo que no se puede leer es un error, no una lista vacía")
     func unreadable() throws {
         let dir = TempDir()
