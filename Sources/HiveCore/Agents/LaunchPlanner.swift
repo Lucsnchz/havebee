@@ -34,12 +34,18 @@ public struct LaunchContext: Sendable {
     public var mcpServers: [MCPServer]
     public var geminiSettingsPath: String?
     public var codexExistingNotify: [String]?
+    /// Claude arranca con el statusLine de Hive (uso de contexto y límites). Lo llena quien arma el contexto
+    /// según el ajuste `showClaudeUsage`; por defecto, apagado (los ajustes de siempre, sin statusLine).
+    public var claudeUsage: Bool
+    /// El statusLine que ya tenías configurado en Claude: el de Hive lo sigue llamando.
+    public var claudeUserStatusLine: String?
 
     public init(session: Session, project: Project, branch: Branch, directory: String, path: String,
                 inheritedEnvironment: [String: String], paths: HivePaths, claudeInline: Bool = true, historyHint: Bool = true,
                 newAgentId: String = UUID().uuidString.lowercased(), claudeConversationExists: Bool = false,
                 discoveredAgentId: String? = nil, mcpFile: URL? = nil, mcpServers: [MCPServer] = [],
-                geminiSettingsPath: String? = nil, codexExistingNotify: [String]? = nil) {
+                geminiSettingsPath: String? = nil, codexExistingNotify: [String]? = nil,
+                claudeUsage: Bool = false, claudeUserStatusLine: String? = nil) {
         self.session = session
         self.project = project
         self.branch = branch
@@ -56,6 +62,8 @@ public struct LaunchContext: Sendable {
         self.mcpServers = mcpServers
         self.geminiSettingsPath = geminiSettingsPath
         self.codexExistingNotify = codexExistingNotify
+        self.claudeUsage = claudeUsage
+        self.claudeUserStatusLine = claudeUserStatusLine
     }
 }
 
@@ -81,7 +89,10 @@ public enum LaunchPlanner {
             var args = ctx.claudeConversationExists
                 ? ["--resume", agentId]
                 : ["--session-id", agentId, "--name", ctx.session.name]
-            args += ["--settings", ctx.paths.claudeSettings.path]
+            args += ["--settings", (ctx.claudeUsage ? ctx.paths.claudeSettingsWithUsage : ctx.paths.claudeSettings).path]
+            if ctx.claudeUsage, let statusLine = ctx.claudeUserStatusLine?.trimmingCharacters(in: .whitespacesAndNewlines), !statusLine.isEmpty {
+                env["HIVE_USER_STATUSLINE"] = statusLine
+            }
             if let hint { args += ["--append-system-prompt", hint] }
             // Claude lee el .mcp.json de su carpeta; en un worktree que no lo tiene, le pasamos el del repo.
             if let mcpFile = ctx.mcpFile, !samePath(mcpFile.deletingLastPathComponent().path, ctx.directory) {
@@ -98,11 +109,14 @@ public enum LaunchPlanner {
             let notify = CodexNotify.override(eventBin: ctx.paths.eventBin.path, existing: ctx.codexExistingNotify)
             var args: [String] = thread == nil ? [] : ["resume"]
             args += ["-c", notify] + extra
+            // Igual que Claude: sin pantalla alternativa, la charla queda en el scroll para leerla y copiarla.
+            if ctx.claudeInline { args += ["-c", #"tui.alternate_screen="never""#] }
             if let thread { args.append(thread) }
             return LaunchPlan(binary: "codex", args: args, environment: env, agentSessionId: thread)
 
         case .gemini:
-            let sessionId = ctx.discoveredAgentId ?? ctx.session.agentSessionId
+            // El chat que ya era de esta sesión le gana a cualquiera que aparezca en la carpeta.
+            let sessionId = ctx.session.agentSessionId ?? ctx.discoveredAgentId
             if let settings = ctx.geminiSettingsPath { env["GEMINI_CLI_SYSTEM_SETTINGS_PATH"] = settings }
             return LaunchPlan(binary: "gemini", args: sessionId.map { ["--resume", $0] } ?? [], environment: env, agentSessionId: sessionId)
         }
@@ -127,7 +141,23 @@ public enum SessionEnvironment {
         env["TERM_PROGRAM"] = "Hive"
         if env["LANG"] == nil { env["LANG"] = "en_US.UTF-8" }
         env["PWD"] = directory
+        addAndroidSDK(&env)
         return env
+    }
+
+    /// Android Studio instala el SDK en ~/Library/Android/sdk pero no define ANDROID_HOME ni pone `adb`
+    /// en el PATH: sin esto, Gradle y adb no andan desde una sesión.
+    static func addAndroidSDK(_ env: inout [String: String]) {
+        guard env["ANDROID_HOME"] == nil, let home = env["HOME"], !home.isEmpty else { return }
+        let sdk = (home as NSString).appendingPathComponent("Library/Android/sdk")
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: sdk, isDirectory: &isDirectory), isDirectory.boolValue else { return }
+        env["ANDROID_HOME"] = sdk
+        let tools = (sdk as NSString).appendingPathComponent("platform-tools")
+        let path = env["PATH"] ?? ""
+        if !path.split(separator: ":").contains(Substring(tools)) {
+            env["PATH"] = path.isEmpty ? tools : path + ":" + tools
+        }
     }
 }
 
