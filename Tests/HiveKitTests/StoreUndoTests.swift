@@ -50,6 +50,36 @@ struct StoreUndoTests {
         #expect(store.selection == .session(claude.id))
     }
 
+    @Test("⌘Z (el undo de la ventana) restaura lo archivado; deshacer con la cápsula lo saca del menú")
+    func commandZ() async throws {
+        let s = try await Setup()
+        let (store, project) = (s.store, s.project)
+        let manager = UndoManager()
+        manager.groupsByEvent = false // en la app, cada clic es un grupo; acá lo armamos a mano
+        store.windowUndoManager = { manager }
+        store.requestNewSession(branchId: project.branches[0].id, kind: .claude)
+        let session = try #require(store.project(project.id)?.branches[0].sessions.first)
+        func archive() {
+            manager.beginUndoGrouping()
+            store.archive(session.id)
+            manager.endUndoGrouping()
+        }
+
+        archive()
+        #expect(manager.undoActionName == "Archivaste “Claude 1”")
+        manager.undo()
+        #expect(store.sessionContext(session.id)?.session.isArchived == false)
+        #expect(store.selection == .session(session.id))
+        #expect(store.undoAction == nil) // la cápsula se va
+        #expect(!manager.canUndo)
+
+        archive()
+        #expect(manager.canUndo)
+        store.performUndo()
+        #expect(store.sessionContext(session.id)?.session.isArchived == false)
+        #expect(!manager.canUndo) // ⌘Z ya no ofrece algo que no haría nada
+    }
+
     @Test("Deshacer quitar un MCP lo vuelve a agregar igual que estaba")
     func undoRemoveMCP() async throws {
         let s = try await Setup()

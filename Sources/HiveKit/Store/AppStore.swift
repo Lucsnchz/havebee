@@ -89,6 +89,10 @@ public final class AppStore {
     @ObservationIgnored var saveFailed = false
     /// Quienes esperan que termine el proceso de una terminal (ver `waitForExit`).
     @ObservationIgnored var exitWaiters: [ObjectIdentifier: [CheckedContinuation<Void, Never>]] = [:]
+    /// El undo de la ventana, donde se registra lo que se puede deshacer con ⌘Z (los tests ponen uno propio).
+    @ObservationIgnored var windowUndoManager: () -> UndoManager? = { NSApp?.keyWindow?.undoManager }
+    /// Dónde quedó registrado el último deshacer.
+    @ObservationIgnored weak var registeredUndoManager: UndoManager?
 
     /// Carga el estado guardado. No arranca nada: eso lo hace `start()`.
     public init(environment: AppEnvironment) {
@@ -286,7 +290,7 @@ public final class AppStore {
         }
         undoAction = action
         let id = action.id
-        if let manager = NSApp?.keyWindow?.undoManager {
+        if let manager = windowUndoManager() {
             manager.registerUndo(withTarget: self) { store in
                 MainActor.assumeIsolated {
                     if store.undoAction?.id == id { store.undoAction = nil }
@@ -294,6 +298,7 @@ public final class AppStore {
                 }
             }
             manager.setActionName(message)
+            registeredUndoManager = manager
         }
         Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(Self.undoWindow * 1_000_000_000))
@@ -306,6 +311,11 @@ public final class AppStore {
         guard let action = undoAction else { return }
         undoAction = nil
         action.undo()
+        // Ya está deshecho: que Edición › Deshacer (⌘Z) no siga ofreciéndolo sin hacer nada.
+        if let manager = registeredUndoManager, manager.groupingLevel == 0, manager.canUndo,
+           manager.undoActionName == action.message {
+            manager.undo()
+        }
     }
 
     /// Cierra la cápsula sin deshacer.
