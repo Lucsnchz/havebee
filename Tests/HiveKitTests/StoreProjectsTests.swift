@@ -52,4 +52,70 @@ struct StoreProjectsTests {
         store.activate(session.id)
         #expect(world.processes.launches.count == 1)
     }
+
+    @Test("La carpeta de un worktree agrega o selecciona el repo principal, sin duplicarlo")
+    func worktreeFolderAddsMainRepo() async throws {
+        let world = TestWorld()
+        let repo = GitRepo()
+        let worktree = repo.dir.url.path + "/arreglo"
+        repo.sh("git worktree add -q -b arreglo \(shellQuote(worktree))")
+        let store = world.makeStore()
+
+        await store.addProject(at: worktree)
+        #expect(store.repoProjects.count == 1)
+        let project = try #require(store.repoProjects.first)
+        #expect(project.path == repo.path && project.name == "repo")
+        #expect(project.branches.map(\.name) == ["main", "arreglo"])
+        let branch = try #require(project.branches.last)
+        #expect(store.selection == .branch(branch.id))
+        #expect(store.mainHead(of: project.id) == "main")
+
+        await store.addProject(at: repo.path)
+        #expect(store.repoProjects.count == 1)
+        #expect(store.selection == .project(project.id))
+
+        // Si habías quitado ese worktree de Hive, elegirlo de nuevo lo vuelve a sumar.
+        #expect(await store.performRemove(.branch(branch.id)))
+        #expect(store.project(project.id)?.branches.map(\.name) == ["main"])
+        await store.addProject(at: worktree + "/")
+        #expect(store.repoProjects.count == 1)
+        let again = try #require(store.project(project.id)?.branches.last)
+        #expect(again.name == "arreglo")
+        #expect(store.selection == .branch(again.id))
+        #expect(store.project(project.id)?.ignoredWorktrees.isEmpty == true)
+    }
+
+    @Test("Con HEAD desacoplado no se crea una rama «HEAD»")
+    func detachedHead() async throws {
+        let world = TestWorld()
+        let store = world.makeStore()
+        let repo = GitRepo()
+        repo.sh("git checkout -q --detach")
+        await store.addProject(at: repo.path)
+        let project = try #require(store.repoProjects.first)
+        #expect(project.branches.map(\.name) == ["main"])
+        #expect(store.mainHead(of: project.id) == "")
+        #expect(!store.isActive(project.branches[0], in: project))
+
+        // Sin origin/HEAD, main ni master, el proyecto queda sin ramas.
+        let other = GitRepo(branch: "trunk", name: "otro")
+        other.sh("git checkout -q --detach")
+        await store.addProject(at: other.path)
+        let bare = try #require(store.repoProjects.first { $0.name == "otro" })
+        #expect(bare.branches.isEmpty)
+        #expect(store.selection == .project(bare.id))
+    }
+
+    @Test("Varias carpetas a la vez: se agregan todas y queda abierta la última")
+    func severalFolders() async throws {
+        let world = TestWorld()
+        let store = world.makeStore()
+        let a = GitRepo(name: "uno"), b = GitRepo(name: "dos")
+        let notRepo = TempDir()
+        await store.addProjects([a.path, notRepo.path, b.path])
+        #expect(store.repoProjects.map(\.name) == ["uno", "dos"])
+        let last = try #require(store.repoProjects.last)
+        #expect(store.selection == .branch(last.branches[0].id))
+        #expect(store.alert?.title == "No es un repositorio git")
+    }
 }

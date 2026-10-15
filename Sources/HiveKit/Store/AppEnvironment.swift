@@ -41,7 +41,8 @@ public struct AppEnvironment {
     public var cachedLoginPATH: String?
     public var resolveLoginPATH: @Sendable () -> String?
     public var storeLoginPATH: (String) -> Void
-    public var logos: (String) -> [String]
+    /// Logos encontrados en un repo. Se puede llamar fuera del hilo principal (lee archivos).
+    public var logos: @Sendable (String) -> [String]
     public var isAppActive: () -> Bool
     public var setDockBadge: (String?) -> Void
     public var now: () -> Date
@@ -53,7 +54,7 @@ public struct AppEnvironment {
     public init(paths: HivePaths, git: GitClient, agents: AgentStorage, notifier: SessionNotifying, processes: ProcessStarting,
                 settings: @escaping () -> AppSettings, inheritedEnvironment: [String: String], home: URL, loginShell: String,
                 cachedLoginPATH: String?, resolveLoginPATH: @escaping @Sendable () -> String?, storeLoginPATH: @escaping (String) -> Void,
-                logos: @escaping (String) -> [String], isAppActive: @escaping () -> Bool, setDockBadge: @escaping (String?) -> Void,
+                logos: @escaping @Sendable (String) -> [String], isAppActive: @escaping () -> Bool, setDockBadge: @escaping (String?) -> Void,
                 now: @escaping () -> Date, saveDelay: TimeInterval, stopGrace: TimeInterval = 3) {
         self.paths = paths
         self.git = git

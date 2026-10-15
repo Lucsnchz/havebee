@@ -65,7 +65,12 @@ final class TestWorld {
     var appActive = false
     var now = Date.reference
     var badge: String?
-    var logos: [String: [String]] = [:]
+    /// Logos por carpeta (el store los puede pedir fuera del hilo principal).
+    var logos: [String: [String]] {
+        get { logoTable.value }
+        set { logoTable.value = newValue }
+    }
+    private let logoTable = LockedLogos()
     /// git real por defecto; los tests de carreras ponen uno con demoras (`DelayedGit`).
     var git: GitClient = GitCLI()
 
@@ -82,7 +87,7 @@ final class TestWorld {
             inheritedEnvironment: ["HOME": home.path, "PATH": "/usr/bin:/bin", "CLAUDECODE": "1"],
             home: home, loginShell: "/bin/zsh", cachedLoginPATH: "/fake/bin:/usr/bin:/bin",
             resolveLoginPATH: { nil }, storeLoginPATH: { _ in },
-            logos: { [unowned self] path in self.logos[path] ?? [] },
+            logos: { [logoTable] path in logoTable.value[path] ?? [] },
             isAppActive: { [unowned self] in self.appActive },
             setDockBadge: { [unowned self] in self.badge = $0 },
             now: { [unowned self] in self.now },
@@ -93,6 +98,17 @@ final class TestWorld {
     func makeStore() -> AppStore { AppStore(environment: environment) }
 
     func advance(_ seconds: TimeInterval) { now = now.addingTimeInterval(seconds) }
+}
+
+/// Tabla de logos que se puede leer desde cualquier hilo.
+private final class LockedLogos: @unchecked Sendable {
+    private let lock = NSLock()
+    private var table: [String: [String]] = [:]
+
+    var value: [String: [String]] {
+        get { lock.withLock { table } }
+        set { lock.withLock { table = newValue } }
+    }
 }
 
 /// Espera (cediendo el hilo principal) hasta que se cumpla una condición.

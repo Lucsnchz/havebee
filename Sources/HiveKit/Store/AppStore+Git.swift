@@ -5,25 +5,34 @@ import HiveCore
 extension AppStore {
     // MARK: - Proyectos
 
+    /// ⌘O: elegí una o varias carpetas. Se agregan en orden y queda abierta la última.
     public func addProjectInteractive() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
-        panel.allowsMultipleSelection = false
+        panel.allowsMultipleSelection = true
         panel.prompt = "Agregar"
-        panel.message = "Elegí la carpeta de un repositorio git"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        Task { await addProject(at: url.path) }
+        panel.message = "Elegí uno o varios repositorios git (o la carpeta de un worktree)"
+        guard panel.runModal() == .OK else { return }
+        let paths = panel.urls.map(\.path)
+        Task { await addProjects(paths) }
     }
 
-    /// Agrega un repo (o lo selecciona si ya está). Git corre fuera del hilo principal.
+    /// Agrega varias carpetas en orden; queda seleccionada la última.
+    public func addProjects(_ paths: [String]) async {
+        for path in paths { await addProject(at: path) }
+    }
+
+    /// Agrega un repo (o lo selecciona si ya está). Si la carpeta es un worktree, agrega o selecciona
+    /// el repo principal y abre la rama de ese worktree. Git corre fuera del hilo principal.
     public func addProject(at path: String) async {
         let git = self.git
-        let found = await Task.detached { () -> (top: String, head: String?, worktrees: [GitWorktree])? in
-            guard let top = git.topLevel(path) else { return nil }
-            return (top, git.currentBranch(top), git.worktrees(top))
+        let logos = environment.logos
+        let lookup = await Task.detached { () -> (found: MainRepoResolver.Found, logos: [String])? in
+            guard let found = MainRepoResolver.inspect(path, git: git) else { return nil }
+            return (found, logos(found.repo))
         }.value
-        guard let found else {
+        guard let lookup else {
             let folder = URL(fileURLWithPath: path).lastPathComponent
             alert = AppAlert(
                 title: "No es un repositorio git",
@@ -32,21 +41,44 @@ extension AppStore {
                 action: { [weak self] in Task { await self?.initializeRepository(at: path) } })
             return
         }
-        if let existing = projects.first(where: { samePath($0.path, found.top) }) {
-            select(.project(existing.id))
+        let found = lookup.found
+        if let existing = projects.first(where: { samePath($0.path, found.repo) }) {
+            if let worktree = found.worktree {
+                openWorktree(worktree.path, in: existing.id, worktrees: found.worktrees)
+            } else {
+                select(.project(existing.id))
+            }
             return
         }
-        var project = Project(name: URL(fileURLWithPath: found.top).lastPathComponent, path: found.top,
-                              branches: [Branch(name: found.head ?? "HEAD", mode: .main)])
-        AppearanceDefaults.apply(to: &project, others: projects, logos: environment.logos)
+        var project = Project(name: URL(fileURLWithPath: found.repo).lastPathComponent, path: found.repo,
+                              branches: found.initialBranch.map { [Branch(name: $0, mode: .main)] } ?? [])
+        AppearanceDefaults.apply(to: &project, others: projects, logos: { _ in lookup.logos })
         projects.insertRepo(project)
         gitGeneration += 1
         mainHeads[project.id] = found.head ?? ""
-        expanded.formUnion([project.id, project.branches[0].id])
+        expanded.formUnion([project.id] + project.branches.map(\.id))
         syncWorktrees(project.id, found.worktrees)
         scheduleSave()
-        select(.branch(project.branches[0].id))
+        if let worktree = found.worktree {
+            openWorktree(worktree.path, in: project.id, worktrees: found.worktrees)
+        } else if let first = project.branches.first {
+            select(.branch(first.id))
+        } else {
+            select(.project(project.id))
+        }
         refreshGit()
+    }
+
+    /// Elegiste la carpeta de un worktree: lo sumamos si faltaba (aunque lo hubieras quitado antes) y abrimos su rama.
+    private func openWorktree(_ path: String, in projectId: UUID, worktrees: [GitWorktree]) {
+        projects.updateProject(projectId) { $0.ignoredWorktrees.removeAll { samePath($0, path) } }
+        syncWorktrees(projectId, worktrees)
+        if let branch = project(projectId)?.branches.first(where: { $0.worktreePath.map { samePath($0, path) } == true }) {
+            expanded.formUnion([projectId, branch.id])
+            select(.branch(branch.id))
+        } else {
+            select(.project(projectId))
+        }
     }
 
     func initializeRepository(at path: String) async {
