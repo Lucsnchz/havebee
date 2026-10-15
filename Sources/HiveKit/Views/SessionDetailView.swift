@@ -28,6 +28,13 @@ struct SessionDetailView: View {
                         }
                         TerminalContainer(terminal: rt.terminal)
                             .background(terminalBackground)
+                            .overlay {
+                                // Mientras se arma el lanzamiento (búsquedas en disco), algo que diga que viene.
+                                if rt.isLaunching && rt.terminal == nil {
+                                    LaunchingIndicator(kind: ctx.session.kind)
+                                        .environment(\.colorScheme, terminalIsLight ? .light : .dark)
+                                }
+                            }
                         if case .exited(let code) = rt.status {
                             ExitedBar(code: code, kind: ctx.session.kind) { store.relaunch(sessionId) }
                         }
@@ -85,15 +92,37 @@ struct SessionDetailView: View {
         }
     }
 
+    /// Si la terminal usa la paleta clara (según el ajuste y el sistema).
+    private var terminalIsLight: Bool {
+        switch TerminalPreferences.Theme(rawValue: terminalTheme) ?? .system {
+        case .light: true
+        case .dark: false
+        case .system: colorScheme == .light
+        }
+    }
+
     /// El mismo fondo que la terminal (oscuro o claro según el ajuste y el sistema).
     private var terminalBackground: Color {
-        let light: Bool
-        switch TerminalPreferences.Theme(rawValue: terminalTheme) ?? .system {
-        case .light: light = true
-        case .dark: light = false
-        case .system: light = colorScheme == .light
+        Color(nsColor: terminalIsLight ? TerminalPalette.light.background : TerminalPalette.dark.background)
+    }
+}
+
+/// «Abriendo Claude Code…»: mientras se arma el lanzamiento y todavía no hay terminal.
+struct LaunchingIndicator: View {
+    let kind: SessionKind
+
+    var body: some View {
+        VStack(spacing: 10) {
+            AgentLogo(kind: kind, size: 28)
+            ProgressView()
+                .controlSize(.small)
+            Text("Abriendo \(kind.label)…")
+                .font(HiveFont.secondary)
+                .foregroundStyle(.secondary)
         }
-        return Color(nsColor: light ? TerminalPalette.light.background : TerminalPalette.dark.background)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Abriendo \(kind.label)")
     }
 }
 

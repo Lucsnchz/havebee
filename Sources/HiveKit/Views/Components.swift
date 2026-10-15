@@ -130,10 +130,23 @@ final class TerminalHostView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        layer?.backgroundColor = TerminalTheme.background.cgColor
+        updateBackground()
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    /// Sin terminal (mientras se abre una sesión), el fondo sigue la apariencia: el color del layer
+    /// es fijo y si no quedaría el de cuando se creó. Con terminal, ella se encarga.
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        if current?.superview !== self { updateBackground() }
+    }
+
+    private func updateBackground() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = TerminalTheme.background.cgColor
+        }
+    }
 
     func show(_ view: NSView?) {
         // Si es la misma terminal pero otro contenedor se la llevó (el popover de un comando y la

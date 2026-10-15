@@ -440,4 +440,25 @@ struct IntegracionFinalTests {
         store.requestRemoval(.branch(branch.id))
         #expect(store.pendingRemoval?.isWorktree == true)
     }
+
+    @Test("Mientras se arma el lanzamiento, la sesión muestra «Abriendo…» en lugar de una terminal vacía")
+    func launchingIndicator() async throws {
+        let world = TestWorld()
+        let repo = GitRepo(name: "tienda")
+        defer { withExtendedLifetime((world, repo)) {} }
+        let store = world.makeStore()
+        await store.addProject(at: repo.path)
+        let project = try #require(store.repoProjects.first)
+        store.requestNewSession(branchId: project.branches[0].id, kind: .claude)
+        let session = try #require(store.project(project.id)?.allSessions.first)
+        let rt = try #require(store.runtimes[session.id])
+        // Como si el contexto se estuviera armando en segundo plano (la vista no lanza: ya figura lanzando).
+        rt.isLaunching = true
+        let empty = await colors(SessionDetailView(sessionId: session.id).environment(store).frame(width: 700, height: 360),
+                                 size: CGSize(width: 700, height: 360), name: "sesion-abriendo")
+        #expect(empty.allSatisfy { $0 > 3 })
+        #expect(rt.terminal == nil)
+        let indicator = await colors(LaunchingIndicator(kind: .codex), size: CGSize(width: 300, height: 160), name: "sesion-abriendo-codex")
+        #expect(indicator.allSatisfy { $0 > 3 })
+    }
 }
