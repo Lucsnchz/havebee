@@ -64,8 +64,19 @@ public struct AgentStorage: Sendable {
 
     /// El `notify` que ya tenías en el config.toml de Codex (para seguir llamándolo).
     public func codexExistingNotify() -> [String]? {
-        guard let text = try? String(contentsOf: codexHome.appendingPathComponent("config.toml"), encoding: .utf8) else { return nil }
-        return CodexNotify.existing(inConfig: text)
+        codexNotifyStatus().command
+    }
+
+    /// El `notify` de Codex y si existe pero no lo pudimos leer (Ajustes lo avisa: no se va a llamar).
+    public func codexNotifyStatus() -> (command: [String]?, unreadable: Bool) {
+        let file = codexHome.appendingPathComponent("config.toml")
+        guard FileManager.default.fileExists(atPath: file.path) else { return (nil, false) }
+        guard let text = try? String(contentsOf: file, encoding: .utf8) else { return (nil, true) }
+        switch TOML.topLevelStringArray("notify", in: text) {
+        case .found(let command): return (command, false)
+        case .unreadable: return (nil, true)
+        case .missing: return (nil, false)
+        }
     }
 
     /// Plan B para reanudar Codex: si nunca llegó un thread-id (por ejemplo, cortaste el primer turno),

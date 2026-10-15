@@ -169,16 +169,10 @@ public enum CodexNotify {
         return "notify=[" + command.map(TOML.string).joined(separator: ", ") + "]"
     }
 
-    /// El `notify = [...]` de nivel superior de un config.toml.
+    /// El `notify = [...]` de nivel superior de un config.toml (con comillas simples o dobles,
+    /// en una o varias líneas). Si no está o no se puede leer, nil.
     public static func existing(inConfig text: String) -> [String]? {
-        for raw in text.components(separatedBy: .newlines) {
-            let line = raw.trimmingCharacters(in: .whitespaces)
-            if line.hasPrefix("[") { break } // `notify` es una clave de nivel superior
-            guard line.hasPrefix("notify") else { continue }
-            let rest = line.dropFirst("notify".count).trimmingCharacters(in: .whitespaces)
-            guard rest.hasPrefix("="), let open = rest.firstIndex(of: "["), let close = rest.lastIndex(of: "]"), open < close else { continue }
-            return JSONValue.parse(String(rest[open...close]))?.stringArray
-        }
+        if case .found(let command) = TOML.topLevelStringArray("notify", in: text) { return command }
         return nil
     }
 }
