@@ -26,6 +26,9 @@ struct RemoteHostTests {
         #expect(https.webURL == "https://git.empresa.com:8443/equipo/app")
         #expect(try #require(RemoteHost.parse("https://gitlab.com:443/dizeg/bevo.git")).webURL == "https://gitlab.com/dizeg/bevo")
         #expect(try #require(RemoteHost.parse("ssh://git@gitlab.empresa.com:2222/equipo/app.git")).webURL == "https://gitlab.empresa.com/equipo/app")
+        // Un servidor propio por http sigue siendo http en la web.
+        #expect(try #require(RemoteHost.parse("http://gitlab.local:8080/equipo/app.git")).webURL == "http://gitlab.local:8080/equipo/app")
+        #expect(try #require(RemoteHost.parse("http://gitlab.local/equipo/app.git")).webURL == "http://gitlab.local/equipo/app")
     }
 
     @Test("Publicada: sigue a su par en el remoto, que existe, y sin commits sin subir")

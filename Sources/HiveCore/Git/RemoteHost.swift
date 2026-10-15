@@ -10,15 +10,18 @@ public struct RemoteHost: Equatable, Sendable {
     public var host: String
     /// "grupo/subgrupo/repo", sin .git.
     public var path: String
+    /// "https", o "http" si el remoto es un servidor propio sin certificado.
+    public var scheme: String
 
-    public init(kind: Kind, host: String, path: String) {
+    public init(kind: Kind, host: String, path: String, scheme: String = "https") {
         self.kind = kind
         self.host = host
         self.path = path
+        self.scheme = scheme
     }
 
     /// "https://gitlab.com/grupo/subgrupo/repo"
-    public var webURL: String { "https://\(host)/\(path)" }
+    public var webURL: String { "\(scheme)://\(host)/\(path)" }
 
     /// Lo que dice el botón: «Crear MR en GitLab», «Crear PR en GitHub».
     public var newRequestLabel: String {
@@ -34,14 +37,16 @@ public struct RemoteHost: Equatable, Sendable {
         let url = remoteURL.trimmingCharacters(in: .whitespacesAndNewlines)
         var host: String
         var path: String
+        var scheme = "https"
         if url.contains("://") {
             guard let components = URLComponents(string: url), let parsedHost = components.host, !parsedHost.isEmpty,
                   ["https", "http", "ssh", "git", "git+ssh", "ssh+git"].contains(components.scheme?.lowercased() ?? "") else { return nil }
             host = parsedHost
             path = components.path
             // El puerto de ssh no es el de la web; el de https sí (un GitLab propio en :8443).
-            if let port = components.port, ["https", "http"].contains(components.scheme?.lowercased() ?? ""), port != 443, port != 80 {
-                host += ":\(port)"
+            if let web = components.scheme?.lowercased(), web == "https" || web == "http" {
+                scheme = web
+                if let port = components.port, port != (web == "https" ? 443 : 80) { host += ":\(port)" }
             }
         } else if let colon = url.firstIndex(of: ":"), !url.hasPrefix("/") {
             // Sintaxis scp: [usuario@]host:ruta
@@ -57,7 +62,7 @@ public struct RemoteHost: Equatable, Sendable {
         host = host.lowercased()
         guard !host.isEmpty, !path.isEmpty, path.contains("/") else { return nil }
         let kind: Kind = host.contains("gitlab") ? .gitlab : host == "github.com" || host.hasSuffix(".github.com") ? .github : .other
-        return RemoteHost(kind: kind, host: host, path: path)
+        return RemoteHost(kind: kind, host: host, path: path, scheme: scheme)
     }
 
     /// Página para crear un MR (GitLab) o un PR (GitHub) de `source` hacia `target`.
