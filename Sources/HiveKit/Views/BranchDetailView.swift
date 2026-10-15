@@ -1,3 +1,4 @@
+import AppKit
 import HiveCore
 import SwiftUI
 
@@ -36,6 +37,8 @@ struct BranchDetailView: View {
                                     NewSessionCard(kind: kind) { store.requestNewSession(branchId: branchId, kind: kind) }
                                 }
                             }
+                            // Todas del alto de la más alta (la de un agente sin instalar suma una línea).
+                            .fixedSize(horizontal: false, vertical: true)
                         }
                     } else {
                         DetailSection("Sesiones", trailing: {
@@ -74,6 +77,10 @@ struct BranchDetailView: View {
             .navigationTitle(ctx.project.isScratch ? ctx.project.name : ctx.branch.name)
             .navigationSubtitle(ctx.project.isScratch ? dir.tildePath : ctx.project.name)
             .task { AgentAvailability.shared(for: store).refresh() }
+            // Al volver a Hive (por ejemplo, después de instalar un agente en la terminal).
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                AgentAvailability.shared(for: store).refresh()
+            }
             .toolbar {
                 ToolbarItemGroup {
                     Menu {

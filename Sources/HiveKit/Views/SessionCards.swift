@@ -97,27 +97,32 @@ struct NewSessionCard: View {
     @State private var showsInstallHint = false
 
     var body: some View {
-        let installed = AgentAvailability.shared(for: store).isInstalled(kind)
+        let availability = AgentAvailability.shared(for: store)
+        let installed = availability.isInstalled(kind)
         Button {
-            if installed { action() } else { showsInstallHint = true }
+            if installed {
+                action()
+            } else {
+                Task {
+                    if await availability.recheck(kind) { action() } else { showsInstallHint = true }
+                }
+            }
         } label: {
-            VStack(spacing: 8) {
+            VStack(spacing: 6) {
                 AgentLogo(kind: kind, size: 26)
                     .opacity(installed ? 1 : 0.5)
                 Text(kind.label)
                     .font(HiveFont.body.weight(.medium))
                     .lineLimit(1)
                     .opacity(installed ? 1 : 0.5)
-            }
-            .frame(maxWidth: .infinity, minHeight: 64)
-            .padding(.vertical, 14)
-            // En una esquina, para que todas las tarjetas midan lo mismo.
-            .overlay(alignment: .topTrailing) {
+                // Abajo y no en una esquina: con la ventana angosta, la esquina tapaba el logo.
+                // Las tarjetas igualan su alto en la fila (ver BranchDetailView).
                 if !installed {
                     Chip(text: "No instalado")
-                        .padding(8)
                 }
             }
+            .frame(maxWidth: .infinity, minHeight: 64, maxHeight: .infinity)
+            .padding(.vertical, 14)
             .hiveCard(interactive: true)
         }
         .buttonStyle(.plain)
@@ -136,12 +141,19 @@ struct NewSessionPill: View {
     @State private var showsInstallHint = false
 
     var body: some View {
-        let installed = AgentAvailability.shared(for: store).isInstalled(kind)
+        let availability = AgentAvailability.shared(for: store)
+        let installed = availability.isInstalled(kind)
         Button {
             if installed {
                 store.requestNewSession(branchId: branchId, kind: kind)
             } else {
-                showsInstallHint = true
+                Task {
+                    if await availability.recheck(kind) {
+                        store.requestNewSession(branchId: branchId, kind: kind)
+                    } else {
+                        showsInstallHint = true
+                    }
+                }
             }
         } label: {
             HStack(spacing: 5) {

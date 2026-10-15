@@ -14,18 +14,27 @@ final class AgentAvailability {
 
     @ObservationIgnored private let processes: ProcessStarting
     @ObservationIgnored private let path: String
+    /// El PATH del shell de login, cuando todavía no había uno guardado (la primera vez que se abre
+    /// Hive). El de respaldo no ve nvm, volta ni asdf: sin esto, un codex instalado con npm
+    /// aparecería como «No instalado». Se pide una sola vez y cada revisión lo espera.
+    @ObservationIgnored private let loginPATH: Task<String?, Never>?
     @ObservationIgnored private var refreshing: Task<Void, Never>?
 
-    init(processes: ProcessStarting, path: String) {
+    init(processes: ProcessStarting, path: String, resolveLoginPATH: (@Sendable () -> String?)? = nil) {
         self.processes = processes
         self.path = path
+        loginPATH = resolveLoginPATH.map { resolve in Task.detached(priority: .utility) { resolve() } }
     }
 
-    /// Con el PATH de la última vez, o uno razonable si todavía no se resolvió.
+    /// Con el PATH de la última vez; si todavía no hay ninguno, uno razonable mientras se le
+    /// pregunta al shell de login.
     convenience init(environment: AppEnvironment) {
-        let path = environment.cachedLoginPATH
-            ?? LoginShell.fallbackPATH(home: environment.home.path, inherited: environment.inheritedEnvironment["PATH"])
-        self.init(processes: environment.processes, path: path)
+        if let cached = environment.cachedLoginPATH {
+            self.init(processes: environment.processes, path: cached)
+        } else {
+            let fallback = LoginShell.fallbackPATH(home: environment.home.path, inherited: environment.inheritedEnvironment["PATH"])
+            self.init(processes: environment.processes, path: fallback, resolveLoginPATH: environment.resolveLoginPATH)
+        }
     }
 
     func isInstalled(_ kind: SessionKind) -> Bool { !missing.contains(kind) }
@@ -36,23 +45,34 @@ final class AgentAvailability {
     func refresh() -> Task<Void, Never> {
         refreshing?.cancel()
         let kinds = SessionKind.allCases.filter { $0.binary != nil }
-        let path = self.path
+        let fallback = self.path
+        let loginPATH = self.loginPATH
         let processes = self.processes
         let task = Task { [weak self] in
-            let missing: Set<SessionKind>
-            if processes is TerminalProcessStarter {
-                missing = await Task.detached(priority: .utility) {
-                    Set(kinds.filter { kind in kind.binary.flatMap { which($0, path: path) } == nil })
-                }.value
-            } else {
-                missing = Set(kinds.filter { kind in kind.binary.flatMap { processes.resolve($0, path: path) } == nil })
-            }
+            var path = fallback
+            if let loginPATH, let resolved = await loginPATH.value { path = resolved }
+            let missing = await Self.findMissing(kinds, path: path, processes: processes)
             guard !Task.isCancelled, let self else { return }
             if self.missing != missing { self.missing = missing }
             self.checked = true
         }
         refreshing = task
         return task
+    }
+
+    /// Vuelve a revisar antes de decir que falta (quizás lo acabás de instalar).
+    func recheck(_ kind: SessionKind) async -> Bool {
+        await refresh().value
+        return isInstalled(kind)
+    }
+
+    private static func findMissing(_ kinds: [SessionKind], path: String, processes: ProcessStarting) async -> Set<SessionKind> {
+        if processes is TerminalProcessStarter {
+            return await Task.detached(priority: .utility) {
+                Set(kinds.filter { kind in kind.binary.flatMap { which($0, path: path) } == nil })
+            }.value
+        }
+        return Set(kinds.filter { kind in kind.binary.flatMap { processes.resolve($0, path: path) } == nil })
     }
 
     // MARK: - Una por store
