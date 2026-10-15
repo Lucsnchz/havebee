@@ -105,6 +105,33 @@ struct HistorySearchTests {
         #expect(hits.dropFirst().allSatisfy { entryIds.contains($0.entryId) })
     }
 
+    @Test("El resultado de la búsqueda se encuentra en «Todo» aunque ahí se vea la copia del transcript")
+    func jumpCounterpart() throws {
+        let id = UUID()
+        let transcript = dir.write("claude/projects/-code/c-1.jsonl", AHFixtures.claudeTranscript)
+        logFromHooks(id) // sin copia completa todavía: la búsqueda devuelve entradas del registro
+        let hits = store.search("carrito")
+        let finalReply = try #require(hits.first { $0.role == .assistant })
+        let timeline = store.fullTimeline(id, agent: .claude, live: [transcript])
+        #expect(!timeline.contains { $0.id == finalReply.entryId }) // tapada por la copia del transcript
+        let log = store.load(id)
+        let target = try #require(log.first { $0.id == finalReply.entryId })
+        // La respuesta final venía en dos bloques: entre las coincidencias (como en el panel), gana la
+        // del mismo rol más cercana en el tiempo, y no el pedido «¿Y el carrito también?».
+        let candidates = timeline.filter { HistoryExport.matches($0.text, query: "carrito") }
+        #expect(candidates.count == 2)
+        let resolved = try #require(HistoryExport.counterpart(of: target, in: candidates))
+        #expect(timeline.first { $0.id == resolved }?.text == "Sí, el carrito usa la misma regla.")
+        // Un pedido con el mismo texto se encuentra por su texto.
+        let prompt = try #require(log.first { $0.role == .user })
+        let promptMatch = try #require(HistoryExport.counterpart(of: prompt, in: timeline))
+        #expect(timeline.first { $0.id == promptMatch }?.text == prompt.text)
+        #expect(promptMatch != prompt.id)
+        // Si la entrada está, es ella misma; sin candidatos, nada.
+        #expect(HistoryExport.counterpart(of: prompt, in: log) == prompt.id)
+        #expect(HistoryExport.counterpart(of: prompt, in: []) == nil)
+    }
+
     @Test("Eliminar una sesión aparta sus archivos en history/deleted/ y purge los borra después")
     func deleteAndPurge() throws {
         let id = UUID(), other = UUID()

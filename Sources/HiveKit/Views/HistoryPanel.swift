@@ -251,14 +251,22 @@ struct HistoryPanel: View {
 
     /// Con una búsqueda nueva va a la primera coincidencia (o a la entrada pedida, si viene de un salto).
     private func focusMatch() {
-        if let target = jumpTarget, let index = matches.firstIndex(of: target) {
-            matchIndex = index
+        let found = matches
+        if let target = jumpTarget {
             jumpTarget = nil
-            scrollTarget = target
-        } else {
-            matchIndex = 0
-            scrollToMatch()
+            // En «Todo», el mensaje del registro puede verse como su copia del transcript (otro ID).
+            let foundSet = Set(found)
+            let candidates = entries.filter { foundSet.contains($0.id) }
+            let original = finals.first { $0.id == target } ?? everything.first { $0.id == target }
+            if let resolved = original.flatMap({ HistoryExport.counterpart(of: $0, in: candidates) }),
+               let index = found.firstIndex(of: resolved) {
+                matchIndex = index
+                scrollTarget = resolved
+                return
+            }
         }
+        matchIndex = 0
+        scrollToMatch()
     }
 
     /// Si se llegó desde «Buscar en todas las sesiones», muestra la búsqueda y salta a esa entrada.

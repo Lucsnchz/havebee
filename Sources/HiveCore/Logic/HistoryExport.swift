@@ -74,6 +74,20 @@ public enum HistoryExport {
             .map(\.element)
     }
 
+    /// La entrada de `candidates` que corresponde a `target`. La búsqueda global devuelve entradas del
+    /// registro de los hooks, pero en la línea de tiempo completa el mismo mensaje puede venir de la
+    /// copia del transcript (con otro ID): se busca el del mismo rol y texto y, si no hay (una respuesta
+    /// final partida en varios bloques), el del mismo rol más cercano en el tiempo.
+    public static func counterpart(of target: HistoryEntry, in candidates: [HistoryEntry]) -> UUID? {
+        if candidates.contains(where: { $0.id == target.id }) { return target.id }
+        func flat(_ text: String) -> String { text.split(whereSeparator: \.isWhitespace).joined(separator: " ") }
+        let text = flat(target.text)
+        if let same = candidates.first(where: { $0.role == target.role && flat($0.text) == text }) { return same.id }
+        let sameRole = candidates.filter { $0.role == target.role }
+        let pool = sameRole.isEmpty ? candidates : sameRole
+        return pool.min { abs($0.date.timeIntervalSince(target.date)) < abs($1.date.timeIntervalSince(target.date)) }?.id
+    }
+
     // MARK: - Markdown
 
     /// Un pedazo del texto de una respuesta: prosa (Markdown en línea) o un bloque ``` de código.

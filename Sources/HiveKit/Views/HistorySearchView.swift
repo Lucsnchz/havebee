@@ -29,6 +29,8 @@ struct HistorySearchView: View {
     @State private var archivedChoice: HistoryStore.SearchHit?
     @State private var reading: Session?
     @FocusState private var focused: Bool
+    /// El panel lateral de la sesión (lo lee SessionDetailView): al abrir un resultado, el historial.
+    @AppStorage("sessionSidePanel") private var sidePanel = ""
 
     static let limit = 200
 
@@ -101,7 +103,7 @@ struct HistorySearchView: View {
             Spacer()
             Button("Restaurar") {
                 store.unarchive(session.id)
-                UserDefaults.standard.set("history", forKey: "sessionSidePanel")
+                sidePanel = "history"
                 dismiss()
             }
             Button("Listo") { dismiss() }
@@ -198,7 +200,7 @@ struct HistorySearchView: View {
     private func open(_ hit: HistoryStore.SearchHit, restore: Bool) {
         guard let ctx = store.sessionContext(hit.sessionId) else { return }
         HistoryJumpRequest.shared.pending = .init(sessionId: hit.sessionId, entryId: hit.entryId, query: trimmedQuery)
-        UserDefaults.standard.set("history", forKey: "sessionSidePanel")
+        sidePanel = "history"
         if restore {
             store.unarchive(hit.sessionId)
         } else {

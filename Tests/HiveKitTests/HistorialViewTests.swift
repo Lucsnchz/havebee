@@ -100,7 +100,7 @@ struct HistorialViewTests {
                            sessionId: codex.id, agentName: "Codex")
         }
 
-        deinit { UserDefaults().removePersistentDomain(forName: suiteName) }
+        deinit { defaults.removePersistentDomain(forName: suiteName) }
     }
 
     func check(_ view: some View, size: CGSize, name: String, dark: Bool = true, settle: TimeInterval = 0.8) async {
