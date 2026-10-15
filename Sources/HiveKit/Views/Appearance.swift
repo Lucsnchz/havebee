@@ -35,14 +35,17 @@ struct ProjectTile: View {
             .overlay { StatusRing(ring: activity?.ring ?? .none, size: size) }
             .overlay(alignment: .topTrailing) {
                 if showsBadge, let activity, activity.waitingForYou > 0 {
-                    Text("\(activity.waitingForYou)")
+                    // «!» si algo pide permiso (no solo el color), si no cuántas te esperan.
+                    Text(activity.badgeText)
                         .font(.system(size: max(9, size * 0.26), weight: .bold).monospacedDigit())
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Theme.onAccent)
                         .padding(.horizontal, 4)
                         .frame(minWidth: size * 0.4, minHeight: size * 0.4)
-                        .background(activity.attention > 0 ? Color.orange : Color.green, in: Capsule())
+                        .background(activity.ring.color ?? Theme.pending, in: Capsule())
                         .overlay(Capsule().strokeBorder(Color(nsColor: .windowBackgroundColor), lineWidth: 2))
                         .offset(x: size * 0.18, y: -size * 0.18)
+                        .transition(.scale.combined(with: .opacity))
+                        .accessibilityLabel(activity.attention > 0 ? "Necesita permiso" : "\(activity.waitingForYou) te esperan")
                 }
             }
     }
@@ -94,36 +97,61 @@ struct ProjectTile: View {
     }
 }
 
-/// Borde alrededor del ícono: arco que gira si algo está trabajando, verde si algo te espera,
-/// naranja si algo necesita permiso.
+/// Borde alrededor del ícono: arco miel que gira si algo está trabajando, verde si algo te espera
+/// y naranja punteado si algo necesita permiso (se distingue también sin ver los colores).
 struct StatusRing: View {
     let ring: Activity.Ring
     let size: CGFloat
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Ancho del aro: fino en los íconos grandes para que no parezca el foco del teclado.
+    static func lineWidth(for size: CGFloat) -> CGFloat { min(2.5, max(1.5, size * 0.06)) }
 
     var body: some View {
-        let width = max(2, size * 0.07)
-        let gap = max(2, size * 0.07)
+        let width = Self.lineWidth(for: size)
+        let gap = max(2, size * 0.06)
         let shape = RoundedRectangle(cornerRadius: size * 0.27 + gap, style: .continuous)
-        Group {
+        ZStack {
             switch ring {
             case .none:
                 EmptyView()
             case .pending:
-                shape.strokeBorder(Color.green, lineWidth: width)
+                shape.strokeBorder(Theme.pending, lineWidth: width)
+                    .transition(.opacity)
             case .attention:
-                shape.strokeBorder(Color.orange, lineWidth: width)
+                shape.strokeBorder(Theme.attention, style: StrokeStyle(lineWidth: width, lineCap: .round,
+                                                                       dash: [size * 0.18, size * 0.08]))
+                    .transition(.opacity)
             case .working:
-                TimelineView(.animation(minimumInterval: 1 / 30)) { context in
-                    let turn = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.4) / 1.4
-                    shape.strokeBorder(
-                        AngularGradient(colors: [Color.honey.opacity(0), Color.honey.opacity(0.3), Color.honey, Color.honey.opacity(0)],
-                                        center: .center, angle: .degrees(turn * 360)),
-                        lineWidth: width)
+                if reduceMotion {
+                    shape.strokeBorder(Theme.accent, lineWidth: width)
+                } else {
+                    SpinningGradient()
+                        .mask(shape.strokeBorder(lineWidth: width))
+                        .transition(.opacity)
                 }
             }
         }
+        .animation(.easeOut(duration: 0.2), value: ring)
         .padding(-(gap + width))
         .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+/// Degradé angular fijo que gira con `rotationEffect`: lo interpola Core Animation, sin volver a
+/// armar la vista 30 veces por segundo como hacía el TimelineView.
+private struct SpinningGradient: View {
+    @State private var spinning = false
+
+    var body: some View {
+        AngularGradient(colors: [Theme.accent.opacity(0), Theme.accent.opacity(0.3), Theme.accent, Theme.accent.opacity(0)],
+                        center: .center)
+            // Más grande que el aro: al girar, las esquinas siguen cubiertas.
+            .scaleEffect(1.5)
+            .rotationEffect(.degrees(spinning ? 360 : 0))
+            .animation(.linear(duration: 1.4).repeatForever(autoreverses: false), value: spinning)
+            .onAppear { spinning = true }
     }
 }
 
