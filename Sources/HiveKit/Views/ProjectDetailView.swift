@@ -42,7 +42,8 @@ struct ProjectDetailView: View {
                             store.commandEditor = CommandEditorTarget(projectId: project.id, commandId: nil)
                         }
                     }) {
-                        CommandsSection(project: project)
+                        // El «Agregar» va en el título de la sección: no repetirlo abajo.
+                        CommandsSection(project: project, showsAddButton: false)
                     }
 
                     DetailSection("MCP", trailing: {
@@ -50,7 +51,7 @@ struct ProjectDetailView: View {
                             store.mcpEditor = MCPEditorTarget(projectId: project.id, serverName: nil)
                         }
                     }) {
-                        MCPSection(project: project)
+                        MCPSection(project: project, showsAddButton: false)
                     }
                 }
                 .padding(28)

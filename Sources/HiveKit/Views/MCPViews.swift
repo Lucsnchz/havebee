@@ -177,7 +177,6 @@ private struct MCPRow: View {
     let project: Project
     let server: MCPServer
     let brokenPath: String?
-    @State private var hovering = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -209,10 +208,7 @@ private struct MCPRow: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
-        .background(Color.primary.opacity(hovering ? 0.07 : 0.04), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color.primary.opacity(0.08)))
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
+        .hiveCard(interactive: true, radius: HiveCard.rowRadius)
         .onTapGesture(count: 2) { store.mcpEditor = MCPEditorTarget(projectId: project.id, serverName: server.name) }
         .contextMenu {
             Button("Editar…") { store.mcpEditor = MCPEditorTarget(projectId: project.id, serverName: server.name) }
