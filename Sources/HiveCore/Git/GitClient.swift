@@ -285,10 +285,11 @@ public struct GitCLI: GitClient {
         while start < paths.count {
             let chunk = Array(paths[start..<min(start + 200, paths.count)])
             start += 200
-            let r = run(["check-ignore", "-z", "--"] + chunk, in: dir)
+            // (-z solo va con --stdin, y el runner no tiene entrada: las rutas raras vienen entre comillas.)
+            let r = run(["check-ignore", "--"] + chunk, in: dir)
             // 0: alguno está ignorado; 1: ninguno; otro: error.
             guard r.status == 0 else { continue }
-            result += r.stdout.split(separator: "\0").map(String.init).filter { !$0.isEmpty }
+            result += r.stdout.split(separator: "\n").map { GitParsing.unquotePath(String($0)) }.filter { !$0.isEmpty }
         }
         return result
     }

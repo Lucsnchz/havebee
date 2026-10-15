@@ -260,6 +260,47 @@ public enum GitParsing {
         return diff
     }
 
+    /// Ruta que git escribió entre comillas con escapes de C (`"con \"comillas\"\303\261"`), sin ellos.
+    /// Una ruta sin comillas vuelve tal cual.
+    public static func unquotePath(_ text: String) -> String {
+        guard text.count >= 2, text.hasPrefix("\""), text.hasSuffix("\"") else { return text }
+        let body = Array(text.utf8.dropFirst().dropLast())
+        var bytes: [UInt8] = []
+        var i = 0
+        while i < body.count {
+            let c = body[i]
+            guard c == UInt8(ascii: "\\"), i + 1 < body.count else {
+                bytes.append(c)
+                i += 1
+                continue
+            }
+            let next = body[i + 1]
+            switch next {
+            case UInt8(ascii: "n"): bytes.append(10); i += 2
+            case UInt8(ascii: "t"): bytes.append(9); i += 2
+            case UInt8(ascii: "r"): bytes.append(13); i += 2
+            case UInt8(ascii: "a"): bytes.append(7); i += 2
+            case UInt8(ascii: "b"): bytes.append(8); i += 2
+            case UInt8(ascii: "f"): bytes.append(12); i += 2
+            case UInt8(ascii: "v"): bytes.append(11); i += 2
+            case UInt8(ascii: "0")...UInt8(ascii: "7"):
+                // Octal de tres dígitos: un byte de UTF-8.
+                var value = 0
+                var j = i + 1
+                while j < body.count, j < i + 4, (UInt8(ascii: "0")...UInt8(ascii: "7")).contains(body[j]) {
+                    value = value * 8 + Int(body[j] - UInt8(ascii: "0"))
+                    j += 1
+                }
+                bytes.append(UInt8(truncatingIfNeeded: value))
+                i = j
+            default:
+                bytes.append(next)
+                i += 2
+            }
+        }
+        return String(decoding: bytes, as: UTF8.self)
+    }
+
     /// Líneas que deja git en un archivo en conflicto: <<<<<<<, |||||||, ======= y >>>>>>>.
     public static func isConflictMarker(_ text: String) -> Bool {
         for marker in ["<<<<<<<", ">>>>>>>", "|||||||"] where text.hasPrefix(marker) { return true }
