@@ -62,10 +62,13 @@ extension AppStore {
         }
         let dir = project.directory(for: branch)
         guard folderExists(dir, project: project, branch: branch, warnKey: command.id) else { return }
-        // Ya terminó en esta rama: se vuelve a correr en la misma pestaña en lugar de abrir otra.
+        // Ya terminó en esta rama: se vuelve a correr en la misma pestaña en lugar de abrir otra, con el
+        // comando y la carpeta de ahora (el worktree se pudo mover, o la rama cambiar de nombre).
         if let finished = commandRuns.first(where: { $0.commandId == commandId && $0.branchId == branch.id }) {
             finished.name = command.name
             finished.command = command.command
+            finished.directory = dir
+            finished.branchName = branch.name
             tearDown(finished.terminal)
             start(finished)
             showRun(finished.id)

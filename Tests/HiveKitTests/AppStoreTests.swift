@@ -759,6 +759,19 @@ struct AppStoreToolsTests {
         let command = try #require(store.project(project.id)?.commands.first)
         store.run(command.id, projectId: project.id, branchId: worktree.id)
         #expect(world.processes.launches.last?.directory == worktree.worktreePath)
+
+        // Terminó, y el worktree se movió por fuera (git worktree move): correrlo de nuevo reutiliza la
+        // pestaña, pero en la carpeta nueva.
+        let run = try #require(store.commandRuns.first)
+        store.commandExited(run.id, terminal: try #require(run.terminal), code: 0)
+        let moved = repo.dir.url.path + "/wt-movido"
+        repo.sh("git worktree move \(shellQuote(try #require(worktree.worktreePath))) \(shellQuote(moved))")
+        await store.refreshGitNow()
+        #expect(store.project(project.id)?.branches.last?.worktreePath == moved)
+        store.run(command.id, projectId: project.id, branchId: worktree.id)
+        #expect(store.commandRuns.count == 1)
+        #expect(world.processes.launches.last?.directory == moved)
+        #expect(run.directory == moved)
     }
 
     @Test("MCP: guardar y quitar actualiza el .mcp.json")

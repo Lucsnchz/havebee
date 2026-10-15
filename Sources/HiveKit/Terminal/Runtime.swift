@@ -59,11 +59,11 @@ public final class CommandRun: Identifiable {
     public let id = UUID()
     public let projectId: UUID
     public let branchId: UUID
-    public let branchName: String
+    public internal(set) var branchName: String
     public let commandId: UUID
     public internal(set) var name: String
     public internal(set) var command: String
-    public let directory: String
+    public internal(set) var directory: String
     /// Variables de entorno extra (para los scripts, ej. HIVE_BRANCH).
     let extraEnvironment: [String: String]
     /// Un script suelto (`runScript`), sin comando guardado en el proyecto.
