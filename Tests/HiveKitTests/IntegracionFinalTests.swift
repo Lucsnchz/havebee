@@ -139,4 +139,36 @@ struct IntegracionFinalTests {
         #expect(text.contains("«Reintentar»"))
         #expect(!text.contains("Reanudar"))
     }
+
+    @Test("La terminal de un comando usa la letra elegida, un punto más chica, y lo conserva al cambiarla")
+    func commandTerminalFont() async throws {
+        let suite = SnapshotDefaults()
+        suite.defaults.set("Menlo", forKey: "terminalFontName")
+        suite.defaults.set(15.0, forKey: "terminalFontSize")
+        let terminal = AppStore.makeCommandTerminal(defaults: suite.defaults)
+        #expect(terminal.font.familyName == "Menlo")
+        #expect(terminal.font.pointSize == 14)
+        suite.defaults.set(18.0, forKey: "terminalFontSize")
+        terminal.reapplyPreferences()
+        #expect(terminal.font.pointSize == 17)
+    }
+
+    @Test("Los comandos corren con el SDK de Android a mano (ANDROID_HOME y adb en el PATH)")
+    func commandEnvironmentHasAndroidSDK() async throws {
+        let world = TestWorld()
+        let sdk = world.home.appendingPathComponent("Library/Android/sdk/platform-tools")
+        try FileManager.default.createDirectory(at: sdk, withIntermediateDirectories: true)
+        let repo = GitRepo(name: "app-android")
+        defer { withExtendedLifetime(repo) {} }
+        let store = world.makeStore()
+        await store.addProject(at: repo.path)
+        let project = try #require(store.repoProjects.first)
+        store.saveCommand(projectId: project.id, commandId: nil, name: "Logcat", command: "adb logcat")
+        let command = try #require(store.project(project.id)?.commands.first)
+        store.run(command.id, projectId: project.id)
+        let launch = try #require(world.processes.launches.last)
+        #expect(launch.args.last == "adb logcat")
+        #expect(launch.environment["ANDROID_HOME"] == world.home.appendingPathComponent("Library/Android/sdk").path)
+        #expect(launch.environment["PATH"]?.split(separator: ":").contains(Substring(sdk.path)) == true)
+    }
 }

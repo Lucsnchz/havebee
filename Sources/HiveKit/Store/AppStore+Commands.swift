@@ -98,10 +98,16 @@ extension AppStore {
         return run.id
     }
 
-    func start(_ run: CommandRun) {
+    /// La terminal de un comando: con la letra y el tema elegidos en Ajustes, un punto más chica
+    /// (va en la esquinita y en el popover de la barra de la sesión).
+    static func makeCommandTerminal(defaults: UserDefaults = .standard) -> HiveTerminalView {
         let terminal = HiveTerminalView(frame: NSRect(x: 0, y: 0, width: 600, height: 300), scrollback: 5_000)
-        TerminalTheme.apply(to: terminal)
-        terminal.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        TerminalTheme.apply(to: terminal, defaults: defaults, sizeDelta: -1)
+        return terminal
+    }
+
+    func start(_ run: CommandRun) {
+        let terminal = Self.makeCommandTerminal()
         let runId = run.id
         let events = TerminalEvents(onExit: { [weak self] terminal, code in self?.commandExited(runId, terminal: terminal, code: code) })
         terminal.processDelegate = events
