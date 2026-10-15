@@ -334,7 +334,9 @@ struct SessionTab: View {
                             .foregroundStyle(.secondary)
                     }
                     .font(.system(size: 10.5))
-                    .layoutPriority(-1)
+                    // La misma prioridad que el nombre: con un nombre largo (el automático, del
+                    // primer pedido) los dos se acortan, y una rama corta como «main» se ve entera.
+                    .layoutPriority(1)
                 }
                 Spacer(minLength: 0)
                 // El lugar del estado no ocupa nada si la sesión duerme (salvo con el puntero encima).
