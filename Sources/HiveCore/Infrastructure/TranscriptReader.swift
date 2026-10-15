@@ -38,8 +38,7 @@ public enum TranscriptReader {
         guard let handle = FileHandle(forReadingAtPath: path) else { return [] }
         defer { try? handle.close() }
 
-        let fresh = Progress(conversation: conversationId(fromFileName: url.lastPathComponent, agent: agent))
-        var progress = fresh
+        var progress = Progress(conversation: conversationId(fromFileName: url.lastPathComponent, agent: agent))
         // Si es el mismo archivo y lo ya leído sigue igual, solo falta lo que se agregó.
         if let cached, cached.fileNumber == fileNumber, cached.progress.offset <= size,
            Self.stillStartsWith(handle, cached.progress) {
