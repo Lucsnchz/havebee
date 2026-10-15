@@ -81,6 +81,7 @@ struct QuickSwitcher: View {
         case .branch(let id): store.select(.branch(id))
         case .session(let id): store.select(.session(id))
         case .command(let project, let command): store.run(command, projectId: project)
+        case .archivedSession, .action: break
         }
     }
 }
@@ -127,6 +128,8 @@ private struct SwitcherRow: View {
         case .command:
             Image(systemName: "play.fill")
                 .foregroundStyle(.green)
+        case .archivedSession, .action:
+            EmptyView()
         }
     }
 }
