@@ -43,6 +43,25 @@ public struct AgentStorage: Sendable {
         return nil
     }
 
+    /// El statusLine que ya tenías en Claude, para que el de Hive lo siga mostrando. Gana el más específico:
+    /// .claude/settings.local.json y .claude/settings.json de la carpeta, y después <config>/settings.json.
+    public func claudeUserStatusLine(directory: String) -> String? {
+        let project = URL(fileURLWithPath: directory).appendingPathComponent(".claude")
+        let files = [project.appendingPathComponent("settings.local.json"), project.appendingPathComponent("settings.json"),
+                     claudeConfigDir.appendingPathComponent("settings.json")]
+        for file in files {
+            guard let data = try? Data(contentsOf: file), let settings = JSONValue.parse(data),
+                  let statusLine = settings["statusLine"] else { continue }
+            let type = statusLine["type"]?.string ?? "command"
+            guard type == "command", let command = statusLine["command"]?.string?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !command.isEmpty else { continue }
+            // El de Hive nunca se encadena a sí mismo.
+            if command.contains("claude-status") && command.contains("HIVE_EVENT_BIN") { continue }
+            return command
+        }
+        return nil
+    }
+
     /// El `notify` que ya tenías en el config.toml de Codex (para seguir llamándolo).
     public func codexExistingNotify() -> [String]? {
         guard let text = try? String(contentsOf: codexHome.appendingPathComponent("config.toml"), encoding: .utf8) else { return nil }

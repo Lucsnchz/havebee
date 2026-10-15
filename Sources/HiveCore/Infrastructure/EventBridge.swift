@@ -4,14 +4,47 @@ import Foundation
 public enum EventBridge {
     /// Puente de eventos. Lo invocan los hooks de Claude Code (payload por stdin) y el `notify`
     /// de Codex (payload como último argumento). Escribe un archivo `.evt` que Hive lee.
+    /// Con `claude-status` hace de statusLine de Claude: guarda lo que manda Claude (contexto y límites)
+    /// en usage/<sesión>.json y muestra un resumen, o el statusLine que ya tenías.
     public static let script = #"""
     #!/bin/sh
     # Hive: puente de eventos entre los agentes y la app. Generado automáticamente.
     dir="$HIVE_EVENTS_DIR"
     sid="$HIVE_SESSION_ID"
-    if [ -z "$dir" ] || [ -z "$sid" ] || [ ! -d "$dir" ]; then exit 0; fi
     src="$1"
     [ $# -gt 0 ] && shift
+    if [ "$src" = "claude-status" ]; then
+      input=$(cat)
+      file=""
+      if [ -n "$dir" ] && [ -n "$sid" ] && [ -d "$dir" ]; then
+        udir="$dir/../usage"
+        mkdir -p "$udir" 2>/dev/null
+        tmp="$udir/.$sid.$$.tmp"
+        if printf '%s' "$input" > "$tmp" 2>/dev/null && mv -f "$tmp" "$udir/$sid.json"; then file="$udir/$sid.json"; fi
+      fi
+      # Si ya tenías un statusLine, recibe lo mismo y se muestra el tuyo.
+      if [ -n "$HIVE_USER_STATUSLINE" ]; then
+        printf '%s' "$input" | /bin/sh -c "$HIVE_USER_STATUSLINE"
+        exit 0
+      fi
+      [ -n "$file" ] || exit 0
+      # Porcentaje redondeado sin printf %f (el de /bin/sh depende del idioma: 34.4 no es un número en es_AR).
+      pct() {
+        v=$(/usr/bin/plutil -extract "$1" raw -o - "$file" 2>/dev/null) || return 1
+        case "$v" in ''|*[!0-9.]*) return 1 ;; esac
+        i=${v%%.*}
+        [ -n "$i" ] || i=0
+        case "$v" in *.[5-9]*) i=$((i + 1)) ;; esac
+        printf '%s' "$i"
+      }
+      line=""
+      if v=$(pct context_window.used_percentage); then line="ctx $v%"; fi
+      if v=$(pct rate_limits.five_hour.used_percentage); then line="${line:+$line · }5h $v%"; fi
+      if v=$(pct rate_limits.seven_day.used_percentage); then line="${line:+$line · }sem $v%"; fi
+      printf '%s' "$line"
+      exit 0
+    fi
+    if [ -z "$dir" ] || [ -z "$sid" ] || [ ! -d "$dir" ]; then exit 0; fi
     tmp=$(mktemp "$dir/tmp.XXXXXX") || exit 0
     case "$src" in
       claude)
@@ -48,15 +81,24 @@ public enum EventBridge {
         return .object(["hooks": .object(hooks)])
     }
 
-    /// Escribe el script y los ajustes de Claude en la carpeta de datos.
+    /// Los mismos ajustes más el statusLine de Hive (uso de contexto y límites de Claude).
+    public static var claudeSettingsWithUsage: JSONValue {
+        guard case .object(var settings) = claudeSettings else { return claudeSettings }
+        settings["statusLine"] = ["type": "command", "command": .string(#""${HIVE_EVENT_BIN:-true}" claude-status"#)]
+        return .object(settings)
+    }
+
+    /// Escribe el script y los dos ajustes de Claude (con y sin statusLine) en la carpeta de datos.
     public static func install(paths: HivePaths) throws {
         let fm = FileManager.default
         try fm.createDirectory(at: paths.eventsDir, withIntermediateDirectories: true)
         try fm.createDirectory(at: paths.binDir, withIntermediateDirectories: true)
         try script.write(to: paths.eventBin, atomically: true, encoding: .utf8)
         try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: paths.eventBin.path)
-        let data = try JSONSerialization.data(withJSONObject: claudeSettings.anyValue, options: [.prettyPrinted, .sortedKeys])
-        try data.write(to: paths.claudeSettings, options: .atomic)
+        for (settings, url) in [(claudeSettings, paths.claudeSettings), (claudeSettingsWithUsage, paths.claudeSettingsWithUsage)] {
+            let data = try JSONSerialization.data(withJSONObject: settings.anyValue, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+            try data.write(to: url, options: .atomic)
+        }
     }
 }
 

@@ -301,11 +301,75 @@ struct EventBridgeTests {
         #expect(hooks["PreToolUse"]?.array?.first?["matcher"]?.string == "*")
     }
 
-    func runScript(_ paths: HivePaths, args: [String], stdin: String = "", sessionId: UUID) -> CommandResult {
+    @Test("Escribe también los ajustes con el statusLine de Hive; los de siempre no lo tienen")
+    func installsUsageSettings() throws {
+        let installed = try install()
+        defer { withExtendedLifetime(installed) {} }
+        let paths = installed.paths
+        let plain = try #require(JSONValue.parse(try Data(contentsOf: paths.claudeSettings)))
+        let usage = try #require(JSONValue.parse(try Data(contentsOf: paths.claudeSettingsWithUsage)))
+        #expect(plain["statusLine"] == nil)
+        #expect(usage["hooks"] == plain["hooks"])
+        #expect(usage["statusLine"]?["type"]?.string == "command")
+        #expect(usage["statusLine"]?["command"]?.string == #""${HIVE_EVENT_BIN:-true}" claude-status"#)
+        #expect(paths.claudeSettingsWithUsage.lastPathComponent == "claude-settings-usage.json")
+        #expect(paths.usageDir.path == paths.root.appendingPathComponent("usage").path)
+    }
+
+    static let statusPayload = #"{"session_id":"c-1","model":{"id":"claude-opus-4-1","display_name":"Opus"},"context_window":{"context_window_size":200000,"used_percentage":34.4,"remaining_percentage":65.6},"rate_limits":{"five_hour":{"used_percentage":23,"resets_at":1790003600},"seven_day":{"used_percentage":41.6,"resets_at":1790500000}}}"#
+
+    @Test("claude-status guarda lo que manda Claude y muestra el resumen")
+    func claudeStatus() throws {
+        let installed = try install()
+        defer { withExtendedLifetime(installed) {} }
+        let paths = installed.paths
+        let id = UUID()
+        let r = runScript(paths, args: ["claude-status"], stdin: Self.statusPayload, sessionId: id)
+        #expect(r.ok)
+        #expect(r.stdout == "ctx 34% · 5h 23% · sem 42%")
+        let saved = try String(contentsOf: paths.usageDir.appendingPathComponent("\(id.uuidString).json"), encoding: .utf8)
+        #expect(saved == Self.statusPayload)
+        // Sin temporales sueltos ni eventos: el statusLine no es un evento.
+        #expect(try FileManager.default.contentsOfDirectory(atPath: paths.usageDir.path) == ["\(id.uuidString).json"])
+        #expect(try FileManager.default.contentsOfDirectory(atPath: paths.eventsDir.path).isEmpty)
+        // Solo lo que venga: sin límites (API key) muestra solo el contexto.
+        let partial = runScript(paths, args: ["claude-status"], stdin: #"{"context_window":{"used_percentage":7}}"#, sessionId: id)
+        #expect(partial.stdout == "ctx 7%")
+        let nothing = runScript(paths, args: ["claude-status"], stdin: "{}", sessionId: id)
+        #expect(nothing.ok && nothing.stdout.isEmpty)
+    }
+
+    @Test("claude-status encadena tu statusLine con el mismo stdin")
+    func claudeStatusChained() throws {
+        let installed = try install()
+        defer { withExtendedLifetime(installed) {} }
+        let (dir, paths) = (installed.dir, installed.paths)
+        let id = UUID()
+        let received = dir.url.appendingPathComponent("recibido.json").path
+        let r = runScript(paths, args: ["claude-status"], stdin: Self.statusPayload, sessionId: id,
+                          extra: ["HIVE_USER_STATUSLINE": "cat > \(shellQuote(received)); printf 'mi barra'"])
+        #expect(r.ok)
+        #expect(r.stdout == "mi barra")
+        #expect(try String(contentsOfFile: received, encoding: .utf8) == Self.statusPayload)
+        // Hive guarda el uso igual.
+        #expect(FileManager.default.fileExists(atPath: paths.usageDir.appendingPathComponent("\(id.uuidString).json").path))
+    }
+
+    @Test("claude-status fuera de Hive no escribe nada")
+    func claudeStatusOutsideHive() throws {
+        let installed = try install()
+        defer { withExtendedLifetime(installed) {} }
+        let r = ProcessCommandRunner().run("/bin/sh", ["-c", "printf '{}' | \(shellQuote(installed.paths.eventBin.path)) claude-status"],
+                                           cwd: nil, environment: ["HIVE_SESSION_ID": "", "HIVE_EVENTS_DIR": ""])
+        #expect(r.ok && r.stdout.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: installed.paths.usageDir.path))
+    }
+
+    func runScript(_ paths: HivePaths, args: [String], stdin: String = "", sessionId: UUID, extra: [String: String] = [:]) -> CommandResult {
         let script = "printf '%s' \(shellQuote(stdin)) | " + ([paths.eventBin.path] + args).map(shellQuote).joined(separator: " ")
         return ProcessCommandRunner().run("/bin/sh", ["-c", script], cwd: nil, environment: [
             "HIVE_EVENTS_DIR": paths.eventsDir.path, "HIVE_SESSION_ID": sessionId.uuidString,
-        ])
+        ].merging(extra) { _, new in new })
     }
 
     @Test("El script deja eventos de Claude y de Codex que el lector entiende, en orden")
@@ -431,6 +495,23 @@ struct AgentStorageTests {
         #expect(storage.discoverGeminiSession(cwd: "/code/x", since: since, excluding: ["g-1", "g-3"]) == nil)
         #expect(storage.discoverGeminiSession(cwd: "/code/x", since: Date().addingTimeInterval(3600), excluding: []) == nil)
         #expect(AgentStorage.sha256("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+    }
+
+    @Test("Encuentra tu statusLine de Claude: el del repo le gana al global")
+    func userStatusLine() {
+        let (storage, claude, _, _) = storage()
+        let repo = TempDir()
+        #expect(storage.claudeUserStatusLine(directory: repo.path) == nil)
+        claude.write("settings.json", #"{"statusLine": {"type": "command", "command": "~/.claude/statusline.sh"}}"#)
+        #expect(storage.claudeUserStatusLine(directory: repo.path) == "~/.claude/statusline.sh")
+        repo.write(".claude/settings.json", #"{"statusLine": {"type": "command", "command": "npx ccstatusline"}}"#)
+        #expect(storage.claudeUserStatusLine(directory: repo.path) == "npx ccstatusline")
+        repo.write(".claude/settings.local.json", #"{"statusLine": {"command": "  echo local  "}}"#)
+        #expect(storage.claudeUserStatusLine(directory: repo.path) == "echo local")
+        // Uno roto, vacío o el propio de Hive no cuentan.
+        repo.write(".claude/settings.local.json", #"{"statusLine": {"type": "command", "command": "\"${HIVE_EVENT_BIN:-true}\" claude-status"}}"#)
+        repo.write(".claude/settings.json", "{roto")
+        #expect(storage.claudeUserStatusLine(directory: repo.path) == "~/.claude/statusline.sh")
     }
 
     @Test("Usa las variables de entorno de cada agente")
