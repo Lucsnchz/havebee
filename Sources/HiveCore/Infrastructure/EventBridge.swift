@@ -106,41 +106,78 @@ public enum EventBridge {
 public final class EventWatcher: @unchecked Sendable {
     private let directory: URL
     private let queue: DispatchQueue
+    private let fallbackInterval: TimeInterval
     private let handler: @Sendable ([HiveEvent]) -> Void
+    /// Protege `source` y `timer`: start/stop corren en el hilo de quien llama y el respaldo en `queue`.
+    private let lock = NSLock()
     private var source: DispatchSourceFileSystemObject?
     private var timer: DispatchSourceTimer?
 
-    public init(directory: URL, queue: DispatchQueue = .main, handler: @escaping @Sendable ([HiveEvent]) -> Void) {
+    /// - Parameter fallbackInterval: cada cuánto se revisa la carpeta por si se perdió un aviso del sistema de archivos.
+    public init(directory: URL, queue: DispatchQueue = .main, fallbackInterval: TimeInterval = 2,
+                handler: @escaping @Sendable ([HiveEvent]) -> Void) {
         self.directory = directory
         self.queue = queue
+        self.fallbackInterval = fallbackInterval
         self.handler = handler
     }
 
     deinit { stop() }
 
+    /// Empieza a mirar la carpeta. Llamarlo otra vez reemplaza lo anterior: nunca quedan dos fuentes.
     public func start() {
+        stop()
         purge()
-        let fd = open(directory.path, O_EVTONLY)
-        if fd >= 0 {
-            let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: .write, queue: queue)
-            source.setEventHandler { [weak self] in self?.drain() }
-            source.setCancelHandler { close(fd) }
-            source.resume()
-            self.source = source
-        }
-        // Red de seguridad por si se pierde alguna notificación del sistema de archivos.
+        lock.lock()
+        defer { lock.unlock() }
+        openSourceLocked()
+        // Red de seguridad por si se pierde alguna notificación del sistema de archivos
+        // (o si la carpeta todavía no existía).
         let timer = DispatchSource.makeTimerSource(queue: queue)
-        timer.schedule(deadline: .now() + 2, repeating: 2)
-        timer.setEventHandler { [weak self] in self?.drain() }
+        timer.schedule(deadline: .now() + fallbackInterval, repeating: fallbackInterval)
+        timer.setEventHandler { [weak self] in self?.fallbackTick() }
         timer.resume()
         self.timer = timer
     }
 
     public func stop() {
+        lock.lock()
+        let (source, timer) = (self.source, self.timer)
+        self.source = nil
+        self.timer = nil
+        lock.unlock()
         source?.cancel()
-        source = nil
         timer?.cancel()
-        timer = nil
+    }
+
+    private func openSourceLocked() {
+        guard source == nil else { return }
+        let fd = open(directory.path, O_EVTONLY)
+        guard fd >= 0 else { return }
+        let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: [.write, .delete, .rename], queue: queue)
+        source.setEventHandler { [weak self, weak source] in
+            // Si borraron o movieron la carpeta, el respaldo la vuelve a abrir cuando exista.
+            if let data = source?.data, !data.isDisjoint(with: [.delete, .rename]) { self?.dropSource(source) }
+            self?.drain()
+        }
+        source.setCancelHandler { close(fd) }
+        source.resume()
+        self.source = source
+    }
+
+    private func dropSource(_ stale: DispatchSourceFileSystemObject?) {
+        lock.lock()
+        guard let stale, source === stale else { lock.unlock(); return }
+        source = nil
+        lock.unlock()
+        stale.cancel()
+    }
+
+    private func fallbackTick() {
+        lock.lock()
+        if timer != nil { openSourceLocked() }
+        lock.unlock()
+        drain()
     }
 
     /// Los eventos de una ejecución anterior ya no significan nada.
