@@ -410,6 +410,20 @@ enum HiveNavigator {
         store.select(.session(id))
     }
 
+    /// Abre una sesión en un mensaje de su historial (lo que encontró «?» en ⌘K): el panel lateral
+    /// pasa a «Historial» y salta a esa entrada. Una archivada no se abre (devuelve false): queda
+    /// pedido el salto y el buscador muestra su historial en la misma hoja.
+    @discardableResult
+    static func openHistoryEntry(_ store: AppStore, session id: UUID, entry: UUID, query: String,
+                                 jumps: HistoryJumpRequest? = nil, defaults: UserDefaults = .standard) -> Bool {
+        guard let ctx = store.sessionContext(id) else { return false }
+        (jumps ?? .shared).pending = .init(sessionId: id, entryId: entry, query: query)
+        guard !ctx.session.isArchived else { return false }
+        defaults.set("history", forKey: "sessionSidePanel")
+        reveal(store, session: id)
+        return true
+    }
+
     /// Abre un proyecto (en su última sesión) y lo despliega en el árbol.
     static func open(_ store: AppStore, project id: UUID) {
         store.openProject(id)

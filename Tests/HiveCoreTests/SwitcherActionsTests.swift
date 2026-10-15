@@ -95,7 +95,7 @@ struct SwitcherActionsTests {
 
     @Test("Encabezados por tipo")
     func headers() {
-        #expect(SwitcherItem.Kind.allCases.map(\.header) == ["Sesiones", "Ramas", "Proyectos", "Comandos", "Acciones", "Archivadas"])
+        #expect(SwitcherItem.Kind.allCases.map(\.header) == ["Sesiones", "Ramas", "Proyectos", "Comandos", "Acciones", "Archivadas", "Historial"])
     }
 
     @Test("Resalta lo que coincide", arguments: [

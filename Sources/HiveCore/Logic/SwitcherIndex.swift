@@ -19,11 +19,13 @@ public struct SwitcherItem: Identifiable, Equatable, Sendable {
         /// Una sesión archivada: al elegirla se ve su historial.
         case archivedSession(UUID)
         case action(SwitcherAction)
+        /// Un mensaje del historial («?» en el buscador): abre la sesión en esa entrada.
+        case historyEntry(session: UUID, entry: UUID)
     }
 
     /// Tipo de resultado, para agruparlos bajo un encabezado.
     public enum Kind: Int, CaseIterable, Sendable {
-        case session, branch, project, command, action, archived
+        case session, branch, project, command, action, archived, history
 
         public var header: String {
             switch self {
@@ -33,6 +35,7 @@ public struct SwitcherItem: Identifiable, Equatable, Sendable {
             case .command: "Comandos"
             case .action: "Acciones"
             case .archived: "Archivadas"
+            case .history: "Historial"
             }
         }
     }
@@ -54,6 +57,7 @@ public struct SwitcherItem: Identifiable, Equatable, Sendable {
         case .command: .command
         case .archivedSession: .archived
         case .action: .action
+        case .historyEntry: .history
         }
     }
 }
@@ -61,6 +65,52 @@ public struct SwitcherItem: Identifiable, Equatable, Sendable {
 public enum SwitcherIndex {
     /// Con este prefijo («>nueva claude») el buscador muestra solo acciones.
     public static let actionPrefix: Character = ">"
+    /// Con este prefijo («?migración») el buscador busca en el historial de las conversaciones.
+    public static let historyPrefix: Character = "?"
+
+    /// Lo que hay que buscar en el historial si la búsqueda empieza con «?» (sin el prefijo ni los
+    /// espacios de los costados); nil si es una búsqueda común.
+    public static func historyQuery(_ query: String) -> String? {
+        let text = query.trimmingCharacters(in: .whitespaces)
+        guard text.first == historyPrefix else { return nil }
+        return String(text.dropFirst()).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Las sesiones (activas y archivadas) cuyo historial se puede buscar: las de Claude y Codex.
+    public static func historySessionIds(_ projects: [Project]) -> [UUID] {
+        projects.flatMap { $0.branches.flatMap(\.sessions) }.filter { $0.kind.reportsConversation }.map(\.id)
+    }
+
+    /// Los resultados del historial como filas del buscador: el fragmento como título y, abajo, quién
+    /// lo dijo, en qué sesión y cuándo. Se saltean los de sesiones que ya no existen.
+    /// El fragmento se recorta alrededor de `query` para que la coincidencia entre en una línea.
+    public static func historyItems(_ hits: [HistoryStore.SearchHit], query: String, in projects: [Project],
+                                    now: Date = Date(), calendar: Calendar = .current) -> [SwitcherItem] {
+        var places: [UUID: (project: Project, branch: Branch, session: Session)] = [:]
+        for project in projects {
+            for branch in project.branches {
+                for session in branch.sessions { places[session.id] = (project, branch, session) }
+            }
+        }
+        return hits.compactMap { hit in
+            guard let ctx = places[hit.sessionId] else { return nil }
+            let who: String
+            switch hit.role {
+            case .user: who = "Vos"
+            case .assistant: who = ctx.session.kind.defaultName
+            case .system: who = "Automático"
+            case .marker: who = "Aviso"
+            }
+            let place = ctx.project.isScratch ? ctx.project.name : "\(ctx.project.name) › \(ctx.branch.name)"
+            let archived = ctx.session.isArchived ? " (archivada)" : ""
+            let day = HistoryExport.dayLabel(hit.date, now: now, calendar: calendar)
+            let title = HistoryExport.snippet(hit.snippet, query: query, radius: 32) ?? hit.snippet
+            return SwitcherItem(id: "h-\(hit.id)", target: .historyEntry(session: hit.sessionId, entry: hit.entryId),
+                                title: title,
+                                subtitle: "\(who) · \(ctx.session.name)\(archived) · \(place) · \(day)",
+                                haystack: hit.snippet, recency: hit.date)
+        }
+    }
 
     public static func items(_ projects: [Project], includeArchived: Bool = false) -> [SwitcherItem] {
         var items: [SwitcherItem] = []
@@ -137,10 +187,13 @@ public enum SwitcherIndex {
 
     /// Busca en proyectos, ramas, sesiones y comandos. Con `includeArchived` suma las sesiones
     /// archivadas (siempre al final). Con `includeActions` suma las acciones cuyo título empieza
-    /// con lo que escribiste; con el prefijo «>» muestra solo acciones.
+    /// con lo que escribiste; con el prefijo «>» muestra solo acciones. Con «?» no devuelve nada:
+    /// la búsqueda en el historial lee archivos y la hace la vista fuera del hilo principal
+    /// (`HistoryStore.search` y después `historyItems`).
     public static func search(_ query: String, in projects: [Project], limit: Int = 40,
                               includeArchived: Bool = false, includeActions: Bool = false,
                               compactLayout: Bool = false) -> [SwitcherItem] {
+        if historyQuery(query) != nil { return [] }
         let parsed = parse(query)
         if parsed.actionsOnly {
             return rank(parsed.text, actions(projects: projects, compactLayout: compactLayout), limit: limit, minimumScore: 0,
@@ -221,11 +274,11 @@ public enum SwitcherIndex {
         s.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "es"))
     }
 
-    /// Separa el prefijo de acciones y normaliza el resto.
+    /// Separa el prefijo de acciones (o el del historial) y normaliza el resto.
     static func parse(_ query: String) -> (actionsOnly: Bool, text: String) {
         var text = query.trimmingCharacters(in: .whitespaces)
         let actionsOnly = text.first == actionPrefix
-        if actionsOnly { text = String(text.dropFirst()).trimmingCharacters(in: .whitespaces) }
+        if actionsOnly || text.first == historyPrefix { text = String(text.dropFirst()).trimmingCharacters(in: .whitespaces) }
         return (actionsOnly, normalize(text))
     }
 

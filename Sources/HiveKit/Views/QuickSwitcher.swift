@@ -2,7 +2,8 @@ import HiveCore
 import SwiftUI
 
 /// Buscador rápido (⌘K): proyectos, ramas, sesiones, comandos y archivadas. Con «>» adelante
-/// muestra acciones (sesiones y ramas nuevas, agregar proyecto, cambiar de vista, ajustes).
+/// muestra acciones (sesiones y ramas nuevas, agregar proyecto, cambiar de vista, ajustes) y con
+/// «?», lo que hablaste con Claude y Codex (el historial guardado de todas las sesiones).
 struct QuickSwitcher: View {
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
@@ -14,7 +15,13 @@ struct QuickSwitcher: View {
     @State private var archivedId: UUID?
     /// Lo que hay que hacer cuando se termine de cerrar la hoja (abrir otra hoja o un panel).
     @State private var afterDismiss: (() -> Void)?
+    /// Con «?»: lo que se encontró en el historial (se busca fuera del hilo principal).
+    @State private var historyHits: [HistoryStore.SearchHit] = []
+    @State private var searchingHistory = false
     @FocusState private var focused: Bool
+
+    /// Cuántos mensajes del historial muestra el buscador (la hoja «Buscar en todas las sesiones» muestra más).
+    static let historyLimit = 30
 
     init(query: String = "", archivedId: UUID? = nil) {
         _query = State(initialValue: query)
@@ -43,8 +50,11 @@ struct QuickSwitcher: View {
     // MARK: Resultados
 
     private var search: some View {
-        let groups = grouped(SwitcherIndex.search(query, in: store.projects, includeArchived: true, includeActions: true,
-                                                  compactLayout: layout == .compact))
+        let historyText = SwitcherIndex.historyQuery(query)
+        let found = historyText.map { SwitcherIndex.historyItems(historyHits, query: $0, in: store.projects) }
+            ?? SwitcherIndex.search(query, in: store.projects, includeArchived: true, includeActions: true,
+                                    compactLayout: layout == .compact)
+        let groups = grouped(found)
         let results = groups.flatMap(\.items)
         let showHeaders = groups.count > 1
         return VStack(spacing: 0) {
@@ -66,18 +76,14 @@ struct QuickSwitcher: View {
                         return .handled
                     }
                     .onExitCommand { dismiss() }
+                if searchingHistory {
+                    ProgressView().controlSize(.small)
+                }
             }
             .padding(16)
             Divider()
             if results.isEmpty {
-                VStack(spacing: 6) {
-                    Text("Sin resultados para «\(query)»")
-                    Text("Escribí «>» para ver acciones, como «>nueva claude».")
-                        .font(.callout)
-                        .foregroundStyle(.tertiary)
-                }
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, minHeight: 140)
+                emptyState(historyText)
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
@@ -117,6 +123,53 @@ struct QuickSwitcher: View {
         }
         .onAppear { focused = true }
         .onChange(of: query) { index = 0 }
+        .task(id: historyText) { await searchHistory(historyText) }
+    }
+
+    private func emptyState(_ historyText: String?) -> some View {
+        VStack(spacing: 6) {
+            if let historyText {
+                if historyText.count < 2 {
+                    Text("Buscá en lo que hablaste con Claude y Codex")
+                    Text("Escribí al menos dos letras después de «?». También busca en las sesiones archivadas.")
+                        .font(.callout)
+                        .foregroundStyle(.tertiary)
+                } else if searchingHistory {
+                    Text("Buscando en el historial…")
+                } else {
+                    Text("Nada en el historial coincide con «\(historyText)»")
+                }
+            } else {
+                Text("Sin resultados para «\(query)»")
+                Text("Escribí «>» para ver acciones, como «>nueva claude», o «?» para buscar en el historial.")
+                    .font(.callout)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .multilineTextAlignment(.center)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 24)
+        .frame(maxWidth: .infinity, minHeight: 140)
+    }
+
+    /// Con «?», busca en el historial guardado fuera del hilo principal, con una pausa corta para no
+    /// buscar en cada tecla.
+    private func searchHistory(_ text: String?) async {
+        guard let text, text.count >= 2 else {
+            historyHits = []
+            searchingHistory = false
+            return
+        }
+        try? await Task.sleep(nanoseconds: 150_000_000)
+        guard !Task.isCancelled else { return }
+        searchingHistory = true
+        let ids = SwitcherIndex.historySessionIds(store.projects)
+        let history = store.history
+        let limit = Self.historyLimit
+        let hits = await Task.detached(priority: .userInitiated) { history.search(text, sessionIds: ids, limit: limit) }.value
+        guard !Task.isCancelled else { return }
+        historyHits = hits
+        searchingHistory = false
     }
 
     private var footer: some View {
@@ -126,6 +179,7 @@ struct QuickSwitcher: View {
             hint("esc", "cerrar")
             Spacer()
             hint(">", "acciones")
+            hint("?", "historial")
         }
         .font(.caption)
         .foregroundStyle(.secondary)
@@ -165,6 +219,15 @@ struct QuickSwitcher: View {
             archivedId = id
             return
         }
+        if case .historyEntry(let session, let entry) = item.target {
+            // Una archivada no se abre: su historial se ve en la misma hoja, ya en esa entrada.
+            if HiveNavigator.openHistoryEntry(store, session: session, entry: entry, query: SwitcherIndex.historyQuery(query) ?? "") {
+                dismiss()
+            } else {
+                archivedId = session
+            }
+            return
+        }
         dismiss()
         switch item.target {
         case .project(let id):
@@ -176,7 +239,7 @@ struct QuickSwitcher: View {
             HiveNavigator.reveal(store, session: id)
         case .command(let project, let command):
             store.run(command, projectId: project)
-        case .archivedSession:
+        case .archivedSession, .historyEntry:
             break
         case .action(let action):
             perform(action)
@@ -237,6 +300,10 @@ private struct SwitcherRow: View {
                 Text("Ver historial")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
+            } else if item.kind == .history {
+                Image(systemName: "text.bubble")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
             }
         }
         .padding(.horizontal, 10)
@@ -290,6 +357,12 @@ private struct SwitcherRow: View {
                 AgentLogo(kind: ctx.session.kind, size: 20)
                     .saturation(0)
                     .opacity(0.6)
+            }
+        case .historyEntry(let id, _):
+            if let ctx = store.sessionContext(id) {
+                AgentLogo(kind: ctx.session.kind, size: 20)
+                    .saturation(ctx.session.isArchived ? 0 : 1)
+                    .opacity(ctx.session.isArchived ? 0.6 : 1)
             }
         case .command:
             Image(systemName: "play.fill")
