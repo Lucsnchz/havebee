@@ -360,4 +360,63 @@ struct IntegracionFinalTests {
         #expect(!HiveNavigator.clearTerminal(store, keyWindow: window))
         #expect(terminal.fullText().contains("charla"))
     }
+
+    @Test("El encabezado de la rama avisa si la remota se borró o si hay un rebase a medias")
+    func branchBadges() {
+        #expect(BranchGitBadges.make(nil).isEmpty)
+        #expect(BranchGitBadges.make(GitStatus(branch: "main")).isEmpty)
+        let badges = BranchGitBadges.make(GitStatus(branch: "feature", upstream: "origin/feature", ahead: 2, behind: 1,
+                                                    upstreamGone: true, operation: .rebase))
+        #expect(badges.map(\.text) == ["Rebase en curso", "Remota borrada", "↑ 2", "↓ 1"])
+        #expect(badges.map(\.warning) == [true, true, false, false])
+    }
+
+    @Test("Rama inactiva: muestra sus commits y, con un rebase a medias en la carpeta principal, no ofrece checkout")
+    func inactiveBranchAndOperation() async throws {
+        let world = TestWorld()
+        let repo = GitRepo(name: "tienda")
+        defer { withExtendedLifetime((world, repo)) {} }
+        repo.sh("git checkout -q -b feature/stock")
+        repo.write("stock.php", "<?php\n")
+        repo.commit("Validación de stock")
+        repo.sh("git checkout -q main")
+        let store = world.makeStore()
+        await store.addProject(at: repo.path)
+        let project = try #require(store.repoProjects.first)
+        #expect(await store.createBranch(NewBranchRequest(projectId: project.id, name: "feature/stock", isNew: false, mode: .main)) == nil)
+        let branch = try #require(store.project(project.id)?.branches.first { $0.name == "feature/stock" })
+        #expect(!store.isActive(branch, in: try #require(store.project(project.id))))
+        // Los commits de la rama, aunque la carpeta tenga otra.
+        #expect(store.git.recentCommits(repo.path, ref: branch.name, limit: 8).first?.subject == "Validación de stock")
+        // Un rebase a medias en la carpeta principal.
+        try FileManager.default.createDirectory(atPath: repo.path + "/.git/rebase-merge", withIntermediateDirectories: true)
+        try "refs/heads/main\n".write(toFile: repo.path + "/.git/rebase-merge/head-name", atomically: true, encoding: .utf8)
+        store.refreshGit()
+        #expect(await waitUntil { store.dirStatus[repo.path]?.operation == .rebase })
+        let drawn = await colors(NavigationStack { BranchDetailView(branchId: branch.id) }.environment(store),
+                                 size: CGSize(width: 900, height: 620), name: "rama-inactiva-con-rebase")
+        #expect(drawn.allSatisfy { $0 > 3 })
+    }
+
+    @Test("Un repo sin commits ofrece crear el primero desde la rama")
+    func firstCommitFromBranch() async throws {
+        let world = TestWorld()
+        let repo = GitRepo(name: "nuevo")
+        defer { withExtendedLifetime((world, repo)) {} }
+        repo.sh("git checkout -q --orphan arranque")
+        let store = world.makeStore()
+        await store.addProject(at: repo.path)
+        let project = try #require(store.repoProjects.first)
+        let branch = try #require(project.branches.first)
+        #expect(branch.name == "arranque")
+        store.refreshGit()
+        #expect(await waitUntil { store.dirStatus[repo.path]?.isUnborn == true })
+        let drawn = await colors(NavigationStack { BranchDetailView(branchId: branch.id) }.environment(store),
+                                 size: CGSize(width: 900, height: 520), name: "rama-sin-commits")
+        #expect(drawn.allSatisfy { $0 > 3 })
+        #expect(await store.createFirstCommit(projectId: project.id) == nil)
+        #expect(await waitUntil { store.dirStatus[repo.path]?.isUnborn == false })
+        #expect(store.git.recentCommits(repo.path, limit: 1).first?.subject == "Primer commit")
+        #expect(await store.createFirstCommit(projectId: UUID()) == "No encontré el proyecto.")
+    }
 }

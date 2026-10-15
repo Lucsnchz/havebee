@@ -188,6 +188,22 @@ extension AppStore {
 
     // MARK: - Git
 
+    /// Un repo sin commits: crea un commit vacío («Primer commit») para poder crear ramas. Devuelve el
+    /// error de git, o nil si salió bien.
+    @discardableResult
+    public func createFirstCommit(projectId: UUID) async -> String? {
+        guard let project = project(projectId) else { return "No encontré el proyecto." }
+        let git = self.git
+        let path = project.path
+        let r = await Task.detached { git.commitAllowEmpty(message: "Primer commit", in: path) }.value
+        guard r.ok else {
+            alert = AppAlert(title: "No se pudo crear el primer commit", message: r.errorMessage)
+            return r.errorMessage
+        }
+        refreshGit()
+        return nil
+    }
+
     /// Pide una revisión de git en segundo plano. Corre una a la vez; si llega un pedido con una
     /// pasada en curso, no se pierde: al terminar se hace otra.
     public func refreshGit() {

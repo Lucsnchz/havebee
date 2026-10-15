@@ -285,6 +285,8 @@ struct ChangesPanel: View {
 struct RecentCommits: View {
     let git: GitClient
     let directory: String
+    /// La rama de la que se muestran los commits (nil: la que tiene checkout la carpeta).
+    var ref: String? = nil
     /// Cambia cuando cambia el estado de git, para volver a leer los commits.
     let refreshKey: String
     @Environment(\.hiveNow) private var fixedNow
@@ -336,10 +338,11 @@ struct RecentCommits: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .task(id: "\(directory)|\(refreshKey)") {
+        .task(id: "\(directory)|\(ref ?? "")|\(refreshKey)") {
             let dir = directory
+            let ref = self.ref
             let git = self.git
-            commits = await Task.detached { git.recentCommits(dir, limit: 8) }.value
+            commits = await Task.detached { git.recentCommits(dir, ref: ref, limit: 8) }.value
             loaded = true
         }
     }

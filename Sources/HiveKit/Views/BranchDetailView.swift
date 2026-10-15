@@ -14,6 +14,8 @@ struct BranchDetailView: View {
             let active = store.isActive(ctx.branch, in: ctx.project)
             let dir = ctx.project.directory(for: ctx.branch)
             let status = store.gitStatus(for: ctx.branch, in: ctx.project)
+            // La carpeta principal (para saber si hay un rebase o un merge a medias antes de hacer checkout).
+            let mainStatus = store.dirStatus[ctx.project.path]
             let sessions = ctx.branch.activeSessions
             ScrollView {
                 VStack(alignment: .leading, spacing: 26) {
@@ -24,10 +26,25 @@ struct BranchDetailView: View {
                     }
 
                     if !active {
-                        Callout(icon: "pause.circle.fill", color: Theme.attention,
-                                title: "Rama inactiva",
-                                text: "La carpeta principal está en «\(store.mainHeads[ctx.project.id] ?? "")». Para trabajar acá hay que hacer checkout.",
-                                action: ("Hacer checkout", { store.requestCheckout(branchId: branchId) }))
+                        let head = store.mainHeads[ctx.project.id] ?? ""
+                        if let operation = mainStatus?.operation {
+                            // Con un rebase o un merge a medias, git no deja cambiar de rama.
+                            Callout(icon: "pause.circle.fill", color: Theme.attention,
+                                    title: "Rama inactiva",
+                                    text: "La carpeta principal está en «\(head)» con un \(operation.noun) a medias. Terminalo o cancelalo antes de hacer checkout.")
+                        } else {
+                            Callout(icon: "pause.circle.fill", color: Theme.attention,
+                                    title: "Rama inactiva",
+                                    text: "La carpeta principal está en «\(head)». Para trabajar acá hay que hacer checkout.",
+                                    action: ("Hacer checkout", { store.requestCheckout(branchId: branchId) }))
+                        }
+                    }
+
+                    if status?.isUnborn == true {
+                        Callout(icon: "sparkles", color: .blue,
+                                title: "Este repo todavía no tiene commits",
+                                text: "Git necesita un primer commit para crear ramas y mostrar el historial. Podés crear uno vacío y seguir.",
+                                action: ("Crear primer commit", { Task { await store.createFirstCommit(projectId: ctx.project.id) } }))
                     }
 
                     if sessions.isEmpty {
@@ -63,7 +80,8 @@ struct BranchDetailView: View {
                     }
 
                     if !ctx.project.isScratch {
-                        GitSections(git: store.git, status: status, directory: dir, active: active)
+                        GitSections(git: store.git, status: status, directory: dir, active: active, branchName: ctx.branch.name,
+                                    inactiveRefreshKey: RecentCommits.refreshKey(mainStatus))
                     }
 
                     if !ctx.branch.archivedSessions.isEmpty {
@@ -102,6 +120,9 @@ private struct GitSections: View {
     let status: GitStatus?
     let directory: String
     let active: Bool
+    let branchName: String
+    /// En una rama inactiva, los commits se vuelven a leer cuando cambia la carpeta principal.
+    let inactiveRefreshKey: String
 
     var body: some View {
         let count = status?.changes.count ?? 0
@@ -126,12 +147,8 @@ private struct GitSections: View {
                 if active {
                     RecentCommits(git: git, directory: directory, refreshKey: RecentCommits.refreshKey(status))
                 } else {
-                    // En una rama inactiva la carpeta tiene otra rama: sus commits no son los de esta.
-                    Text("Sin checkout: los commits se ven al abrirla.")
-                        .font(HiveFont.secondary)
-                        .foregroundStyle(.secondary)
-                        .padding(14)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    // La carpeta tiene otra rama: se leen los commits de esta por su nombre.
+                    RecentCommits(git: git, directory: directory, ref: branchName, refreshKey: inactiveRefreshKey)
                 }
             }
             .hiveCard()
@@ -181,9 +198,9 @@ private struct BranchHeader: View {
                         .font(HiveFont.title)
                         .textSelection(.enabled)
                     Chip(text: branch.mode == .worktree ? "Worktree" : "Carpeta principal")
-                    if let status {
-                        if status.ahead > 0 { Chip(text: "↑ \(status.ahead)", help: "Commits sin pushear") }
-                        if status.behind > 0 { Chip(text: "↓ \(status.behind)", help: "Commits sin traer") }
+                    ForEach(BranchGitBadges.make(status), id: \.text) { badge in
+                        Chip(text: badge.text, help: badge.help)
+                            .foregroundStyle(badge.warning ? AnyShapeStyle(Theme.attention) : AnyShapeStyle(.primary))
                     }
                 }
                 CopyablePath(path: directory)
@@ -192,6 +209,32 @@ private struct BranchHeader: View {
             // Abrir el sitio de la rama y traer, publicar o abrir el MR. Si no hay sitio ni remoto, no ocupan lugar.
             BranchWebActions(project: project, branch: branch)
         }
+    }
+}
+
+/// Lo que el encabezado de una rama dice de git: commits sin pushear o sin traer, si la rama remota
+/// que seguía ya no existe y si hay un rebase, merge o similar a medias.
+enum BranchGitBadges {
+    struct Badge: Equatable {
+        let text: String
+        let help: String
+        /// Se muestra en naranja: hay algo que resolver.
+        var warning = false
+    }
+
+    static func make(_ status: GitStatus?) -> [Badge] {
+        guard let status else { return [] }
+        var badges: [Badge] = []
+        if let operation = status.operation {
+            badges.append(Badge(text: operation.label, help: "Terminalo o cancelalo desde la terminal (o resolvé los conflictos en Cambios)",
+                                warning: true))
+        }
+        if status.upstreamGone {
+            badges.append(Badge(text: "Remota borrada", help: "La rama remota que seguía ya no existe (¿se mergeó el MR?)", warning: true))
+        }
+        if status.ahead > 0 { badges.append(Badge(text: "↑ \(status.ahead)", help: "Commits sin pushear")) }
+        if status.behind > 0 { badges.append(Badge(text: "↓ \(status.behind)", help: "Commits sin traer")) }
+        return badges
     }
 }
 

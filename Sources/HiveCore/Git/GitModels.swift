@@ -50,6 +50,17 @@ public enum GitOperation: String, Sendable, CaseIterable {
         }
     }
 
+    /// Para una frase: «con un rebase a medias».
+    public var noun: String {
+        switch self {
+        case .rebase: "rebase"
+        case .merge: "merge"
+        case .cherryPick: "cherry-pick"
+        case .revert: "revert"
+        case .bisect: "bisect"
+        }
+    }
+
     /// En un rebase, «ours» es la rama de destino y «theirs» tu commit: la tuya es «theirs».
     public var swapsOursAndTheirs: Bool { self == .rebase }
 }
