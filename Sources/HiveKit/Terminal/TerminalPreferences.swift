@@ -149,13 +149,15 @@ struct TerminalPreferences: Equatable {
 }
 
 /// Colores de la terminal en oscuro o en claro.
-struct TerminalPalette {
+struct TerminalPalette: Sendable {
     let background: NSColor
     let foreground: NSColor
     let selection: NSColor
     /// Los 16 colores ANSI (8 normales y 8 brillantes), en hexadecimal.
     let ansi: [UInt32]
-    let colorScheme: TerminalColorScheme
+    let isDark: Bool
+    /// El esquema de SwiftTerm (no es Sendable: se calcula en lugar de guardarlo).
+    var colorScheme: TerminalColorScheme { isDark ? .dark : .light }
 
     static let dark = TerminalPalette(
         background: NSColor(srgbRed: 0.075, green: 0.078, blue: 0.094, alpha: 1),
@@ -163,7 +165,7 @@ struct TerminalPalette {
         selection: NSColor(srgbRed: 0.24, green: 0.30, blue: 0.42, alpha: 1),
         ansi: [0x2A2B33, 0xF07178, 0x9FD18B, 0xF5C26B, 0x7AA7F5, 0xC69CF0, 0x6FCFD1, 0xD4D4D8,
                0x5E606E, 0xFF8E94, 0xB8E6A3, 0xFFD88C, 0x9CC1FF, 0xDBB8FF, 0x93E5E6, 0xF5F5F7],
-        colorScheme: .dark)
+        isDark: true)
 
     /// Fondo #FAFAFB y texto #1F2328. Todos los colores ANSI tienen contraste ≥ 4,5 sobre el
     /// fondo (el amarillo y los blancos van oscurecidos para que se lean).
@@ -173,7 +175,7 @@ struct TerminalPalette {
         selection: NSColor(srgbRed: 0xC8 / 255.0, green: 0xDD / 255.0, blue: 0xF8 / 255.0, alpha: 1),
         ansi: [0x24292F, 0xC4252B, 0x116329, 0x7A4E00, 0x0757B8, 0x8250DF, 0x1A6F78, 0x57606A,
                0x656E78, 0xA40E26, 0x1A7F37, 0x633C01, 0x0550AE, 0x6639BA, 0x136061, 0x4B535D],
-        colorScheme: .light)
+        isDark: false)
 
     var terminalColors: [SwiftTerm.Color] {
         ansi.map { hex in

@@ -105,7 +105,7 @@ public struct CommandEditorTarget: Identifiable {
 
 /// Archivos para el visor de diffs y cuál está abierto.
 public struct DiffTarget: Identifiable {
-    public struct File: Hashable {
+    public struct File: Hashable, Sendable {
         public let change: GitChange
         public let staged: Bool
     }

@@ -18,15 +18,14 @@ let package = Package(
             name: "HiveCore",
             path: "Sources/HiveCore"
         ),
-        // Estado de la app, terminal, servicios del sistema y vistas (SwiftUI/AppKit).
+        // Estado de la app, terminal, servicios del sistema y vistas (SwiftUI/AppKit). También Swift 6 estricto.
         .target(
             name: "HiveKit",
             dependencies: [
                 "HiveCore",
                 .product(name: "SwiftTerm", package: "SwiftTerm"),
             ],
-            path: "Sources/HiveKit",
-            swiftSettings: [.swiftLanguageMode(.v5)]
+            path: "Sources/HiveKit"
         ),
         // Punto de entrada de la app.
         .executableTarget(

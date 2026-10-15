@@ -36,7 +36,7 @@ enum ExternalApps {
     ]
 
     /// Dónde está instalada una app (nil si no está).
-    typealias Lookup = (String) -> URL?
+    typealias Lookup = @Sendable (String) -> URL?
     static let systemLookup: Lookup = { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) }
 
     /// Se calculan cada vez: si instalás un editor con Hive abierto, aparece.

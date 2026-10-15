@@ -47,8 +47,9 @@ final class UsageMonitor {
         let usageDir = store.environment.paths.usageDir
         let agents = store.environment.agents
         refreshing = true
+        let frozen = targets
         Task { [weak self] in
-            let result = await Task.detached(priority: .utility) { UsageMonitor.read(targets, usageDir: usageDir, agents: agents) }.value
+            let result = await Task.detached(priority: .utility) { UsageMonitor.read(frozen, usageDir: usageDir, agents: agents) }.value
             self?.apply(result)
             self?.refreshing = false
         }

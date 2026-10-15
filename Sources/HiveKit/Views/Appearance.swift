@@ -155,6 +155,8 @@ private struct SpinningGradient: View {
     }
 }
 
+/// Imágenes de los proyectos ya leídas (y las rutas que no se pudieron leer). Solo desde las vistas.
+@MainActor
 enum ImageCache {
     private static let cache = NSCache<NSString, NSImage>()
     private static var missing = Set<String>()

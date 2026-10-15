@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import HiveCore
+import SwiftTerm
 import SwiftUI
 import Testing
 @testable import HiveKit
@@ -100,5 +101,23 @@ struct IntegracionFinalTests {
         let hint = await colors(QuickSwitcher(query: "?").environment(store), size: CGSize(width: 600, height: 260),
                                 name: "i9-buscador-historial-ayuda")
         #expect(hint.allSatisfy { $0 > 3 })
+    }
+
+    @Test("I8: con Swift 6, la paleta le sigue avisando a la terminal si es clara u oscura (modo 2031)")
+    func paletteScheme() {
+        #expect(TerminalPalette.dark.colorScheme == .dark)
+        #expect(TerminalPalette.light.colorScheme == .light)
+        #expect(TerminalPalette.dark.isDark && !TerminalPalette.light.isDark)
+    }
+
+    @Test("I8: la caché de imágenes de los proyectos recuerda las rutas que no se pueden leer")
+    func imageCache() {
+        let dir = TempDir()
+        let missing = dir.url.appendingPathComponent("no-existe.png").path
+        #expect(ImageCache.image(at: missing) == nil)
+        let broken = dir.write("roto.png", "no es una imagen").path
+        #expect(ImageCache.image(at: broken) == nil)
+        ImageCache.forget(broken)
+        #expect(ImageCache.image(at: broken) == nil)
     }
 }
