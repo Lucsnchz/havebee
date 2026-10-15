@@ -19,8 +19,13 @@ enum ReplySender {
 
     /// El texto a escribir. Si el programa activó el pegado entre corchetes, va así: un texto con
     /// saltos de línea llega entero en lugar de mandarse de a una línea.
+    /// Sin caracteres de control (salvo saltos de línea y tabulaciones): un ESC en el texto podría
+    /// cerrar el pegado antes de tiempo y lo que sigue llegaría como teclas, y un Ctrl-C o un
+    /// retorno de carro cortarían o mandarían la respuesta a la mitad.
     static func payload(_ text: String, bracketed: Bool) -> [UInt8] {
-        let bytes = Array(text.utf8)
+        var clean = String.UnicodeScalarView()
+        clean.append(contentsOf: text.unicodeScalars.filter { $0 == "\n" || $0 == "\t" || $0.properties.generalCategory != .control })
+        let bytes = Array(String(clean).utf8)
         return bracketed ? pasteStart + bytes + pasteEnd : bytes
     }
 

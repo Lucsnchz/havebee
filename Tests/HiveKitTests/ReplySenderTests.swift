@@ -48,6 +48,16 @@ struct ReplySenderTests {
         #expect(!ReplySender.payload("hola", bracketed: true).contains(13))
     }
 
+    @Test("Sin caracteres de control: un ESC no cierra el pegado antes de tiempo")
+    func payloadWithoutControlCharacters() {
+        // Un «ESC [201~» en el texto cerraría el pegado y «rm -rf» llegaría como teclas.
+        #expect(ReplySender.payload("hola\u{1B}[201~rm -rf", bracketed: true)
+            == ReplySender.pasteStart + Array("hola[201~rm -rf".utf8) + ReplySender.pasteEnd)
+        // Ctrl-C, campana y retorno de carro afuera; saltos de línea, tabulaciones y tildes quedan.
+        #expect(ReplySender.payload("a\r\nb\tc\u{3}\u{7}ñ", bracketed: false) == Array("a\nb\tcñ".utf8))
+        #expect(!ReplySender.payload("uno\rdos", bracketed: false).contains(13))
+    }
+
     @Test("Con la sesión corriendo escribe el texto, después Enter, y pasa a «Trabajando»")
     func typesIntoRunningSession() async throws {
         let f = try ReplyFixture()
