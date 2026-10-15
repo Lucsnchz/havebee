@@ -51,6 +51,12 @@ struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
+        // ⏎ en una sesión: pasar a escribirle (las flechas solo la muestran, sin sacarle el foco al sidebar).
+        .onKeyPress(.return) {
+            guard case .session(let id)? = store.selection else { return .ignored }
+            store.requestTerminalFocus(id)
+            return .handled
+        }
         .safeAreaInset(edge: .top, spacing: 0) {
             HomeRow()
                 .padding(.horizontal, 10)

@@ -461,4 +461,49 @@ struct IntegracionFinalTests {
         let indicator = await colors(LaunchingIndicator(kind: .codex), size: CGSize(width: 300, height: 160), name: "sesion-abriendo-codex")
         #expect(indicator.allSatisfy { $0 > 3 })
     }
+
+    @Test("Elegir una sesión para escribirle (sesión nueva, ⌘K, ⌘J, el aviso) le da el foco a su terminal")
+    func terminalFocusRequest() async throws {
+        _ = NSApplication.shared
+        let world = TestWorld()
+        let repo = GitRepo(name: "tienda")
+        defer { withExtendedLifetime((world, repo)) {} }
+        let store = world.makeStore()
+        await store.addProject(at: repo.path)
+        let project = try #require(store.repoProjects.first)
+        store.requestNewSession(branchId: project.branches[0].id, kind: .claude)
+        let session = try #require(store.project(project.id)?.allSessions.first)
+        // Una sesión nueva lo pide; elegirla en el sidebar con las flechas (select) no.
+        #expect(store.focusTerminalRequest == session.id)
+        store.consumeTerminalFocus(session.id)
+        store.select(nil)
+        store.select(.session(session.id))
+        #expect(store.focusTerminalRequest == nil)
+        HiveNavigator.reveal(store, session: session.id)
+        #expect(store.focusTerminalRequest == session.id)
+        store.consumeTerminalFocus(session.id)
+        store.openFromNotification(session.id)
+        #expect(store.focusTerminalRequest == session.id)
+
+        // La vista de la sesión cumple el pedido: con el foco en otro lado (como el sidebar), la
+        // terminal pasa a tenerlo.
+        store.consumeTerminalFocus(session.id)
+        let size = CGSize(width: 700, height: 400)
+        let host = NSHostingView(rootView: SessionDetailView(sessionId: session.id).environment(store)
+            .frame(width: size.width, height: size.height))
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        defer { window.close() }
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 10, height: 10))
+        host.addSubview(field)
+        #expect(await waitUntil { store.runtimes[session.id]?.terminal?.window === window })
+        let terminal = try #require(store.runtimes[session.id]?.terminal)
+        window.makeFirstResponder(field)
+        try await Task.sleep(nanoseconds: 100_000_000)
+        #expect(window.firstResponder !== terminal) // sin pedido no se lo saca a nadie
+        store.requestTerminalFocus(session.id)
+        #expect(await waitUntil { window.firstResponder === terminal })
+        #expect(await waitUntil { store.focusTerminalRequest == nil })
+    }
 }

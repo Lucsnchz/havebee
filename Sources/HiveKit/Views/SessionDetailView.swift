@@ -89,7 +89,25 @@ struct SessionDetailView: View {
             .task(id: sessionId) {
                 store.activate(sessionId)
             }
+            .task(id: store.focusTerminalRequest) {
+                guard store.focusTerminalRequest == sessionId else { return }
+                await focusTerminal()
+            }
         }
+    }
+
+    /// Le da el foco a la terminal cuando ya está en la ventana. Puede no estar todavía (se está
+    /// lanzando) o la hoja de ⌘K puede estar cerrándose: se reintenta un ratito.
+    private func focusTerminal() async {
+        for _ in 0..<40 {
+            if let terminal = store.runtimes[sessionId]?.terminal, let window = terminal.window, window.attachedSheet == nil {
+                window.makeFirstResponder(terminal)
+                break
+            }
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            if Task.isCancelled { return }
+        }
+        store.consumeTerminalFocus(sessionId)
     }
 
     /// Si la terminal usa la paleta clara (según el ajuste y el sistema).

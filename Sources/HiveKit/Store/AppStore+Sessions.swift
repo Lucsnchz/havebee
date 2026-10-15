@@ -23,6 +23,7 @@ extension AppStore {
         expanded.formUnion([ctx.project.id, branchId])
         scheduleSave()
         select(.session(session.id))
+        requestTerminalFocus(session.id)
     }
 
     /// Abre una sesión dormida de una rama inactiva: primero hace falta el checkout.

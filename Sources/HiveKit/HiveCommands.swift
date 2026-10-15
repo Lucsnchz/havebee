@@ -402,12 +402,14 @@ enum HiveNavigator {
         window?.identifier?.rawValue == HiveApplication.mainWindowId
     }
 
-    /// Abre una sesión y despliega su proyecto y su rama en el árbol.
+    /// Abre una sesión, despliega su proyecto y su rama en el árbol y le da el foco a su terminal
+    /// (es elegirla para escribirle: ⌘K, ⌘J, una pestaña…).
     static func reveal(_ store: AppStore, session id: UUID) {
         guard let ctx = store.sessionContext(id) else { return }
         store.setExpanded(ctx.project.id, true)
         if !ctx.project.isScratch { store.setExpanded(ctx.branch.id, true) }
         store.select(.session(id))
+        store.requestTerminalFocus(id)
     }
 
     /// Abre una sesión en un mensaje de su historial (lo que encontró «?» en ⌘K): el panel lateral

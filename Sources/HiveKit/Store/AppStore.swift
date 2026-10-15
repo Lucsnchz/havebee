@@ -11,6 +11,10 @@ public final class AppStore {
 
     public internal(set) var projects: [Project] = []
     public internal(set) var selection: SidebarItem?
+    /// La sesión cuya terminal tiene que tomar el foco apenas se vea: la pide una acción explícita
+    /// (⌘K, ⌘J, una pestaña, el aviso, una sesión nueva o ⏎ en el sidebar). Recorrer el sidebar con
+    /// las flechas no la pide, así la próxima flecha no le llega al agente.
+    public internal(set) var focusTerminalRequest: UUID?
     var expanded: Set<UUID> = []
     /// Estado de git por carpeta (carpeta principal de cada proyecto y cada worktree).
     var dirStatus: [String: GitStatus] = [:]
@@ -284,7 +288,18 @@ public final class AppStore {
         NSApp?.activate(ignoringOtherApps: true)
         expanded.formUnion([ctx.project.id, ctx.branch.id])
         select(.session(id))
+        requestTerminalFocus(id)
         activate(id)
+    }
+
+    /// Pide que la terminal de la sesión tome el foco cuando se muestre (ver `focusTerminalRequest`).
+    public func requestTerminalFocus(_ id: UUID) {
+        focusTerminalRequest = id
+    }
+
+    /// La vista de la sesión ya le dio el foco (o no pudo): el pedido se cumplió.
+    func consumeTerminalFocus(_ id: UUID) {
+        if focusTerminalRequest == id { focusTerminalRequest = nil }
     }
 
     func isFocused(_ id: UUID) -> Bool {
