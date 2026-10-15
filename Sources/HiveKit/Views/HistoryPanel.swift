@@ -17,6 +17,8 @@ struct HistoryPanel: View {
     @State private var showGlobalSearch = false
     @State private var note: String?
     @State private var scrollTarget: UUID?
+    /// Entrada a la que hay que saltar cuando se aplique la búsqueda (viene de «Buscar en todas las sesiones»).
+    @State private var jumpTarget: UUID?
     @FocusState private var searchFocused: Bool
 
     private var reportsConversation: Bool { session.kind.reportsConversation }
@@ -46,7 +48,7 @@ struct HistoryPanel: View {
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Color(nsColor: .windowBackgroundColor))
         .task(id: reloadKey) { await keepLoaded() }
-        .onChange(of: query) { matchIndex = 0; scrollToMatch() }
+        .onChange(of: query) { focusMatch() }
         .onChange(of: HistoryJumpRequest.shared.pending?.entryId) { applyJumpIfNeeded() }
         .sheet(isPresented: $showGlobalSearch) {
             HistorySearchView(initialQuery: query).environment(store)
@@ -79,7 +81,7 @@ struct HistoryPanel: View {
             HistoryIconButton(symbol: "arrow.up.forward.square", label: "Abrir el archivo (es el mismo que puede leer la IA)") {
                 NSWorkspace.shared.open(store.history.markdownURL(session.id))
             }
-            .disabled(!FileManager.default.fileExists(atPath: store.history.markdownURL(session.id).path))
+            .disabled(shown.isEmpty)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -247,16 +249,25 @@ struct HistoryPanel: View {
         scrollTarget = currentMatch
     }
 
+    /// Con una búsqueda nueva va a la primera coincidencia (o a la entrada pedida, si viene de un salto).
+    private func focusMatch() {
+        if let target = jumpTarget, let index = matches.firstIndex(of: target) {
+            matchIndex = index
+            jumpTarget = nil
+            scrollTarget = target
+        } else {
+            matchIndex = 0
+            scrollToMatch()
+        }
+    }
+
     /// Si se llegó desde «Buscar en todas las sesiones», muestra la búsqueda y salta a esa entrada.
     private func applyJumpIfNeeded() {
         guard let jump = HistoryJumpRequest.shared.pending, jump.sessionId == session.id, loaded else { return }
         HistoryJumpRequest.shared.pending = nil
         if reportsConversation && !finals.contains(where: { $0.id == jump.entryId }) { showEverything = true }
-        query = jump.query
-        DispatchQueue.main.async {
-            if let index = matches.firstIndex(of: jump.entryId) { matchIndex = index }
-            scrollTarget = jump.entryId
-        }
+        jumpTarget = jump.entryId
+        if query == jump.query { focusMatch() } else { query = jump.query }
     }
 
     private func flash(_ text: String) {
