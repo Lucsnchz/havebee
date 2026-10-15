@@ -260,12 +260,17 @@ public struct HiveState: Codable, Equatable, Sendable {
     public var expanded: [UUID]
     /// Última sesión abierta en cada proyecto (para volver a ella al elegir el proyecto).
     public var lastSessions: [UUID: UUID]?
+    /// Rama que tenía la carpeta principal de cada repo ("" si HEAD estaba desacoplado), para no
+    /// leer git al arrancar. Los estados viejos no la tienen.
+    public var mainHeads: [UUID: String]?
 
-    public init(projects: [Project], selection: SidebarItem? = nil, expanded: [UUID] = [], lastSessions: [UUID: UUID]? = nil) {
+    public init(projects: [Project], selection: SidebarItem? = nil, expanded: [UUID] = [], lastSessions: [UUID: UUID]? = nil,
+                mainHeads: [UUID: String]? = nil) {
         self.projects = projects
         self.selection = selection
         self.expanded = expanded
         self.lastSessions = lastSessions
+        self.mainHeads = mainHeads
     }
 }
 

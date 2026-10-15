@@ -70,16 +70,24 @@ extension AppStore {
     public func createBranch(_ request: NewBranchRequest) async -> String? {
         guard let project = project(request.projectId) else { return "No encontré el proyecto." }
         let git = self.git
+        gitGeneration += 1
         let result = await Task.detached { BranchPlanner.prepare(request, project: project, git: git) }.value
-        let branch: Branch
+        gitGeneration += 1
+        var branch: Branch
         switch result {
         case .success(let value): branch = value
         case .failure(let error): return error.errorDescription
         }
-        gitGeneration += 1
         projects.updateProject(project.id) { p in
-            p.branches.append(branch)
             if let path = branch.worktreePath { p.ignoredWorktrees.removeAll { samePath($0, path) } }
+            // Una revisión pudo encontrar el worktree nuevo mientras git lo creaba: no lo duplicamos.
+            if let i = p.branches.firstIndex(where: { $0.name == branch.name }) {
+                p.branches[i].mode = branch.mode
+                p.branches[i].worktreePath = branch.worktreePath
+                branch = p.branches[i]
+            } else {
+                p.branches.append(branch)
+            }
         }
         expanded.formUnion([project.id, branch.id])
         scheduleSave()
@@ -137,52 +145,94 @@ extension AppStore {
     /// Pide una revisión de git en segundo plano. Corre una a la vez; si llega un pedido con una
     /// pasada en curso, no se pierde: al terminar se hace otra.
     public func refreshGit() {
+        requestRefresh(onlyWorking: false)
+    }
+
+    /// Revisión periódica (cada 10 s): con la app activa revisa todo; en segundo plano, cada 60 s y
+    /// solo las carpetas donde hay agentes trabajando.
+    func periodicGitRefresh() {
+        if environment.isAppActive() {
+            refreshGit()
+            return
+        }
+        let now = environment.now()
+        guard now.timeIntervalSince(lastBackgroundRefresh) >= 60 else { return }
+        lastBackgroundRefresh = now
+        requestRefresh(onlyWorking: true)
+    }
+
+    private func requestRefresh(onlyWorking: Bool) {
         guard refreshTask == nil else {
-            refreshPending = true
+            // Una revisión parcial en segundo plano no hace falta repetirla.
+            if !onlyWorking { refreshPending = true }
             return
         }
         refreshTask = Task { [weak self] in
+            var onlyWorking = onlyWorking
             repeat {
                 self?.refreshPending = false
-                await self?.refreshGitNow()
+                await self?.refreshGitNow(onlyWorking: onlyWorking)
+                onlyWorking = false
             } while self?.refreshPending == true
             self?.refreshTask = nil
         }
     }
 
     /// Revisa git (estado de cada carpeta, rama de la carpeta principal y worktrees nuevos) y espera.
-    func refreshGitNow() async {
+    /// `onlyWorking`: solo las carpetas con sesiones trabajando, sin buscar worktrees nuevos.
+    func refreshGitNow(onlyWorking: Bool = false) async {
         let generation = gitGeneration
-        let dirs = gitDirectories()
-        let heads = repoProjects.map { ($0.id, $0.path) }
-        let git = self.git
-        let (statuses, current, trees) = await Task.detached(priority: .utility) {
-            var statuses: [String: GitStatus] = [:]
-            for dir in dirs { if let s = git.status(dir) { statuses[dir] = s } }
-            var current: [UUID: String] = [:]
-            var trees: [UUID: [GitWorktree]] = [:]
-            for (id, path) in heads {
-                current[id] = git.currentBranch(path) ?? ""
-                trees[id] = git.worktrees(path)
-            }
-            return (statuses, current, trees)
-        }.value
+        var dirs = gitDirectories()
+        var heads = repoProjects.map { ($0.id, $0.path) }
+        if onlyWorking {
+            let busy = workingDirectories()
+            dirs = dirs.intersection(busy)
+            heads = heads.filter { busy.contains($0.1) }
+            guard !dirs.isEmpty else { return }
+        }
+        let selected = selectedDormantSession()
+        let scan = await GitScan.run(dirs: Array(dirs), heads: heads, worktrees: !onlyWorking, git: git)
         // Fusionamos por clave: lo que se sumó durante la revisión (un proyecto, un worktree) no se pierde.
         var status = dirStatus
-        for dir in dirs { status[dir] = statuses[dir] }
+        for dir in dirs { status[dir] = scan.statuses[dir] }
         let known = gitDirectories()
         status = status.filter { known.contains($0.key) }
         if dirStatus != status { dirStatus = status }
         // Hive cambió git mientras leíamos: lo leído puede ser viejo. La pasada que pidió ese cambio lo corrige.
         guard generation == gitGeneration else { return }
         var merged = mainHeads
-        for (id, head) in current where project(id) != nil { merged[id] = head }
+        for (id, head) in scan.heads where project(id) != nil { merged[id] = head }
         merged = merged.filter { project($0.key) != nil }
-        if mainHeads != merged { mainHeads = merged }
+        if mainHeads != merged {
+            mainHeads = merged
+            scheduleSave()
+        }
+        // La sesión abierta estaba dormida en una rama inactiva y ahora la rama está activa: la lanzamos.
+        if let selected, let ctx = sessionContext(selected), isActive(ctx.branch, in: ctx.project) {
+            activate(selected)
+        }
         var found = false
-        for (id, worktrees) in trees where syncWorktrees(id, worktrees) { found = true }
+        for (id, worktrees) in scan.worktrees where syncWorktrees(id, worktrees) { found = true }
         // Hay ramas nuevas: traemos su estado de git en esta misma pasada.
         if found { await refreshGitNow() }
+    }
+
+    /// La sesión abierta, si está dormida porque su rama no está activa.
+    private func selectedDormantSession() -> UUID? {
+        guard case .session(let id)? = selection, let ctx = sessionContext(id), runtimes[id]?.status == .dormant,
+              !isActive(ctx.branch, in: ctx.project) else { return nil }
+        return id
+    }
+
+    /// Carpetas con algún agente trabajando.
+    func workingDirectories() -> Set<String> {
+        var dirs = Set<String>()
+        for p in repoProjects {
+            for b in p.branches where b.sessions.contains(where: { runtimes[$0.id]?.status == .working }) {
+                dirs.insert(p.directory(for: b))
+            }
+        }
+        return dirs
     }
 
     /// Carpetas de las que se guarda el estado de git: la principal de cada repo y cada worktree.
@@ -193,5 +243,59 @@ extension AppStore {
             for b in p.branches where b.mode == .worktree { if let path = b.worktreePath { dirs.insert(path) } }
         }
         return dirs
+    }
+}
+
+/// Lo que leyó una revisión de git.
+private struct GitScan: Sendable {
+    var statuses: [String: GitStatus] = [:]
+    var heads: [UUID: String] = [:]
+    var worktrees: [UUID: [GitWorktree]] = [:]
+
+    private enum Job: Sendable {
+        case status(String)
+        case head(UUID, String)
+    }
+
+    private enum Outcome: Sendable {
+        case status(String, GitStatus?)
+        case head(UUID, String, [GitWorktree]?)
+    }
+
+    /// Corre git en paralelo, como mucho `width` llamadas a la vez (cada una ocupa un hilo mientras espera).
+    static func run(dirs: [String], heads: [(UUID, String)], worktrees: Bool, git: GitClient, width: Int = 4) async -> GitScan {
+        let jobs = dirs.map(Job.status) + heads.map { Job.head($0.0, $0.1) }
+        return await withTaskGroup(of: Outcome.self, returning: GitScan.self) { group in
+            var next = 0
+            func perform(_ job: Job) -> Outcome {
+                switch job {
+                case .status(let dir):
+                    return .status(dir, git.status(dir))
+                case .head(let id, let path):
+                    return .head(id, git.currentBranch(path) ?? "", worktrees ? git.worktrees(path) : nil)
+                }
+            }
+            while next < min(width, jobs.count) {
+                let job = jobs[next]
+                group.addTask(priority: .utility) { perform(job) }
+                next += 1
+            }
+            var scan = GitScan()
+            while let outcome = await group.next() {
+                switch outcome {
+                case .status(let dir, let status):
+                    scan.statuses[dir] = status
+                case .head(let id, let head, let trees):
+                    scan.heads[id] = head
+                    if let trees { scan.worktrees[id] = trees }
+                }
+                if next < jobs.count {
+                    let job = jobs[next]
+                    group.addTask(priority: .utility) { perform(job) }
+                    next += 1
+                }
+            }
+            return scan
+        }
     }
 }

@@ -53,6 +53,8 @@ public final class AppStore {
     /// Sube con cada cambio de git que hace Hive (checkout, proyecto o rama nuevos, rama quitada).
     /// Una revisión que empezó antes descarta las ramas actuales que leyó, porque pueden ser viejas.
     @ObservationIgnored var gitGeneration = 0
+    /// Última revisión de git hecha con la app en segundo plano.
+    @ObservationIgnored var lastBackgroundRefresh = Date.distantPast
 
     /// Carga el estado guardado. No arranca nada: eso lo hace `start()`.
     public init(environment: AppEnvironment) {
@@ -82,8 +84,9 @@ public final class AppStore {
             MainActor.assumeIsolated { self?.tick() }
         })
         timers.append(Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.refreshGit() }
+            MainActor.assumeIsolated { self?.periodicGitRefresh() }
         })
+        // También corrige la rama de cada carpeta principal, que se cargó del estado guardado.
         refreshGit()
     }
 

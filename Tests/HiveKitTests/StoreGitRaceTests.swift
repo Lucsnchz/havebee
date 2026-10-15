@@ -98,3 +98,90 @@ struct StoreGitRaceTests {
         #expect(s.store.dirStatus[s.repo.path] != nil)
     }
 }
+
+@MainActor
+@Suite("Store: revisión de git liviana")
+struct StoreGitScheduleTests {
+    @Test("En segundo plano revisa cada 60 s y solo las carpetas con agentes trabajando")
+    func backgroundRefresh() async throws {
+        let s = await RaceSetup()
+        s.world.appActive = false
+        let before = s.git.calls(.status)
+        s.store.periodicGitRefresh()
+        #expect(await s.settle())
+        #expect(s.git.calls(.status) == before) // nadie trabaja: no corre git
+
+        s.store.requestNewSession(branchId: s.project.branches[0].id, kind: .claude)
+        let session = try #require(s.store.project(s.project.id)?.allSessions.first)
+        s.store.activate(session.id)
+        s.store.userInput(session.id, [13])
+        #expect(s.store.runtimes[session.id]?.status == .working)
+        s.world.advance(61)
+        s.store.periodicGitRefresh()
+        #expect(await s.settle())
+        #expect(s.git.calls(.status) == before + 1)
+        #expect(s.git.calls(.worktrees) > 0)
+        let worktreeCalls = s.git.calls(.worktrees)
+
+        s.world.advance(30)
+        s.store.periodicGitRefresh() // todavía no pasó un minuto
+        #expect(await s.settle())
+        #expect(s.git.calls(.status) == before + 1)
+
+        s.world.advance(31)
+        s.store.periodicGitRefresh()
+        #expect(await s.settle())
+        #expect(s.git.calls(.status) == before + 2)
+        #expect(s.git.calls(.worktrees) == worktreeCalls) // en segundo plano no busca worktrees nuevos
+    }
+
+    @Test("Con la app activa revisa todo cada vez")
+    func foregroundRefresh() async throws {
+        let s = await RaceSetup()
+        s.world.appActive = true
+        let before = s.git.calls(.status)
+        s.store.periodicGitRefresh()
+        #expect(await s.settle())
+        s.store.periodicGitRefresh()
+        #expect(await s.settle())
+        #expect(s.git.calls(.status) == before + 2)
+    }
+
+    @Test("Muchas carpetas se revisan en paralelo y sin perder ninguna")
+    func parallelScan() async throws {
+        let s = await RaceSetup()
+        for i in 1...6 {
+            #expect(await s.store.createBranch(NewBranchRequest(projectId: s.project.id, name: "wt-\(i)", isNew: true, mode: .worktree)) == nil)
+        }
+        #expect(await s.settle())
+        s.git.setDelay(.status, 0.3)
+        let started = Date()
+        await s.store.refreshGitNow()
+        let elapsed = Date().timeIntervalSince(started)
+        let branches = try #require(s.store.project(s.project.id)?.branches)
+        #expect(branches.count == 7)
+        for branch in branches {
+            #expect(s.store.gitStatus(for: branch, in: try #require(s.store.project(s.project.id))) != nil, "Falta \(branch.name)")
+        }
+        // 7 carpetas de 0,3 s cada una: de a una tardaría más de 2 s; de a cuatro, unos 0,6 s.
+        #expect(elapsed < 2.0)
+    }
+
+    @Test("Al cargar no lee git y la sesión abierta se lanza cuando su rama pasa a estar activa")
+    func selectedSessionLaunchesAfterFirstRefresh() async throws {
+        let world = TestWorld()
+        let repo = GitRepo()
+        let session = Session(name: "Terminal 1", kind: .shell)
+        let project = Project(name: "repo", path: repo.path, branches: [Branch(name: "main", mode: .main, sessions: [session])])
+        try StateStore(file: world.paths.stateFile).save(HiveState(projects: [project], selection: .session(session.id)))
+        let git = DelayedGit()
+        world.git = git
+        let store = world.makeStore()
+        #expect(git.calls(.currentBranch) == 0)
+        store.activate(session.id) // la vista aparece antes de saber la rama: no se puede lanzar
+        #expect(world.processes.launches.isEmpty)
+        await store.refreshGitNow()
+        #expect(store.runtimes[session.id]?.isRunning == true)
+        #expect(world.processes.launches.count == 1)
+    }
+}

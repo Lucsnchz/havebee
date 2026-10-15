@@ -76,7 +76,7 @@ struct ModelTests {
         let project = Project(name: "demo", path: "/repo", branches: [branch], ignoredWorktrees: ["/x"], color: .green,
                               icon: .image("/logo.png"), commands: [ProjectCommand(name: "Dev", command: "npm run dev")])
         let state = HiveState(projects: [project, .scratch(home: "/h")], selection: .session(session.id),
-                              expanded: [project.id], lastSessions: [project.id: session.id])
+                              expanded: [project.id], lastSessions: [project.id: session.id], mainHeads: [project.id: "main"])
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         let decoder = JSONDecoder()
@@ -105,6 +105,7 @@ struct ModelTests {
         #expect(project.commands.isEmpty)
         #expect(!project.isScratch)
         #expect(state.lastSessions == nil)
+        #expect(state.mainHeads == nil)
         let session = try #require(project.branches.first?.sessions.first)
         #expect(session.lastMessage == nil)
         #expect(!session.isArchived)

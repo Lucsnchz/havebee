@@ -12,6 +12,9 @@ extension AppStore {
             selection = state.selection
             lastSessionByProject = state.lastSessions ?? [:]
             expanded = Set(state.expanded)
+            // La rama de cada carpeta principal se guarda para no leer git al arrancar; la primera
+            // revisión de `start()` la corrige si cambió.
+            mainHeads = state.mainHeads ?? [:]
         case .empty, .corrupted:
             break
         }
@@ -21,8 +24,8 @@ extension AppStore {
             projects[i] = project
         }
         projects.ensureScratch(home: environment.home.path)
+        mainHeads = mainHeads.filter { id, _ in projects.contains { $0.id == id && !$0.isScratch } }
         for p in projects {
-            if !p.isScratch { mainHeads[p.id] = git.currentBranch(p.path) ?? "" }
             for s in p.allSessions { runtimes[s.id] = SessionRuntime(sessionId: s.id, kind: s.kind) }
         }
     }
@@ -42,7 +45,8 @@ extension AppStore {
 
     public func saveNow() {
         saveWork?.cancel()
-        let state = HiveState(projects: projects, selection: selection, expanded: Array(expanded), lastSessions: lastSessionByProject)
+        let state = HiveState(projects: projects, selection: selection, expanded: Array(expanded), lastSessions: lastSessionByProject,
+                              mainHeads: mainHeads)
         try? stateStore.save(state)
     }
 

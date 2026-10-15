@@ -89,6 +89,7 @@ struct AppStoreProjectTests {
         #expect(reloaded.selection == .session(sessionId))
         #expect(reloaded.runtimes[sessionId]?.status == .dormant)
         #expect(reloaded.isExpanded(project.id))
+        #expect(reloaded.mainHead(of: project.id) == "main") // guardada: no hace falta leer git al cargar
         reloaded.select(.project(project.id))
         reloaded.openProject(project.id)
         #expect(reloaded.selection == .session(sessionId)) // recordó la última sesión
@@ -117,6 +118,9 @@ struct AppStoreProjectTests {
         #expect(store.repoProjects.first?.color == .blue)
         #expect(store.repoProjects.first?.icon == .initials)
         #expect(store.runtimes[session.id]?.status == .dormant)
+        // Al cargar no se lee git: el estado viejo no tenía la rama y la trae la primera revisión.
+        #expect(store.mainHead(of: store.repoProjects[0].id) == "")
+        await store.refreshGitNow()
         #expect(store.mainHead(of: store.repoProjects[0].id) == "main")
     }
 
