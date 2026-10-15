@@ -1,3 +1,4 @@
+import AppKit
 import HiveCore
 import SwiftUI
 
@@ -24,6 +25,7 @@ struct FileIcon: View {
         }
         .foregroundStyle(spec.color)
         .frame(width: size, height: size)
+        .accessibilityHidden(true)
     }
 }
 
@@ -34,11 +36,29 @@ struct FileIconSpec {
     }
 
     let glyph: Glyph
-    let color: Color
+    /// Color original del tema de íconos (pensado para fondo oscuro).
+    let hex: UInt32
 
     private init(_ glyph: Glyph, _ hex: UInt32) {
         self.glyph = glyph
-        self.color = Color(red: Double((hex >> 16) & 0xFF) / 255, green: Double((hex >> 8) & 0xFF) / 255, blue: Double(hex & 0xFF) / 255)
+        self.hex = hex
+    }
+
+    /// El color tal cual en oscuro; en claro, oscurecido si es muy claro para leerse sobre blanco.
+    var nsColor: NSColor {
+        Theme.dynamicNSColor(light: Self.lightVariant(of: hex), dark: Theme.srgb(hex))
+    }
+
+    var color: Color { Color(nsColor: nsColor) }
+
+    /// En modo claro, los colores con luminancia > 0,5 (amarillos, celestes, verdes claros) bajan
+    /// el brillo a 0,62 de lo que eran: así JS, JSON o .env quedan con contraste ≥ 3 sobre blanco.
+    static func lightVariant(of hex: UInt32) -> NSColor {
+        let color = Theme.srgb(hex)
+        guard HiveContrast.luminance(color) > 0.5 else { return color }
+        var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
+        color.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
+        return NSColor(colorSpace: .sRGB, hue: hue, saturation: saturation, brightness: brightness * 0.62, alpha: alpha)
     }
 
     private static func symbol(_ name: String, _ hex: UInt32) -> FileIconSpec { FileIconSpec(.symbol(name), hex) }
