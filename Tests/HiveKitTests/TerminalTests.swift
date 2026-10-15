@@ -4,6 +4,10 @@ import HiveCore
 import Testing
 @testable import HiveKit
 
+/// Cuánto esperar a un proceso real. Con todos los tests corriendo, las capturas de vistas ocupan el
+/// hilo principal por varios segundos seguidos y la salida o el fin del proceso llegan tarde.
+private let realProcessTimeout: TimeInterval = 20
+
 /// Registra lo que avisa la terminal.
 @MainActor
 final class TerminalProbe: HiveTerminalDelegate {
@@ -37,7 +41,7 @@ struct TerminalTests {
         var outputs = 0
         view.setProcessOutputHandler { outputs += 1 }
         start(view, "printf 'hola desde el proceso\\n'; printf '\\033]0;Mi título\\007'; exit 3")
-        #expect(await waitUntil { probe.exitCode != nil })
+        #expect(await waitUntil(timeout: realProcessTimeout) { probe.exitCode != nil })
         #expect(probe.exitCode == .some(3))
         #expect(view.fullText().contains("hola desde el proceso"))
         #expect(probe.title == "Mi título")
@@ -54,7 +58,7 @@ struct TerminalTests {
         start(view, "read linea; printf 'recibí: %s\\n' \"$linea\"")
         try? await Task.sleep(nanoseconds: 200_000_000)
         view.sendInput(Array("abeja\r".utf8)[...])
-        #expect(await waitUntil { probe.exitCode != nil })
+        #expect(await waitUntil(timeout: realProcessTimeout) { probe.exitCode != nil })
         #expect(view.fullText().contains("recibí: abeja"))
         #expect(typed == Array("abeja\r".utf8))
     }
@@ -112,7 +116,7 @@ struct TerminalTests {
         try? await Task.sleep(nanoseconds: 100_000_000)
         #expect(view.isProcessRunning)
         view.terminate()
-        #expect(await waitUntil { probe.exitCode != nil })
+        #expect(await waitUntil(timeout: realProcessTimeout) { probe.exitCode != nil })
         #expect(!view.isProcessRunning)
     }
 
@@ -134,7 +138,7 @@ struct TerminalTests {
         let rt = try #require(store.runtimes[session.id])
         #expect(rt.isRunning)
         rt.terminal?.sendInput(Array("exit 4\r".utf8)[...])
-        #expect(await waitUntil { rt.status == .exited(4) })
+        #expect(await waitUntil(timeout: realProcessTimeout) { rt.status == .exited(4) })
         #expect(!rt.isRunning)
     }
 
@@ -144,18 +148,18 @@ struct TerminalTests {
         let store = real.store
         let rt = try #require(store.runtimes[real.session.id])
         let old = try #require(rt.terminal)
-        #expect(await waitUntil { old.fullText().contains("listo") })
+        #expect(await waitUntil(timeout: realProcessTimeout) { old.fullText().contains("listo") })
         store.relaunch(real.session.id)
         store.relaunch(real.session.id) // un doble clic no lanza dos veces
         #expect(rt.terminal === old) // todavía esperando al proceso viejo
-        #expect(await waitUntil { rt.terminal !== old })
+        #expect(await waitUntil(timeout: realProcessTimeout) { rt.terminal !== old })
         #expect(!old.isProcessRunning)
         #expect(old.fullText().contains("chau"))
         #expect(rt.status == .idle && rt.isRunning)
         try? await Task.sleep(nanoseconds: 200_000_000)
         #expect(rt.status == .idle) // el aviso de fin del proceso viejo no pisa a la nueva
         store.stop(real.session.id)
-        #expect(await waitUntil { rt.status == .exited(0) })
+        #expect(await waitUntil(timeout: realProcessTimeout) { rt.status == .exited(0) })
     }
 
     @Test("Si la archivás mientras se reinicia, no se vuelve a lanzar")
@@ -164,10 +168,10 @@ struct TerminalTests {
         let store = real.store
         let rt = try #require(store.runtimes[real.session.id])
         let old = try #require(rt.terminal)
-        #expect(await waitUntil { old.fullText().contains("listo") })
+        #expect(await waitUntil(timeout: realProcessTimeout) { old.fullText().contains("listo") })
         store.relaunch(real.session.id)
         store.archive(real.session.id)
-        #expect(await waitUntil { store.relaunching.isEmpty })
+        #expect(await waitUntil(timeout: realProcessTimeout) { store.relaunching.isEmpty })
         #expect(!old.isProcessRunning)
         #expect(rt.terminal == nil && !rt.isRunning)
         #expect(store.sessionContext(real.session.id)?.session.isArchived == true)
@@ -179,9 +183,9 @@ struct TerminalTests {
         let rt = try #require(real.store.runtimes[real.session.id])
         let before = Date()
         rt.terminal?.sendInput(Array("echo hola\r".utf8)[...])
-        #expect(await waitUntil { rt.lastOutput >= before })
+        #expect(await waitUntil(timeout: realProcessTimeout) { rt.lastOutput >= before })
         rt.terminal?.sendInput(Array("exit\r".utf8)[...])
-        #expect(await waitUntil { !rt.isRunning })
+        #expect(await waitUntil(timeout: realProcessTimeout) { !rt.isRunning })
     }
 }
 
