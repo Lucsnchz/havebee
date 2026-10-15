@@ -38,7 +38,7 @@ struct ProjectDetailView: View {
                     }
 
                     DetailSection("Comandos", trailing: {
-                        AddButton(help: "Agregar un comando") {
+                        SectionAddButton(help: "Agregar un comando") {
                             store.commandEditor = CommandEditorTarget(projectId: project.id, commandId: nil)
                         }
                     }) {
@@ -46,7 +46,7 @@ struct ProjectDetailView: View {
                     }
 
                     DetailSection("MCP", trailing: {
-                        AddButton(help: "Agregar un servidor MCP") {
+                        SectionAddButton(help: "Agregar un servidor MCP") {
                             store.mcpEditor = MCPEditorTarget(projectId: project.id, serverName: nil)
                         }
                     }) {
@@ -110,7 +110,7 @@ private struct ProjectHeader: View {
 }
 
 /// «+ Agregar» chico, para el encabezado de una sección.
-struct AddButton: View {
+struct SectionAddButton: View {
     var title = "Agregar"
     var help = ""
     let action: () -> Void
