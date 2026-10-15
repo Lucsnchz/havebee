@@ -184,6 +184,31 @@ struct HistoryStoreTests {
         #expect(markdown.components(separatedBy: "# Historial").count == 2) // un solo encabezado
     }
 
+    @Test("Cada marcador explica lo suyo: /compact no es un contexto limpio")
+    func markers() throws {
+        let dir = TempDir()
+        let store = HistoryStore(directory: dir.url)
+        let id = UUID()
+        for text in ["/clear", "/compact", "⚠︎ Se cortó: rate_limit", "Nueva conversación"] {
+            store.append(HistoryEntry(date: .reference, role: .marker, text: text), sessionId: id, agentName: "Claude Code")
+        }
+        store.append(HistoryEntry(date: .reference, role: .system, text: "<task-notification>listo</task-notification>"),
+                     sessionId: id, agentName: "Claude Code")
+        let markdown = try String(contentsOf: store.markdownURL(id), encoding: .utf8)
+        let blocks = markdown.components(separatedBy: "> **").dropFirst()
+        #expect(blocks.count == 4)
+        let byMarker = Dictionary(uniqueKeysWithValues: blocks.map { block in
+            (String(block.prefix { $0 != "·" }).trimmingCharacters(in: .whitespaces), block)
+        })
+        #expect(byMarker["/clear"]?.contains("contexto limpio") == true)
+        #expect(byMarker["/compact"]?.contains("Se compactó el contexto") == true)
+        #expect(byMarker["/compact"]?.contains("contexto limpio") == false)
+        #expect(byMarker["⚠︎ Se cortó: rate_limit"]?.contains("contexto limpio") == false)
+        #expect(byMarker["Nueva conversación"]?.contains("contexto limpio") == true)
+        #expect(markdown.contains("## Aviso automático · "))
+        #expect(store.load(id).last?.role == .system)
+    }
+
     @Test("Sin historial devuelve vacío; las líneas rotas se saltean")
     func corruptLines() throws {
         let dir = TempDir()

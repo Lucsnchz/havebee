@@ -87,8 +87,19 @@ public struct HistoryStore: Sendable {
         case .system:
             return "\n## Aviso automático · \(when)\n\n\(entry.text)\n"
         case .marker:
-            return "\n---\n\n> **\(entry.text) · \(when)**: desde acá la IA arrancó con el contexto limpio. Lo de arriba ya no está en su memoria.\n\n---\n"
+            return "\n---\n\n> **\(entry.text) · \(when)**: \(markerMeaning(entry.text))\n\n---\n"
         }
+    }
+
+    /// Qué significa cada marcador: /clear y «Nueva conversación» empiezan de cero, /compact no.
+    public static func markerMeaning(_ text: String) -> String {
+        if text == "/compact" {
+            return "Se compactó el contexto. La IA sigue con un resumen de lo anterior."
+        }
+        if text.hasPrefix(AgentEventInterpreter.stopFailureMarker) {
+            return "El turno se cortó por un error. Lo de arriba sigue en la memoria de la IA."
+        }
+        return "Desde acá la IA arrancó con el contexto limpio. Lo de arriba ya no está en su memoria."
     }
 
     private static func appendData(_ data: Data, to url: URL) {
