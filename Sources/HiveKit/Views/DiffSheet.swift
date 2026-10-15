@@ -12,6 +12,8 @@ struct DiffSheet: View {
     /// Conflictos que resolviste en esta hoja (ruta → cómo), para no volver a ofrecerlo.
     @State private var resolved: [String: String] = [:]
     @State private var resolving = false
+    /// Error al resolver: se muestra en la barra, porque una alerta no aparece encima de esta hoja.
+    @State private var resolveError: String?
     @State private var copied = false
 
     init(target: DiffTarget) {
@@ -33,7 +35,10 @@ struct DiffSheet: View {
             }
         }
         .frame(minWidth: 800, idealWidth: 1060, maxWidth: .infinity, minHeight: 500, idealHeight: 680, maxHeight: .infinity)
-        .task(id: selected) { await load() }
+        .task(id: selected) {
+            resolveError = nil
+            await load()
+        }
         .background {
             // Flechas para pasar de archivo, Esc para cerrar.
             Group {
@@ -140,9 +145,19 @@ struct DiffSheet: View {
         return HStack(spacing: 8) {
             Image(systemName: done == nil ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
                 .foregroundStyle(done == nil ? Color.orange : Color.green)
-            Text(done ?? "Archivo en conflicto" + (operation.map { " · \($0.label)" } ?? ""))
-                .font(.system(size: 12, weight: .medium))
-                .lineLimit(1)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(done ?? "Archivo en conflicto" + (operation.map { " · \($0.label)" } ?? ""))
+                    .font(.system(size: 12, weight: .medium))
+                    .lineLimit(1)
+                if done == nil, let resolveError {
+                    Text(resolveError)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.red)
+                        .lineLimit(2)
+                        .textSelection(.enabled)
+                        .help(resolveError)
+                }
+            }
             Spacer()
             if done == nil {
                 if resolving { ProgressView().controlSize(.small) }
@@ -225,13 +240,15 @@ struct DiffSheet: View {
         let dir = target.directory
         let path = file.change.path
         resolving = true
+        resolveError = nil
         Task {
             let r = await Task.detached { git.resolveConflict(path: path, using: resolution, in: dir) }.value
             resolving = false
             if r.ok {
                 resolved[path] = message
             } else {
-                store.alert = AppAlert(title: "No se pudo resolver el conflicto de «\(file.change.fileName)»", message: r.errorMessage)
+                let detail = r.errorMessage.isEmpty ? "git terminó con el código \(r.status)." : r.errorMessage
+                resolveError = "No se pudo resolver: \(detail)"
             }
             store.refreshGit()
             await load()

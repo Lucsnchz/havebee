@@ -47,7 +47,14 @@ private func gitHerdFakeHerd(home: URL, parked: String, secured: [String]) throw
 @Suite("Vistas de git y Herd", .serialized)
 struct GitHerdViewTests {
     func check(_ view: some View, size: CGSize, name: String, dark: Bool = true) async {
-        let rep = await gitHerdRender(view, size: size, name: name, dark: dark)
+        // @AppStorage de la hoja (newBranchMode, newBranchFirstSession) en un dominio propio, nunca en .standard.
+        let suite = "hive-git-herd-\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            Issue.record("No se pudo crear el dominio \(suite)")
+            return
+        }
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let rep = await gitHerdRender(view.defaultAppStorage(defaults), size: size, name: name, dark: dark)
         #expect(rep != nil, "No se pudo dibujar \(name)")
     }
 

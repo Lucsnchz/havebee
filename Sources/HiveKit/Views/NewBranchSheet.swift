@@ -31,6 +31,12 @@ struct NewBranchSheet: View {
 
     // Carpeta, Herd y preparación.
     @State private var herd: HerdSites?
+    /// Herd sirve la carpeta padre del proyecto (se calcula al cargar, fuera del hilo principal).
+    @State private var herdServesParent = false
+    /// El sitio de la carpeta principal tiene HTTPS en Herd.
+    @State private var mainHasCert = false
+    /// Nombre y carpeta con los que se calcularon la validación, las rutas y el comando de preparación.
+    @State private var derivedKey = ""
     @State private var location: WorktreeLocation = .nested
     @State private var locationTouched = false
     @State private var siblingPath = ""
@@ -187,7 +193,7 @@ struct NewBranchSheet: View {
             if mode == .worktree {
                 Picker("Carpeta", selection: Binding(get: { location }, set: { location = $0; locationTouched = true })) {
                     Text(siblingLabel).tag(WorktreeLocation.sibling)
-                    Text("Carpeta .worktrees").tag(WorktreeLocation.nested)
+                    Text("En \(nestedFolderName)").tag(WorktreeLocation.nested)
                 }
                 .pickerStyle(.radioGroup)
                 VStack(alignment: .leading, spacing: 3) {
@@ -298,14 +304,14 @@ struct NewBranchSheet: View {
         "\(isNew)|\(name)|\(existing)|\(storedMode)|\(location.rawValue)|\(runSetup)|\(herd != nil)"
     }
 
-    private var herdServesParent: Bool {
-        guard let herd, let project = store.project(projectId) else { return false }
-        return herd.servesParent(of: project.path)
-    }
+    /// Lo que cambia la validación, las rutas y el comando de preparación.
+    private var derivationKey: String { "\(isNew)|\(branchName)|\(location.rawValue)" }
 
-    private var mainHasCert: Bool {
-        guard let herd, let project = store.project(projectId) else { return false }
-        return herd.url(for: project.path)?.hasPrefix("https://") == true
+    /// «ecommerce.worktrees», la carpeta de los worktrees anidados.
+    private var nestedFolderName: String {
+        let path = nestedPath.isEmpty ? store.project(projectId)?.path ?? "" : (nestedPath as NSString).deletingLastPathComponent
+        let name = (path as NSString).lastPathComponent
+        return name.hasSuffix(".worktrees") ? name : name + ".worktrees"
     }
 
     /// URL con la que Herd va a servir el worktree hermano. https solo si la preparación corre `herd secure`.
@@ -335,9 +341,11 @@ struct NewBranchSheet: View {
         let git = store.git
         let home = store.environment.home
         let loaded = await Task.detached(priority: .userInitiated) {
-            (local: git.localBranches(path), remote: git.remoteBranches(path), trees: git.worktrees(path),
-             defaultRemote: git.defaultRemoteBranch(path), unborn: git.status(path)?.isUnborn == true,
-             herd: HerdSites.parse(configRoot: HerdSites.defaultRoot(home: home)))
+            let herd = HerdSites.parse(configRoot: HerdSites.defaultRoot(home: home))
+            return (local: git.localBranches(path), remote: git.remoteBranches(path), trees: git.worktrees(path),
+                    defaultRemote: git.defaultRemoteBranch(path), unborn: git.status(path)?.isUnborn == true, herd: herd,
+                    servesParent: herd?.servesParent(of: path) == true,
+                    mainHasCert: herd?.url(for: path)?.hasPrefix("https://") == true)
         }.value
         localBranches = loaded.local
         remoteBranches = loaded.remote
@@ -345,7 +353,9 @@ struct NewBranchSheet: View {
         defaultRemote = loaded.defaultRemote
         noCommits = loaded.unborn
         herd = loaded.herd
-        if !locationTouched, let herd = loaded.herd, herd.servesParent(of: path) { location = .sibling }
+        herdServesParent = loaded.servesParent
+        mainHasCert = loaded.mainHasCert
+        if !locationTouched, loaded.servesParent { location = .sibling }
         base = defaultBase
         existing = availableExisting.first ?? availableRemote.first ?? ""
         loading = false
@@ -378,9 +388,10 @@ struct NewBranchSheet: View {
     }
 
     /// Valida el nombre y calcula las carpetas y el comando de preparación (fuera del hilo principal).
-    private func refreshDerived() async {
-        try? await Task.sleep(nanoseconds: 250_000_000)
+    private func refreshDerived(debounce: Bool = true) async {
+        if debounce { try? await Task.sleep(nanoseconds: 250_000_000) }
         guard !Task.isCancelled, let project = store.project(projectId) else { return }
+        let key = derivationKey
         let candidate = branchName
         let git = store.git
         let projectPath = project.path
@@ -415,6 +426,7 @@ struct NewBranchSheet: View {
             setupCommand = derived.setup?.command ?? ""
             setupOrigin = derived.setup?.origin
         }
+        derivedKey = key
     }
 
     // MARK: - Acciones
@@ -423,15 +435,24 @@ struct NewBranchSheet: View {
         guard canSubmit, !busy else { return }
         error = nil
         busy = true
-        let remoteRef = !isNew && remoteBranches.contains(existing) ? existing : nil
-        let setup = setupCommand.trimmingCharacters(in: .whitespacesAndNewlines)
-        let worktree = mode == .worktree && adoptedWorktree == nil
-        let request = NewBranchRequest(
-            projectId: projectId, name: branchName, isNew: isNew, base: base, mode: mode, firstSession: firstSession,
-            remoteRef: remoteRef, location: location, copyIgnored: worktree && copyIgnored,
-            envAppURL: worktree && location == .sibling ? siblingURL : nil,
-            setupCommand: worktree && runSetup && !setup.isEmpty ? setup : nil)
         Task {
+            // Enter apenas después de escribir: la carpeta, APP_URL y el `herd secure <carpeta>` todavía
+            // eran los del nombre anterior. Se recalculan con el nombre final antes de crear nada.
+            if derivedKey != derivationKey {
+                await refreshDerived(debounce: false)
+                if isNew && nameError != nil {
+                    busy = false
+                    return
+                }
+            }
+            let remoteRef = !isNew && remoteBranches.contains(existing) ? existing : nil
+            let setup = setupCommand.trimmingCharacters(in: .whitespacesAndNewlines)
+            let worktree = mode == .worktree && adoptedWorktree == nil
+            let request = NewBranchRequest(
+                projectId: projectId, name: branchName, isNew: isNew, base: base, mode: mode, firstSession: firstSession,
+                remoteRef: remoteRef, location: location, copyIgnored: worktree && copyIgnored,
+                envAppURL: worktree && location == .sibling ? siblingURL : nil,
+                setupCommand: worktree && runSetup && !setup.isEmpty ? setup : nil)
             let failure = await store.createBranch(request)
             busy = false
             if let failure { error = failure } else { dismiss() }

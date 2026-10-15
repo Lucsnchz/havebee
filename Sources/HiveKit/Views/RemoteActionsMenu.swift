@@ -35,7 +35,7 @@ struct RemoteActionsMenu: View {
                           systemImage: "arrow.up.arrow.down")
                 }
                 .disabled(busy != nil)
-                .help("Traer, publicar y crear el MR de «\(branch.name)»")
+                .help("Traer, publicar y crear el \(remote?.kind == .github ? "PR" : "MR") de «\(branch.name)»")
             }
         } else {
             Color.clear.frame(width: 0, height: 0)
@@ -120,7 +120,9 @@ struct RemoteActionsMenu: View {
         let status = store.gitStatus(for: branch, in: project)
         let target = defaultBase ?? "main"
         guard let url = remote.newMergeRequestURL(source: branch.name, target: target) else { return }
-        let published = status.map { $0.upstream != nil && !$0.upstreamGone && $0.ahead == 0 } ?? false
+        // Publicada = sigue a su par en el remoto (no a origin/main, como deja `git checkout -b x origin/main`)
+        // y no tiene commits sin subir.
+        let published = status.map { RemoteHost.isPublished(branch: branch.name, upstream: $0.upstream, gone: $0.upstreamGone, ahead: $0.ahead) } ?? false
         if published {
             BrowserLink.open(url)
             return
