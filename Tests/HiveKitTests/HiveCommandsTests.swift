@@ -40,6 +40,19 @@ struct HiveCommandsTests {
         #expect(Shortcut.actualSize.description == "⌘0")
     }
 
+    @Test("El riel de la vista compacta dice cuántas sesiones te esperan")
+    func railAccessibility() {
+        let project = Project(name: "ecommerce", path: "/e")
+        #expect(RailItem.accessibilityText(project: project, activity: Activity()) == "ecommerce")
+        #expect(RailItem.accessibilityText(project: project, activity: Activity(pending: 1)) == "ecommerce, una sesión te espera")
+        #expect(RailItem.accessibilityText(project: project, activity: Activity(pending: 1, attention: 1))
+            == "ecommerce, 2 sesiones te esperan")
+        #expect(HiveCommands.Shortcut.tab(0)?.description == "⌘1")
+        #expect(HiveCommands.Shortcut.tab(9) == nil)
+        #expect(HiveCommands.Shortcut.project(8)?.description == "⌃⌘9")
+        #expect(HiveCommands.Shortcut.project(-1) == nil)
+    }
+
     @Test("⌘W archiva solo en la ventana principal, sin hojas y con una sesión abierta")
     func closeDecision() {
         let id = UUID()
