@@ -104,10 +104,14 @@ public struct ProcessCommandRunner: CommandRunning {
         if let timeout {
             if exited.wait(timeout: .now() + max(timeout, 0)) == .timedOut {
                 timedOut = true
+                // terminate() le manda SIGTERM al hijo y a lo que lanzó: Process lo deja en su propio grupo.
                 process.terminate()
-                // Si no se va con SIGTERM, lo matamos.
+                // Si no se va con SIGTERM, lo matamos con todo su grupo (ssh, un hook de git), que si
+                // no quedaría vivo.
                 if exited.wait(timeout: .now() + 2) == .timedOut {
-                    kill(process.processIdentifier, SIGKILL)
+                    let pid = process.processIdentifier
+                    kill(-pid, SIGKILL)
+                    kill(pid, SIGKILL)
                     _ = exited.wait(timeout: .now() + 2)
                 }
             }

@@ -17,13 +17,39 @@ struct CommandRunnerTimeoutTests {
         #expect(Date().timeIntervalSince(start) < 6)
     }
 
-    @Test("Un nieto que hereda la salida no impide cortar a tiempo")
-    func grandchildKeepsOutput() {
+    /// Espera (con margen, la máquina puede estar cargada) a que un proceso ya no exista.
+    func waitUntilGone(_ pidFile: String) throws -> Bool {
+        let text = try String(contentsOfFile: pidFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        let pid = try #require(pid_t(text))
+        let deadline = Date().addingTimeInterval(10)
+        while kill(pid, 0) == 0 && Date() < deadline { usleep(50_000) }
+        return kill(pid, 0) != 0
+    }
+
+    @Test("Un nieto que hereda la salida no impide cortar a tiempo, y no queda vivo")
+    func grandchildKeepsOutput() throws {
+        let dir = TempDir()
+        let pidFile = dir.path + "/nieto.pid"
         let start = Date()
-        let r = runner.run("/bin/sh", ["-c", "printf antes; (sleep 10) & wait"], cwd: nil, environment: [:], timeout: 0.3)
+        let r = runner.run("/bin/sh", ["-c", "printf antes; sleep 30 & echo $! > \(shellQuote(pidFile)); wait"],
+                           cwd: nil, environment: [:], timeout: 0.5)
         #expect(r.timedOut)
         #expect(r.stdout == "antes")
         #expect(Date().timeIntervalSince(start) < 6)
+        #expect(try waitUntilGone(pidFile), "El nieto quedó vivo")
+    }
+
+    @Test("Si el proceso y su nieto ignoran SIGTERM, se matan los dos")
+    func ignoresTerm() throws {
+        let dir = TempDir()
+        let pidFile = dir.path + "/terco.pid"
+        let start = Date()
+        // Una señal ignorada se hereda: el sleep tampoco se va con SIGTERM.
+        let r = runner.run("/bin/sh", ["-c", "trap '' TERM; sleep 30 & echo $! > \(shellQuote(pidFile)); wait"],
+                           cwd: nil, environment: [:], timeout: 0.5)
+        #expect(r.timedOut)
+        #expect(Date().timeIntervalSince(start) < 10)
+        #expect(try waitUntilGone(pidFile), "El nieto que ignora SIGTERM quedó vivo")
     }
 
     @Test("Con límite, un proceso rápido devuelve su salida normal")
