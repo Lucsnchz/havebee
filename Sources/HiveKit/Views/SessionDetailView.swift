@@ -1,16 +1,19 @@
+import AppKit
 import HiveCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SessionDetailView: View {
     @Environment(AppStore.self) private var store
+    @Environment(\.colorScheme) private var colorScheme
     let sessionId: UUID
     /// Panel lateral abierto: "changes", "history" o "" (ninguno).
     @AppStorage("sessionSidePanel") private var sidePanel = ""
+    @AppStorage(TerminalPreferences.themeKey) private var terminalTheme = TerminalPreferences.Theme.system.rawValue
 
     var body: some View {
         if let ctx = store.sessionContext(sessionId), let rt = store.runtimes[sessionId] {
             let active = store.isActive(ctx.branch, in: ctx.project)
-            let dir = ctx.project.directory(for: ctx.branch)
             // Panel propio en lugar de `.inspector`: el inspector se mete debajo de la barra de
             // herramientas y deja un hueco vacío arriba.
             HSplitView {
@@ -24,13 +27,15 @@ struct SessionDetailView: View {
                             MovedHeadBanner(project: ctx.project, branch: ctx.branch)
                         }
                         TerminalContainer(terminal: rt.terminal)
+                            .background(terminalBackground)
                         if case .exited(let code) = rt.status {
                             ExitedBar(code: code, kind: ctx.session.kind) { store.relaunch(sessionId) }
                         }
                     }
+                    SessionStatusBar(project: ctx.project, branch: ctx.branch)
                 }
                 .frame(minWidth: 380, maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color(nsColor: TerminalTheme.background))
+                .background(terminalBackground)
 
                 if sidePanel == "changes" && !ctx.project.isScratch {
                     ChangesPanel(project: ctx.project, branch: ctx.branch)
@@ -41,7 +46,7 @@ struct SessionDetailView: View {
                 }
             }
             .navigationTitle(ctx.session.name)
-            .navigationSubtitle("\(ctx.project.name) › \(ctx.branch.name)")
+            .navigationSubtitle(ctx.project.isScratch ? ctx.project.name : "\(ctx.project.name) › \(ctx.branch.name)")
             .toolbar {
                 ToolbarItem(placement: .navigation) {
                     HStack(spacing: 6) {
@@ -51,31 +56,21 @@ struct SessionDetailView: View {
                 }
                 ToolbarItemGroup {
                     StatusPill(status: rt.status, kind: ctx.session.kind)
-                    if rt.isRunning {
-                        Button {
-                            store.relaunch(sessionId)
-                        } label: {
-                            Label("Reiniciar", systemImage: "arrow.counterclockwise")
-                        }
-                        .help(ctx.session.kind.isAgent ? "Reiniciar (retoma la conversación)" : "Reiniciar la terminal")
-                    }
-                    OpenInMenu(path: dir)
-                    if ctx.session.kind.isAgent {
-                        Button {
-                            sidePanel = sidePanel == "history" ? "" : "history"
-                        } label: {
-                            Label("Historial", systemImage: sidePanel == "history" ? "clock.arrow.circlepath.fill" : "clock.arrow.circlepath")
-                        }
-                        .help("Todo lo que se habló en esta sesión, también lo anterior a cada /clear")
-                    }
+                    SessionPanelToggles(sidePanel: $sidePanel,
+                                        showsChanges: !ctx.project.isScratch,
+                                        changes: store.gitStatus(for: ctx.branch, in: ctx.project)?.changes.count ?? 0)
+                    NewSessionMenu(branchId: ctx.branch.id, kind: ctx.session.kind)
                     if !ctx.project.isScratch {
-                        Button {
-                            sidePanel = sidePanel == "changes" ? "" : "changes"
-                        } label: {
-                            Label("Cambios", systemImage: "sidebar.right")
-                        }
-                        .help("Mostrar los cambios de git de esta rama")
+                        SessionCommandsMenu(project: ctx.project, branch: ctx.branch)
                     }
+                    Button {
+                        rt.terminal?.openFindBar()
+                    } label: {
+                        Label("Buscar en la terminal", systemImage: "magnifyingglass")
+                    }
+                    .help("Buscar en la terminal, también en el scroll (⌘F)")
+                    .disabled(rt.terminal == nil)
+                    SessionMoreMenu(session: ctx.session, runtime: rt, directory: ctx.project.directory(for: ctx.branch))
                 }
             }
             .task(id: sessionId) {
@@ -83,25 +78,213 @@ struct SessionDetailView: View {
             }
         }
     }
+
+    /// El mismo fondo que la terminal (oscuro o claro según el ajuste y el sistema).
+    private var terminalBackground: Color {
+        let light: Bool
+        switch TerminalPreferences.Theme(rawValue: terminalTheme) ?? .system {
+        case .light: light = true
+        case .dark: light = false
+        case .system: light = colorScheme == .light
+        }
+        return Color(nsColor: light ? TerminalPalette.light.background : TerminalPalette.dark.background)
+    }
 }
 
+// MARK: - Barra de herramientas
+
+/// Historial y Cambios: dos botones que se excluyen. Tocar el activo cierra el panel.
+private struct SessionPanelToggles: View {
+    @Binding var sidePanel: String
+    let showsChanges: Bool
+    let changes: Int
+
+    var body: some View {
+        ControlGroup {
+            Toggle(isOn: panel("history")) {
+                Label("Historial", systemImage: "clock.arrow.circlepath")
+            }
+            .help("Todo lo que se habló en esta sesión, también lo anterior a cada /clear")
+            if showsChanges {
+                Toggle(isOn: panel("changes")) {
+                    if changes > 0 {
+                        Label("\(changes)", systemImage: "plusminus")
+                            .labelStyle(.titleAndIcon)
+                    } else {
+                        Label("Cambios", systemImage: "plusminus")
+                    }
+                }
+                .help(changes == 0 ? "Cambios de git de esta rama" : "Cambios de git de esta rama (\(SessionStatusBar.changesLabel(changes)))")
+                .accessibilityLabel("Cambios, \(SessionStatusBar.changesLabel(changes))")
+            }
+        }
+    }
+
+    private func panel(_ name: String) -> Binding<Bool> {
+        Binding(get: { sidePanel == name }, set: { sidePanel = $0 ? name : "" })
+    }
+}
+
+/// «Nueva sesión»: el clic crea otra del mismo agente en la rama; mantener apretado deja elegir.
+private struct NewSessionMenu: View {
+    @Environment(AppStore.self) private var store
+    let branchId: UUID
+    let kind: SessionKind
+
+    var body: some View {
+        Menu {
+            NewSessionItems(branchId: branchId)
+        } label: {
+            Label("Nueva sesión", systemImage: "plus")
+        } primaryAction: {
+            store.requestNewSession(branchId: branchId, kind: kind)
+        }
+        .help("Nueva sesión de \(kind.label) en esta rama (mantené apretado para elegir otro agente)")
+    }
+}
+
+/// Los comandos del proyecto para esta rama: ejecutar o detener cada uno.
+private struct SessionCommandsMenu: View {
+    @Environment(AppStore.self) private var store
+    let project: Project
+    let branch: Branch
+
+    var body: some View {
+        let anyRunning = project.commands.contains { store.runningRun(commandId: $0.id, branchId: branch.id) != nil }
+        Menu {
+            if project.commands.isEmpty {
+                Text("Este proyecto no tiene comandos")
+            }
+            ForEach(project.commands) { command in
+                if let running = store.runningRun(commandId: command.id, branchId: branch.id) {
+                    Button {
+                        store.stopRun(running.id)
+                    } label: {
+                        Label("Detener «\(command.name)»", systemImage: "stop.fill")
+                    }
+                } else {
+                    Button {
+                        store.run(command.id, projectId: project.id, branchId: branch.id)
+                    } label: {
+                        Label("Ejecutar «\(command.name)»", systemImage: "play.fill")
+                    }
+                }
+            }
+            Divider()
+            Button("Editar comandos…") { store.select(.project(project.id)) }
+        } label: {
+            Label("Comandos", systemImage: anyRunning ? "play.circle.fill" : "play.circle")
+        }
+        .help(anyRunning ? "Comandos del proyecto (hay alguno corriendo en esta rama)" : "Comandos del proyecto")
+    }
+}
+
+/// Lo menos frecuente de la sesión: reiniciar, copiar o guardar el texto, abrir en, detener y archivar.
+private struct SessionMoreMenu: View {
+    @Environment(AppStore.self) private var store
+    let session: Session
+    let runtime: SessionRuntime
+    let directory: String
+
+    var body: some View {
+        Menu {
+            if runtime.isRunning {
+                Button(session.kind.isAgent ? "Reiniciar (retoma la conversación)" : "Reiniciar la terminal") {
+                    store.relaunch(session.id)
+                }
+            }
+            Divider()
+            Button("Copiar todo el texto de la terminal") {
+                ExternalApps.copyToPasteboard(runtime.terminal?.fullText() ?? "")
+            }
+            .disabled(runtime.terminal == nil)
+            Button("Guardar como .txt…") { saveText() }
+                .disabled(runtime.terminal == nil)
+            Menu("Abrir en") {
+                OpenInItems(path: directory)
+            }
+            Divider()
+            if runtime.isRunning {
+                Button("Detener") { store.stop(session.id) }
+            }
+            Button("Archivar") { store.requestArchive(session.id) }
+        } label: {
+            Label("Más", systemImage: "ellipsis.circle")
+        }
+        .help("Más acciones de la sesión")
+    }
+
+    private func saveText() {
+        guard let text = runtime.terminal?.fullText() else { return }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.plainText]
+        panel.nameFieldStringValue = "\(session.name).txt"
+        panel.prompt = "Guardar"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try text.write(to: url, atomically: true, encoding: .utf8)
+        } catch {
+            store.alert = AppAlert(title: "No se pudo guardar el texto", message: error.localizedDescription)
+        }
+    }
+}
+
+extension HiveTerminalView {
+    /// Abre la barra de búsqueda de SwiftTerm (busca también en el scroll).
+    func openFindBar() {
+        let item = NSMenuItem()
+        item.tag = NSTextFinder.Action.showFindInterface.rawValue
+        performTextFinderAction(item)
+    }
+}
+
+// MARK: - Barras de aviso
+
+/// La sesión terminó. Si es un agente que no está instalado, explica cómo instalarlo.
 private struct ExitedBar: View {
+    @Environment(AppStore.self) private var store
     let code: Int32?
     let kind: SessionKind
     let onResume: () -> Void
+    @State private var missing = false
+    @State private var copied = false
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: "stop.circle")
-                .foregroundStyle(.secondary)
-            Text(code == nil || code == 0 ? "La sesión terminó." : "La sesión terminó con código \(code!).")
-            Spacer()
-            Button(kind.isAgent ? "Reanudar conversación" : "Abrir de nuevo", action: onResume)
-                .keyboardShortcut(.defaultAction)
+            if missing {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                Text("No se encontró \(kind.label)")
+                Spacer()
+                Button(copied ? "Copiado" : "Copiar comando de instalación") {
+                    ExternalApps.copyToPasteboard(kind.installHint)
+                    copied = true
+                }
+                .help(kind.installHint)
+                Button("Reintentar", action: onResume)
+                    .keyboardShortcut(.defaultAction)
+            } else {
+                Image(systemName: "stop.circle")
+                    .foregroundStyle(.secondary)
+                Text(code == nil || code == 0 ? "La sesión terminó." : "La sesión terminó con código \(code!).")
+                Spacer()
+                Button(kind.isAgent ? "Reanudar conversación" : "Abrir de nuevo", action: onResume)
+                    .keyboardShortcut(.defaultAction)
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .background(.bar)
+        .task(id: code) { missing = isMissing }
+    }
+
+    /// El agente no está en el PATH (el mismo que usa el store para lanzarlo).
+    private var isMissing: Bool {
+        guard kind.isAgent, let binary = kind.binary else { return false }
+        let environment = store.environment
+        let path = environment.cachedLoginPATH
+            ?? LoginShell.fallbackPATH(home: environment.home.path, inherited: environment.inheritedEnvironment["PATH"])
+        return environment.processes.resolve(binary, path: path) == nil
     }
 }
 
