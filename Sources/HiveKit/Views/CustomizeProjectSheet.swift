@@ -8,27 +8,13 @@ struct CustomizeProjectSheet: View {
     @Environment(\.dismiss) private var dismiss
     let projectId: UUID
 
-    private enum IconKind: String, CaseIterable, Identifiable {
-        case logo, initials, symbol, emoji
-        var id: String { rawValue }
-        var label: String {
-            switch self {
-            case .logo: "Logo"
-            case .initials: "Iniciales"
-            case .symbol: "Símbolo"
-            case .emoji: "Emoji"
-            }
-        }
-    }
-
     @State private var name = ""
     @State private var color: TintColor = .blue
-    @State private var kind: IconKind = .initials
-    @State private var symbol = "cart.fill"
-    @State private var emoji = "🐝"
-    @State private var imagePath: String?
-    @State private var logos: [String] = []
+    /// Tipo de ícono, símbolo, emoji e imagen elegidos (la lógica vive en HiveCore).
+    @State private var form = AppearanceForm(project: Project(name: "", path: ""))
+    @State private var logosLoaded = false
     @State private var loaded = false
+    @FocusState private var emojiFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -71,14 +57,14 @@ struct CustomizeProjectSheet: View {
 
             VStack(alignment: .leading, spacing: 10) {
                 Text("Ícono").font(.subheadline.weight(.semibold))
-                Picker("Ícono", selection: $kind) {
-                    ForEach(IconKind.allCases) { Text($0.label).tag($0) }
+                Picker("Ícono", selection: $form.kind) {
+                    ForEach(AppearanceForm.Kind.allCases) { Text($0.label).tag($0) }
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
 
                 Group {
-                    switch kind {
+                    switch form.kind {
                     case .logo: logoPicker
                     case .initials:
                         Text("Usa «\(preview?.initials ?? "")» sobre el color del proyecto.")
@@ -100,23 +86,28 @@ struct CustomizeProjectSheet: View {
         }
         .padding(22)
         .frame(width: 470)
-        .task { load() }
+        .task { await load() }
     }
 
     // MARK: - Selectores
 
     private var logoPicker: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if logos.isEmpty && imagePath == nil {
+            if !logosLoaded && form.images.isEmpty {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Buscando logos en el repo…").foregroundStyle(.secondary)
+                }
+            } else if form.images.isEmpty {
                 Text("No encontré logos en el repo (favicon, apple-touch-icon, ícono de la app…). Podés elegir una imagen.")
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
-                    ForEach(allImages, id: \.self) { path in
+                    ForEach(form.images, id: \.self) { path in
                         Button {
-                            imagePath = path
+                            form.imagePath = path
                         } label: {
                             VStack(spacing: 4) {
                                 if let image = ImageCache.image(at: path) {
@@ -129,12 +120,12 @@ struct CustomizeProjectSheet: View {
                                         .background(Color(white: 0.97), in: RoundedRectangle(cornerRadius: 10))
                                         .overlay {
                                             RoundedRectangle(cornerRadius: 10)
-                                                .strokeBorder(path == imagePath ? Color.accentColor : .clear, lineWidth: 2.5)
+                                                .strokeBorder(path == form.imagePath ? Color.honey : .clear, lineWidth: 2.5)
                                         }
                                 }
                                 Text((path as NSString).lastPathComponent)
                                     .font(.caption2)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(path == form.imagePath ? .primary : .secondary)
                                     .lineLimit(1)
                                     .frame(width: 64)
                             }
@@ -153,13 +144,13 @@ struct CustomizeProjectSheet: View {
             LazyVGrid(columns: Array(repeating: GridItem(.fixed(32), spacing: 6), count: 12), spacing: 6) {
                 ForEach(IconChoices.symbols, id: \.self) { name in
                     Button {
-                        symbol = name
+                        form.symbol = name
                     } label: {
                         Image(systemName: name)
                             .font(.system(size: 14, weight: .semibold))
                             .frame(width: 30, height: 30)
-                            .foregroundStyle(name == symbol ? .white : .primary)
-                            .background(name == symbol ? color.color : Color.primary.opacity(0.06),
+                            .foregroundStyle(name == form.symbol ? .white : .primary)
+                            .background(name == form.symbol ? color.color : Color.primary.opacity(0.06),
                                         in: RoundedRectangle(cornerRadius: 7))
                     }
                     .buttonStyle(.plain)
@@ -173,12 +164,13 @@ struct CustomizeProjectSheet: View {
             LazyVGrid(columns: Array(repeating: GridItem(.fixed(32), spacing: 6), count: 12), spacing: 6) {
                 ForEach(IconChoices.emojis, id: \.self) { option in
                     Button {
-                        emoji = option
+                        form.kind = .emoji
+                        form.emoji = option
                     } label: {
                         Text(option)
                             .font(.system(size: 18))
                             .frame(width: 30, height: 30)
-                            .background(option == emoji ? color.color.opacity(0.35) : Color.primary.opacity(0.06),
+                            .background(option == form.emoji ? color.color.opacity(0.35) : Color.primary.opacity(0.06),
                                         in: RoundedRectangle(cornerRadius: 7))
                     }
                     .buttonStyle(.plain)
@@ -186,13 +178,19 @@ struct CustomizeProjectSheet: View {
             }
             HStack {
                 Text("Otro:")
-                TextField("", text: $emoji)
+                TextField("", text: $form.emoji)
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 60)
-                    .onChange(of: emoji) { _, value in
-                        // Nos quedamos con el último emoji escrito.
-                        if let last = value.last, value.count > 1 { emoji = String(last) }
+                    .focused($emojiFocused)
+                    .onChange(of: form.emoji) { _, value in
+                        // Nos quedamos con el último emoji escrito; las letras no cuentan.
+                        let filtered = AppearanceForm.lastEmoji(value) ?? ""
+                        if filtered != value { form.typeEmoji(value) }
                     }
+                    .onChange(of: emojiFocused) { _, focused in
+                        if !focused { form.finishEmoji() }
+                    }
+                    .onSubmit { form.finishEmoji() }
                 Text("⌃⌘Espacio abre el selector de emojis")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -202,42 +200,26 @@ struct CustomizeProjectSheet: View {
 
     // MARK: - Estado
 
-    private var allImages: [String] {
-        var paths = logos
-        if let imagePath, !paths.contains(imagePath) { paths.insert(imagePath, at: 0) }
-        return paths
-    }
-
-    private var icon: ProjectIcon {
-        switch kind {
-        case .logo: imagePath.map { .image($0) } ?? .initials
-        case .initials: .initials
-        case .symbol: .symbol(symbol)
-        case .emoji: emoji.isEmpty ? .initials : .emoji(emoji)
-        }
-    }
-
     private var preview: Project? {
         guard var project = store.project(projectId) else { return nil }
         if !name.trimmingCharacters(in: .whitespaces).isEmpty { project.name = name }
         project.color = color
-        project.icon = icon
+        project.icon = form.icon
         return project
     }
 
-    private func load() {
+    /// Carga el proyecto al toque y busca los logos del repo fuera del hilo principal.
+    private func load() async {
         guard !loaded, let project = store.project(projectId) else { return }
         loaded = true
         name = project.name
         color = project.tint
-        logos = store.logos(in: project.path)
-        switch project.icon ?? .initials {
-        case .initials: kind = .initials
-        case .symbol(let value): kind = .symbol; symbol = value
-        case .emoji(let value): kind = .emoji; emoji = value
-        case .image(let path): kind = .logo; imagePath = path
-        }
-        if imagePath == nil { imagePath = logos.first }
+        form = AppearanceForm(project: project)
+        let findLogos = store.environment.logos
+        let path = project.path
+        let logos = await Task.detached(priority: .userInitiated) { findLogos(path) }.value
+        form.setLogos(logos)
+        logosLoaded = true
     }
 
     private func chooseImage() {
@@ -246,12 +228,12 @@ struct CustomizeProjectSheet: View {
         panel.allowsMultipleSelection = false
         panel.message = "Elegí una imagen para el ícono del proyecto"
         guard panel.runModal() == .OK, let url = panel.url, let path = store.importIcon(from: url) else { return }
-        imagePath = path
-        kind = .logo
+        form.imagePath = path
+        form.kind = .logo
     }
 
     private func save() {
-        store.updateAppearance(projectId: projectId, name: name, color: color, icon: icon)
+        store.updateAppearance(projectId: projectId, name: name, color: color, icon: form.icon)
         dismiss()
     }
 }
