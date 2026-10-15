@@ -246,6 +246,12 @@ extension HiveCommands {
         /// ⌃⌘1…⌃⌘9: proyectos en el orden del sidebar.
         static let projects = (1...9).map { Shortcut("Proyecto \($0)", KeyEquivalent(Character("\($0)")), [.command, .control]) }
 
+        /// ⌘N de la pestaña en `index` (desde 0), si es una de las nueve primeras.
+        static func tab(_ index: Int) -> Shortcut? { tabs.indices.contains(index) ? tabs[index] : nil }
+
+        /// ⌃⌘N del proyecto en `index` (desde 0), si es uno de los nueve primeros.
+        static func project(_ index: Int) -> Shortcut? { projects.indices.contains(index) ? projects[index] : nil }
+
         /// Todos los atajos de Hive.
         static let all: [Shortcut] = [
             addProject, closeWindow, newSession, newBranch, restart, stop, archive, history, changes,

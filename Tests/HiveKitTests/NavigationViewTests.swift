@@ -111,4 +111,12 @@ struct NavigationViewTests {
         await check(QuickSwitcher(archivedId: demo.archived.id).environment(demo.store), size: CGSize(width: 600, height: 520),
                     name: "nav-04-buscador-archivada")
     }
+
+    @Test("Vista compacta: Inicio en el riel, pestañas con la rama y el estado")
+    func compact() async throws {
+        let demo = try await NavDemo()
+        await check(CompactLayout().environment(demo.store), size: CGSize(width: 1100, height: 420), name: "nav-05-compacta")
+        demo.store.select(.project(demo.project.id))
+        await check(CompactLayout().environment(demo.store), size: CGSize(width: 1100, height: 420), name: "nav-06-compacta-resumen")
+    }
 }
