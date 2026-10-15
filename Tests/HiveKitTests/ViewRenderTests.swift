@@ -83,18 +83,42 @@ enum Snapshot {
 }
 
 /// Preferencias aisladas para las vistas (@AppStorage): nunca UserDefaults.standard, que comparten
-/// todos los procesos de test de la Mac.
+/// todos los procesos de test de la Mac. El nombre de la suite es una ruta absoluta dentro de una
+/// carpeta temporal, así el plist queda ahí y se borra con ella: con un nombre común iría a
+/// ~/Library/Preferences, y removePersistentDomain no borra ese archivo.
 @MainActor
 final class SnapshotDefaults {
-    let suiteName = "hive-snapshots-\(UUID().uuidString)"
+    private let dir = TempDir("hive-snapshots")
+    let suiteName: String
     let defaults: UserDefaults
 
     init() {
+        suiteName = dir.url.appendingPathComponent("preferencias").path
         defaults = UserDefaults(suiteName: suiteName)!
     }
 
+    /// Dónde guarda el plist (para el test que confirma que no va a ~/Library/Preferences).
+    var plistPath: String { suiteName + ".plist" }
+
     deinit {
         UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName)
+    }
+}
+
+@MainActor
+@Suite("Preferencias de las capturas")
+struct SnapshotDefaultsTests {
+    @Test("Se guardan en una carpeta temporal y no en ~/Library/Preferences")
+    func staysInTempDir() async throws {
+        let preferences = SnapshotDefaults()
+        preferences.defaults.set("tree", forKey: "layout")
+        preferences.defaults.synchronize()
+        #expect(preferences.suiteName.hasPrefix(TempDir.realPath(NSTemporaryDirectory())))
+        #expect(preferences.defaults.string(forKey: "layout") == "tree")
+        // Otra instancia con el mismo nombre (como hace @AppStorage) ve lo mismo.
+        #expect(UserDefaults(suiteName: preferences.suiteName)?.string(forKey: "layout") == "tree")
+        let plist = preferences.plistPath
+        #expect(await waitUntil { FileManager.default.fileExists(atPath: plist) })
     }
 }
 
