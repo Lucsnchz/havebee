@@ -90,4 +90,38 @@ struct IntegracionFinalCoreTests {
             #expect(!FileManager.default.fileExists(atPath: store.segmentsURL(id).path))
         }
     }
+
+    @Test("Con el permiso pedido, otra herramienta en paralelo no saca a la sesión de «Necesita permiso»")
+    func parallelToolsKeepAttention() {
+        let id = UUID()
+        func event(_ name: String, _ payload: JSONValue) -> HiveEvent {
+            HiveEvent(sessionId: id, source: "claude", name: name, payload: payload)
+        }
+        let bash: JSONValue = ["tool_name": "Bash", "tool_input": ["command": "php artisan migrate"]]
+        let read: JSONValue = ["tool_name": "Read", "tool_input": ["file_path": "/e/app.php"]]
+        let asked = AgentEventInterpreter.interpret(event("PermissionRequest", bash), status: .working, agentSessionId: nil)
+        #expect(asked.status == .attention)
+        let pending = asked.permissionRequest
+        #expect(pending == PermissionRequestKey(toolName: "Bash", input: ["command": "php artisan migrate"]))
+
+        // Un Read que corría en paralelo termina (o arranca otro): sigue pidiendo permiso.
+        for name in ["PostToolUse", "PreToolUse", "PostToolUseFailure"] {
+            let other = AgentEventInterpreter.interpret(event(name, read), status: .attention, agentSessionId: nil, pendingPermission: pending)
+            #expect(other.status == nil, "\(name)")
+        }
+        // Termina la herramienta que pidió permiso: ya trabaja.
+        let done = AgentEventInterpreter.interpret(event("PostToolUse", bash), status: .attention, agentSessionId: nil, pendingPermission: pending)
+        #expect(done.status == .working)
+        // Sin pedido anotado (por ejemplo, el aviso viejo de Notification), como antes.
+        #expect(AgentEventInterpreter.interpret(event("PostToolUse", read), status: .attention, agentSessionId: nil).status == .working)
+        // Esc (interrupción) y Stop siguen funcionando aunque haya un pedido anotado.
+        let interrupt: JSONValue = ["tool_name": "Read", "is_interrupt": true]
+        #expect(AgentEventInterpreter.interpret(event("PostToolUseFailure", interrupt), status: .attention, agentSessionId: nil,
+                                                pendingPermission: pending).status == .waiting)
+        #expect(AgentEventInterpreter.interpret(event("Stop", [:]), status: .attention, agentSessionId: nil,
+                                                pendingPermission: pending).status == .waiting)
+        // Si falta la entrada, alcanza con el nombre de la herramienta.
+        #expect(PermissionRequestKey(toolName: "Bash", input: nil).matches(bash))
+        #expect(!PermissionRequestKey(toolName: "Bash", input: nil).matches(read))
+    }
 }

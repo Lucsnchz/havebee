@@ -25,6 +25,32 @@ public struct HiveEvent: Equatable, Sendable {
     }
 }
 
+/// La herramienta que pidió permiso (PermissionRequest de Claude). Mientras el diálogo está abierto,
+/// otras herramientas que corren en paralelo pueden terminar: sus hooks no sacan a la sesión de
+/// «Necesita permiso».
+public struct PermissionRequestKey: Equatable, Sendable {
+    public let toolName: String
+    public let input: JSONValue?
+
+    public init(toolName: String, input: JSONValue?) {
+        self.toolName = toolName
+        self.input = input
+    }
+
+    /// La de un hook de Claude (`tool_name` y `tool_input`).
+    public init(payload: JSONValue) {
+        self.init(toolName: payload["tool_name"]?.string ?? "", input: payload["tool_input"])
+    }
+
+    /// Si un hook de herramienta es de la misma que pidió permiso. Si falta la entrada en alguno de
+    /// los dos, alcanza con el nombre.
+    public func matches(_ payload: JSONValue) -> Bool {
+        guard (payload["tool_name"]?.string ?? "") == toolName else { return false }
+        guard let input, let other = payload["tool_input"] else { return true }
+        return input == other
+    }
+}
+
 /// Lo que hay que hacer con una sesión después de un evento.
 public struct AgentEventOutcome: Equatable, Sendable {
     /// Nuevo estado (nil: no cambia).
@@ -41,6 +67,8 @@ public struct AgentEventOutcome: Equatable, Sendable {
     public var touchesActivity: Bool
     /// Transcript completo de la conversación (`transcript_path` de Claude), para guardarlo en Hive.
     public var transcript: (conversationId: String, path: String)?
+    /// La herramienta que acaba de pedir permiso (el store la recuerda mientras siga en «Necesita permiso»).
+    public var permissionRequest: PermissionRequestKey?
 
     public init(status: SessionStatus? = nil, notification: String? = nil, agentSessionId: String? = nil,
                 history: [(role: HistoryEntry.Role, text: String)] = [], reply: String? = nil, touchesActivity: Bool = false,
@@ -59,6 +87,7 @@ public struct AgentEventOutcome: Equatable, Sendable {
             && a.history.map(\.role) == b.history.map(\.role) && a.history.map(\.text) == b.history.map(\.text)
             && a.reply == b.reply && a.touchesActivity == b.touchesActivity
             && a.transcript?.conversationId == b.transcript?.conversationId && a.transcript?.path == b.transcript?.path
+            && a.permissionRequest == b.permissionRequest
     }
 }
 
@@ -68,12 +97,21 @@ public enum AgentEventInterpreter {
     public static let permissionNotification = "Necesita tu permiso para seguir."
 
     /// - Parameter isSubagentThread: si un thread de Codex es de un subagente (sus eventos se ignoran).
+    /// - Parameter pendingPermission: la herramienta que pidió permiso, si la sesión sigue esperándolo.
     public static func interpret(_ event: HiveEvent, status: SessionStatus, agentSessionId: String?,
-                                 isSubagentThread: (String) -> Bool = { _ in false }) -> AgentEventOutcome {
+                                 isSubagentThread: (String) -> Bool = { _ in false },
+                                 pendingPermission: PermissionRequestKey? = nil) -> AgentEventOutcome {
         var outcome = AgentEventOutcome()
         let payload = event.payload
         // Dentro de un subagente, los hooks traen `agent_id`: no dicen nada del agente principal.
         let fromSubagent = !(payload["agent_id"]?.string ?? "").isEmpty
+        // Con el diálogo de permiso abierto, otra herramienta que corría en paralelo puede arrancar o
+        // terminar: eso no responde el pedido.
+        let otherToolWhileAsking = status == .attention && event.source == "claude"
+            && ["PreToolUse", "PostToolUse", "PostToolUseFailure"].contains(event.name)
+            && payload["is_interrupt"]?.asBool != true
+            && pendingPermission.map { !$0.matches(payload) } == true
+        if otherToolWhileAsking { return outcome }
         switch (event.source, event.name) {
         case ("claude", "SessionStart"):
             // Cambia con /clear: guardamos el nuevo para reanudar la conversación correcta.
@@ -104,6 +142,7 @@ public enum AgentEventInterpreter {
             }
         case ("claude", "PermissionRequest"):
             outcome.status = .attention
+            outcome.permissionRequest = PermissionRequestKey(payload: payload)
             outcome.notification = permissionText(toolName: payload["tool_name"]?.string, input: payload["tool_input"],
                                                   cwd: payload["cwd"]?.string)
         case ("claude", "Notification"):

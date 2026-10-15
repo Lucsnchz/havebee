@@ -31,7 +31,8 @@ extension AppStore {
             rt.hooksSeen = true
             // Un thread de Codex distinto del de la sesión puede ser de un subagente: esos avisos se ignoran.
             let outcome = AgentEventInterpreter.interpret(event, status: rt.status, agentSessionId: ctx.session.agentSessionId,
-                                                          isSubagentThread: environment.agents.isCodexSubagentThread)
+                                                          isSubagentThread: environment.agents.isCodexSubagentThread,
+                                                          pendingPermission: rt.pendingPermission)
             if !outcome.history.isEmpty {
                 let place = ctx.project.isScratch ? ctx.project.name : "\(ctx.project.name) › \(ctx.branch.name)"
                 history.ensureMarkdown(session: ctx.session, place: place)
@@ -53,6 +54,7 @@ extension AppStore {
                 scheduleSave()
             }
             if let status = outcome.status { setStatus(rt, status, notify: outcome.notification) }
+            if let request = outcome.permissionRequest, rt.status == .attention { rt.pendingPermission = request }
         }
     }
 
@@ -94,7 +96,10 @@ extension AppStore {
         if status == .attention, let body { rt.attentionNotice = body }
         guard rt.status != status else { return }
         rt.status = status
-        if status != .attention { rt.attentionNotice = nil }
+        if status != .attention {
+            rt.attentionNotice = nil
+            rt.pendingPermission = nil
+        }
         if status == .working {
             rt.workingSince = environment.now()
         } else if status.needsYou && !quiet {

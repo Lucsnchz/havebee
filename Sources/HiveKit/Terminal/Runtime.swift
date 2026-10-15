@@ -15,6 +15,8 @@ public final class SessionRuntime {
     /// Lo que pidió el agente al quedar esperando tu permiso (nil en cualquier otro estado).
     public var notice: String? { status == .attention ? attentionNotice : nil }
     var attentionNotice: String?
+    /// La herramienta que pidió permiso, mientras siga en «Necesita permiso».
+    @ObservationIgnored var pendingPermission: PermissionRequestKey?
     /// Se está armando su lanzamiento (búsquedas en disco fuera del hilo principal).
     public internal(set) var isLaunching = false
 

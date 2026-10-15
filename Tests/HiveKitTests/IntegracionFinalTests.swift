@@ -302,4 +302,27 @@ struct IntegracionFinalTests {
         #expect(store.removingBranches.isEmpty)
         #expect(store.sessionContext(session.id) == nil)
     }
+
+    @Test("El store recuerda qué herramienta pidió permiso hasta que la respondés")
+    func pendingPermissionInStore() async throws {
+        let (world, repo, store, _, session) = try await storeWithHistory()
+        defer { withExtendedLifetime((world, repo)) {} }
+        func send(_ name: String, _ payload: JSONValue) {
+            store.handle([HiveEvent(sessionId: session.id, source: "claude", name: name, payload: payload)])
+        }
+        let rt = try #require(store.runtimes[session.id])
+        send("UserPromptSubmit", ["prompt": "Migrá la base"])
+        send("PermissionRequest", ["tool_name": "Bash", "tool_input": ["command": "php artisan migrate"]])
+        #expect(rt.status == .attention)
+        #expect(rt.notice?.contains("php artisan migrate") == true)
+        send("PostToolUse", ["tool_name": "Read", "tool_input": ["file_path": "/e/a.php"]])
+        #expect(rt.status == .attention)
+        #expect(rt.notice != nil)
+        // Aprobás con Enter: trabaja y se olvida el pedido.
+        rt.terminal?.onUserInput?(Array("\r".utf8)[...])
+        #expect(rt.status == .working)
+        #expect(rt.pendingPermission == nil)
+        send("PostToolUse", ["tool_name": "Read", "tool_input": ["file_path": "/e/a.php"]])
+        #expect(rt.status == .working)
+    }
 }
