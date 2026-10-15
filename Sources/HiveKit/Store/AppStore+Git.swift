@@ -100,18 +100,21 @@ extension AppStore {
 
     // MARK: - Ramas
 
-    /// Crea o agrega una rama. Devuelve el error a mostrar, o nil si salió bien.
+    /// Crea o agrega una rama. Devuelve el error a mostrar, o nil si salió bien. En un worktree nuevo
+    /// copia los archivos ignorados que necesita (si se pidió), corre la preparación en la esquinita
+    /// y avisa qué copió.
     public func createBranch(_ request: NewBranchRequest) async -> String? {
         guard let project = project(request.projectId) else { return "No encontré el proyecto." }
         let git = self.git
         gitGeneration += 1
-        let result = await Task.detached { BranchPlanner.prepare(request, project: project, git: git) }.value
+        let result = await Task.detached { BranchPlanner.prepareDetailed(request, project: project, git: git) }.value
         gitGeneration += 1
-        var branch: Branch
+        let prepared: PreparedBranch
         switch result {
-        case .success(let value): branch = value
+        case .success(let value): prepared = value
         case .failure(let error): return error.errorDescription
         }
+        var branch = prepared.branch
         projects.updateProject(project.id) { p in
             if let path = branch.worktreePath { p.ignoredWorktrees.removeAll { samePath($0, path) } }
             // Una revisión pudo encontrar el worktree nuevo mientras git lo creaba: no lo duplicamos.
@@ -127,6 +130,14 @@ extension AppStore {
         scheduleSave()
         select(.branch(branch.id))
         refreshGit()
+        // setupCommand nil: la casilla «Preparar» estaba apagada.
+        if let setup = prepared.setupCommand, let path = branch.worktreePath {
+            runScript(name: "Preparar \(branch.name)", command: setup, projectId: project.id, branchId: branch.id,
+                      environment: ProjectScripts.environment(rootPath: project.path, worktreePath: path, branch: branch.name))
+        }
+        if !prepared.copiedFiles.isEmpty {
+            showNotice("Copié \(WorktreeIncludes.summary(prepared.copiedFiles)) a «\(branch.name)»")
+        }
         if let kind = request.firstSession { requestNewSession(branchId: branch.id, kind: kind) }
         return nil
     }

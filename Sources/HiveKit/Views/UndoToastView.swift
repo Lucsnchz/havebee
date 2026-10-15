@@ -13,13 +13,16 @@ struct UndoToastView: View {
                     Text(action.message)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                    Text("·")
-                        .foregroundStyle(.tertiary)
-                    Button("Deshacer") { store.performUndo() }
-                        .buttonStyle(.plain)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(Color.honey)
-                        .help("Deshacer (⌘Z)")
+                    // Un aviso suelto (por ejemplo, qué se copió a un worktree nuevo) no se deshace.
+                    if action.canUndo {
+                        Text("·")
+                            .foregroundStyle(.tertiary)
+                        Button("Deshacer") { store.performUndo() }
+                            .buttonStyle(.plain)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(Color.honey)
+                            .help("Deshacer (⌘Z)")
+                    }
                     Button {
                         store.dismissUndo()
                     } label: {

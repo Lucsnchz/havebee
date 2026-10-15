@@ -57,4 +57,14 @@ struct IntegracionViewTests {
         await check(NavigationStack { BranchDetailView(branchId: project.branches[0].id) }.environment(store),
                     size: CGSize(width: 1000, height: 640), name: "19-rama-permiso")
     }
+
+    @Test("Un aviso suelto en la cápsula de abajo, sin «Deshacer»")
+    func noticeToast() async throws {
+        let world = TestWorld()
+        let store = world.makeStore()
+        store.showNotice("Copié .env, auth.json y 2 más a «feature/checkout»")
+        #expect(store.undoAction?.canUndo == false)
+        await check(ZStack(alignment: .bottom) { Color.clear; UndoToastView().padding(.bottom, 16) }.environment(store),
+                    size: CGSize(width: 560, height: 120), name: "20-aviso-copie")
+    }
 }

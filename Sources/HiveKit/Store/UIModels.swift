@@ -24,13 +24,17 @@ public struct AppAlert: Identifiable {
     }
 }
 
-/// Algo que se puede deshacer por unos segundos: la cápsula de abajo al centro y ⌘Z.
+/// Algo que se puede deshacer por unos segundos: la cápsula de abajo al centro y ⌘Z. Sin `undo`
+/// es solo un aviso corto en la misma cápsula («Copié .env y auth.json a «feature-x»»).
 public struct UndoAction: Identifiable {
     public let id = UUID()
     /// «Archivaste “Claude 2”».
     public let message: String
     public let expiresAt: Date
-    let undo: () -> Void
+    let undo: (() -> Void)?
+
+    /// Si ofrece «Deshacer» o es solo un aviso.
+    public var canUndo: Bool { undo != nil }
 }
 
 /// Qué hacer después de un checkout que se pidió para abrir algo.

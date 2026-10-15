@@ -53,7 +53,7 @@ public final class AppStore {
     public var commandEditor: CommandEditorTarget?
     public var mcpEditor: MCPEditorTarget?
     public var diffTarget: DiffTarget?
-    /// Lo último que se puede deshacer (vence a los `undoWindow` segundos).
+    /// Lo último que se puede deshacer, o un aviso corto (vence a los `undoWindow` segundos).
     public internal(set) var undoAction: UndoAction?
     public var showSwitcher = false
     public var dockExpanded = false
@@ -89,6 +89,8 @@ public final class AppStore {
     @ObservationIgnored var saveFailed = false
     /// Quienes esperan que termine el proceso de una terminal (ver `waitForExit`).
     @ObservationIgnored var exitWaiters: [ObjectIdentifier: [CheckedContinuation<Void, Never>]] = [:]
+    /// Cuánto se espera el script de cierre de un worktree antes de borrarlo igual.
+    @ObservationIgnored var archiveTimeout: TimeInterval = 120
     /// El undo de la ventana, donde se registra lo que se puede deshacer con ⌘Z (los tests ponen uno propio).
     @ObservationIgnored var windowUndoManager: () -> UndoManager? = { NSApp?.keyWindow?.undoManager }
     /// Dónde quedó registrado el último deshacer.
@@ -305,6 +307,17 @@ public final class AppStore {
             manager.setActionName(message)
             registeredUndoManager = manager
         }
+        dismissAfterWindow(id)
+    }
+
+    /// Un aviso corto en la cápsula de abajo, sin «Deshacer» (se va solo como el deshacer).
+    func showNotice(_ message: String) {
+        let notice = UndoAction(message: message, expiresAt: environment.now().addingTimeInterval(Self.undoWindow), undo: nil)
+        undoAction = notice
+        dismissAfterWindow(notice.id)
+    }
+
+    private func dismissAfterWindow(_ id: UUID) {
         Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(Self.undoWindow * 1_000_000_000))
             if self?.undoAction?.id == id { self?.undoAction = nil }
@@ -315,7 +328,8 @@ public final class AppStore {
     public func performUndo() {
         guard let action = undoAction else { return }
         undoAction = nil
-        action.undo()
+        guard let undo = action.undo else { return }
+        undo()
         // Ya está deshecho: que Edición › Deshacer (⌘Z) no siga ofreciéndolo sin hacer nada.
         if let manager = registeredUndoManager, manager.groupingLevel == 0, manager.canUndo,
            manager.undoActionName == action.message {

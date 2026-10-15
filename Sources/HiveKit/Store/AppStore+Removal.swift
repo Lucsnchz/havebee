@@ -81,6 +81,9 @@ extension AppStore {
                 stopSessions(ctx.branch.sessions.map(\.id))
                 stopRuns { $0.branchId == id }
                 await waitUntilStopped(terminals)
+                // La limpieza del proyecto (polyscope.json o conductor.json) va antes de borrar la carpeta.
+                // Al reintentar con «Borrar igual» ya corrió.
+                if !force { await runArchiveScript(project: ctx.project, branch: ctx.branch, worktreePath: path) }
                 let repo = ctx.project.path
                 let git = self.git
                 let r = await Task.detached { git.removeWorktree(path, force: force, in: repo) }.value
@@ -107,6 +110,47 @@ extension AppStore {
             scheduleSave()
             return true
         }
+    }
+
+    /// Corre el script de cierre del proyecto en el worktree (se ve en la esquinita) y espera a que
+    /// termine, como mucho `archiveTimeout` segundos. Si falla o tarda de más, avisa y el borrado sigue.
+    func runArchiveScript(project: Project, branch: Branch, worktreePath path: String) async {
+        let projectPath = project.path
+        let folder = (path as NSString).lastPathComponent
+        // La rama no guarda su script de cierre: se vuelve a leer (puede haber cambiado desde que se creó).
+        let command = await Task.detached(priority: .userInitiated) {
+            ProjectScripts.resolve(projectPath: projectPath, folder: folder, mainHasCert: false).archive?.command
+        }.value
+        // Sin carpeta no hay nada que limpiar (y git solo poda el registro).
+        guard let command, FileManager.default.fileExists(atPath: path),
+              let runId = runScript(name: "Cerrar \(branch.name)", command: command, projectId: project.id, branchId: branch.id,
+                                    environment: ProjectScripts.environment(rootPath: projectPath, worktreePath: path, branch: branch.name)),
+              let run = commandRuns.first(where: { $0.id == runId }) else { return }
+        let deadline = Date().addingTimeInterval(archiveTimeout)
+        while run.running, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+        if run.running {
+            // Como «Detener»: Ctrl+C y, por las dudas, SIGTERM. Al quitar la rama se cierra su terminal.
+            run.terminal?.sendInput([3])
+            run.terminal?.terminate()
+            alert = AppAlert(title: "La limpieza de «\(branch.name)» tardó demasiado",
+                             message: "\(command)\n\nLa corté a los \(Int(archiveTimeout)) s y seguí con el borrado del worktree.")
+        } else if let code = run.exitCode, code != 0 {
+            let output = Self.lastLines(run.terminal?.fullText() ?? "", count: 8)
+            alert = AppAlert(title: "La limpieza de «\(branch.name)» terminó con error (código \(code))",
+                             message: ([command, output].filter { !$0.isEmpty }).joined(separator: "\n\n")
+                                + "\n\nSeguí con el borrado del worktree igual.")
+        }
+    }
+
+    /// Las últimas líneas con texto de una salida (para mostrar en un aviso).
+    static func lastLines(_ text: String, count: Int) -> String {
+        text.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .suffix(count)
+            .joined(separator: "\n")
     }
 
     func dropBranch(_ id: UUID) {
