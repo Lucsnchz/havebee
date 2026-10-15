@@ -26,7 +26,14 @@ struct ContentView: View {
                 CompactLayout()
             }
         }
-        .overlay(alignment: .bottomTrailing) { CommandsDock() }
+        .overlay(alignment: .bottomTrailing) {
+            // En una sesión los comandos van en su barra de abajo: la esquinita taparía el prompt.
+            if !showsSession { CommandsDock() }
+        }
+        .overlay(alignment: .bottom) {
+            UndoToastView()
+                .padding(.bottom, 18)
+        }
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 Button {
@@ -49,6 +56,11 @@ struct ContentView: View {
         .tint(.honey)
         .modifier(StoreDialogs())
     }
+
+    private var showsSession: Bool {
+        if case .session? = store.selection { return true }
+        return false
+    }
 }
 
 struct DetailView: View {
@@ -70,21 +82,15 @@ struct DetailView: View {
     }
 }
 
+/// Sin nada elegido: el Inicio si ya hay proyectos, la bienvenida si no.
 struct EmptyDetailView: View {
     @Environment(AppStore.self) private var store
 
     var body: some View {
-        ContentUnavailableView {
-            Label("Hive", systemImage: "hexagon")
-        } description: {
-            Text(store.repoProjects.isEmpty
-                 ? "Agregá un repositorio para empezar. Después creá ramas y abrí sesiones de Claude Code, Codex o terminal."
-                 : "Elegí un proyecto, una rama o una sesión en la barra lateral.")
-        } actions: {
-            if store.repoProjects.isEmpty {
-                Button("Agregar proyecto…") { store.addProjectInteractive() }
-                    .buttonStyle(.borderedProminent)
-            }
+        if store.repoProjects.isEmpty {
+            WelcomeView()
+        } else {
+            HomeView()
         }
     }
 }
@@ -114,15 +120,13 @@ private struct StoreDialogs: ViewModifier {
             .sheet(isPresented: $store.showSwitcher) {
                 QuickSwitcher()
             }
-            .alert(store.alert?.title ?? "", isPresented: presence(\.alert), presenting: store.alert) { alert in
+            .alert(store.alert?.title ?? "", isPresented: alertPresence, presenting: store.alert) { alert in
                 if let title = alert.actionTitle {
-                    Button(title, role: .destructive) {
-                        // Esperamos a que se cierre esta alerta por si la acción abre otra.
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { alert.action?() }
-                    }
-                    Button("Cancelar", role: .cancel) {}
+                    // Si la acción abre otra alerta, se encola y aparece cuando se cierra esta.
+                    Button(title, role: alert.isDestructive ? .destructive : nil) { alert.action?() }
+                    Button(alert.cancelTitle ?? "Cancelar", role: .cancel) {}
                 } else {
-                    Button("OK", role: .cancel) {}
+                    Button(alert.cancelTitle ?? "OK", role: .cancel) {}
                 }
             } message: { alert in
                 Text(alert.message)
@@ -133,7 +137,7 @@ private struct StoreDialogs: ViewModifier {
                 Button("Hacer checkout") { store.confirmCheckout(pending) }
                 Button("Cancelar", role: .cancel) {}
             } message: { pending in
-                Text(checkoutMessage(pending))
+                Text(pending.message)
             }
             .confirmationDialog(store.pendingRemoval?.title ?? "", isPresented: presence(\.pendingRemoval),
                                 titleVisibility: .visible, presenting: store.pendingRemoval) { removal in
@@ -143,7 +147,8 @@ private struct StoreDialogs: ViewModifier {
                     if removal.isWorktree {
                         Button("Quitar y borrar el worktree", role: .destructive) { store.remove(removal.item, deleteWorktree: true) }
                     }
-                case .session:
+                case .session(let id):
+                    Button("Archivar en su lugar") { store.archive(id) }
                     Button("Eliminar sesión", role: .destructive) { store.remove(removal.item) }
                 case .project:
                     Button("Quitar de Hive", role: .destructive) { store.remove(removal.item) }
@@ -164,15 +169,10 @@ private struct StoreDialogs: ViewModifier {
                 set: { if !$0 { store[keyPath: keyPath] = nil } })
     }
 
-    private func checkoutMessage(_ pending: PendingCheckout) -> String {
-        let head = pending.currentHead.isEmpty ? "un commit suelto (HEAD desacoplado)" : "«\(pending.currentHead)»"
-        var text = "La carpeta principal está en \(head). Esta rama no tiene worktree, así que para trabajar en ella hay que cambiar la carpeta principal."
-        if pending.dirty {
-            text += "\n\nHay cambios sin commitear: git los lleva a la nueva rama, o cancela el checkout si chocan."
-        }
-        if pending.runningElsewhere > 0 {
-            text += "\n\n\(pending.runningElsewhere == 1 ? "Una sesión abierta" : "\(pending.runningElsewhere) sesiones abiertas") en otras ramas de la carpeta principal van a quedar viendo esta rama."
-        }
-        return text
+    /// Al cerrarse, saca de la cola justo la alerta que se mostró (y no la siguiente).
+    private var alertPresence: Binding<Bool> {
+        let shown = store.alert?.id
+        return Binding(get: { store.alert != nil },
+                       set: { if !$0, let shown { store.dismissAlert(shown) } })
     }
 }

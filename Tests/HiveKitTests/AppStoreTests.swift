@@ -89,6 +89,7 @@ struct AppStoreProjectTests {
         #expect(reloaded.selection == .session(sessionId))
         #expect(reloaded.runtimes[sessionId]?.status == .dormant)
         #expect(reloaded.isExpanded(project.id))
+        #expect(reloaded.mainHead(of: project.id) == "main") // guardada: no hace falta leer git al cargar
         reloaded.select(.project(project.id))
         reloaded.openProject(project.id)
         #expect(reloaded.selection == .session(sessionId)) // recordó la última sesión
@@ -117,6 +118,9 @@ struct AppStoreProjectTests {
         #expect(store.repoProjects.first?.color == .blue)
         #expect(store.repoProjects.first?.icon == .initials)
         #expect(store.runtimes[session.id]?.status == .dormant)
+        // Al cargar no se lee git: el estado viejo no tenía la rama y la trae la primera revisión.
+        #expect(store.mainHead(of: store.repoProjects[0].id) == "")
+        await store.refreshGitNow()
         #expect(store.mainHead(of: store.repoProjects[0].id) == "main")
     }
 
@@ -167,6 +171,8 @@ struct AppStoreProjectTests {
         #expect(pending.branchName == "fix" && pending.currentHead == "main")
         #expect(pending.after == .createSession(.codex))
         #expect(pending.dirty)
+        #expect(pending.message.contains("La carpeta principal está en «main»"))
+        #expect(pending.message.contains("Hay cambios sin commitear"))
         #expect(fix.sessions.isEmpty)
 
         #expect(await store.performCheckout(pending))
@@ -237,14 +243,23 @@ struct AppStoreProjectTests {
         let branch = try #require(store.project(project.id)?.branches.last)
         let path = try #require(branch.worktreePath)
         try "cambio".write(toFile: path + "/nuevo.txt", atomically: true, encoding: .utf8)
+        store.requestNewSession(branchId: branch.id, kind: .shell)
+        let session = try #require(store.project(project.id)?.branches.last?.sessions.first)
+        store.activate(session.id)
+        #expect(store.runtimes[session.id]?.isRunning == true)
 
         #expect(!(await store.performRemove(.branch(branch.id), deleteWorktree: true)))
         #expect(store.alert?.actionTitle == "Borrar igual")
+        #expect(store.alert?.isDestructive == true)
         #expect(store.project(project.id)?.branches.count == 2)
+        // Las sesiones se cortaron antes de intentar borrar, pero siguen en Hive (dormidas).
+        #expect(store.runtimes[session.id]?.status == .dormant)
+        #expect(store.runtimes[session.id]?.isRunning == false)
 
         #expect(await store.performRemove(.branch(branch.id), deleteWorktree: true, force: true))
         #expect(!FileManager.default.fileExists(atPath: path))
         #expect(store.project(project.id)?.branches.count == 1)
+        #expect(store.runtimes[session.id] == nil)
     }
 
     @Test("Quitar un proyecto cierra sus sesiones; «Terminales» no se puede quitar")
@@ -275,12 +290,40 @@ struct AppStoreProjectTests {
         let project = try #require(store.repoProjects.first)
         _ = await store.createBranch(NewBranchRequest(projectId: project.id, name: "wt", isNew: true, mode: .worktree))
         let worktree = try #require(store.project(project.id)?.branches.last)
+        let path = try #require(worktree.worktreePath)
         store.requestRemoval(.branch(worktree.id))
         #expect(store.pendingRemoval?.isWorktree == true)
+        #expect(store.pendingRemoval?.message == "La rama de git no se borra. Podés conservar el worktree en \(path) o borrarlo.")
         store.requestRemoval(.branch(project.branches[0].id))
         #expect(store.pendingRemoval?.isWorktree == false)
+        #expect(store.pendingRemoval?.message == "La rama de git no se borra.")
         store.requestRemoval(.project(project.id))
         #expect(store.pendingRemoval?.title == "¿Quitar «repo» de Hive?")
+        #expect(store.pendingRemoval?.message == "No se borra nada del disco.")
+
+        // Con cosas corriendo, dice qué se va a detener.
+        store.requestNewSession(branchId: worktree.id, kind: .shell)
+        let session = try #require(store.project(project.id)?.branches.last?.sessions.first)
+        store.activate(session.id)
+        store.saveCommand(projectId: project.id, commandId: nil, name: "Dev", command: "npm run dev")
+        store.saveCommand(projectId: project.id, commandId: nil, name: "Cola", command: "php artisan queue:work")
+        for command in try #require(store.project(project.id)?.commands) { store.run(command.id, projectId: project.id, branchId: worktree.id) }
+        store.requestRemoval(.branch(worktree.id))
+        #expect(store.pendingRemoval?.message == "Se detienen 2 comandos y 1 sesión. La rama de git no se borra. Podés conservar el worktree en \(path) o borrarlo.")
+        store.requestRemoval(.project(project.id))
+        #expect(store.pendingRemoval?.message == "Se detienen 2 comandos y 1 sesión. No se borra nada del disco.")
+        #expect(AppStore.stoppingSummary(commands: 1, sessions: 0) == "Se detiene 1 comando.")
+        #expect(AppStore.stoppingSummary(commands: 0, sessions: 3) == "Se detienen 3 sesiones.")
+        #expect(AppStore.stoppingSummary(commands: 0, sessions: 0) == nil)
+
+        // Eliminar una sesión avisa que se va su historial y sugiere archivarla.
+        store.requestRemoval(.session(session.id))
+        #expect(store.pendingRemoval?.title == "¿Eliminar «Terminal 1»?")
+        #expect(store.pendingRemoval?.message == "Se cierra su terminal. Si la querés conservar, archivala.")
+        store.requestNewSession(branchId: worktree.id, kind: .claude)
+        let claude = try #require(store.project(project.id)?.branches.last?.sessions.last)
+        store.requestRemoval(.session(claude.id))
+        #expect(store.pendingRemoval?.message == "También se borra su historial en Hive (todo lo anterior a cada /clear). Si lo querés conservar, archivala.")
     }
 
     @Test("Renombrar, colores, apariencia y orden")
@@ -455,7 +498,7 @@ struct AppStoreSessionTests {
         #expect(s.world.badge == "1")
         let post = try #require(s.world.notifier.posts.last)
         #expect(post.title == "repo › main")
-        #expect(post.subtitle == "Claude 1 · Tu turno")
+        #expect(post.subtitle == "Hacé el login · Tu turno") // tomó el nombre del primer pedido
         #expect(post.body == "Listo, hice el login.")
         let updated = try #require(s.store.sessionContext(session.id)?.session)
         #expect(updated.lastMessage == "Listo, hice el login.")
@@ -533,7 +576,7 @@ struct AppStoreSessionTests {
         #expect(rt.status == .working)
 
         // Salida durante 10 segundos y después silencio.
-        rt.activity.touch(s.world.now.addingTimeInterval(10))
+        rt.lastOutput = s.world.now.addingTimeInterval(10)
         s.world.advance(12)
         s.store.tick()
         #expect(rt.status == .working)
@@ -675,6 +718,30 @@ struct AppStoreToolsTests {
         #expect(store.project(project.id)?.commands.isEmpty == true)
     }
 
+    @Test("Un script suelto corre con su entorno, se ve en la esquinita y se puede reiniciar")
+    func runScript() async throws {
+        let world = TestWorld()
+        let repo = GitRepo()
+        let store = world.makeStore()
+        await store.addProject(at: repo.path)
+        let project = try #require(store.repoProjects.first)
+        let id = try #require(store.runScript(name: "Preparar main", command: "composer install", projectId: project.id,
+                                              branchId: project.branches[0].id, environment: ["HIVE_BRANCH": "main", "PATH": "/otro"]))
+        let launch = try #require(world.processes.launches.last)
+        #expect(launch.args == ["-l", "-i", "-c", "composer install"])
+        #expect(launch.directory == repo.path)
+        #expect(launch.environment["HIVE_BRANCH"] == "main")
+        #expect(launch.environment["PATH"] == "/otro") // lo del script gana
+        let run = try #require(store.commandRuns.first { $0.id == id })
+        #expect(run.isScript && run.running && run.name == "Preparar main")
+        #expect(store.dockExpanded && store.dockRunId == id)
+        #expect(project.commands.isEmpty)
+        store.restartRun(id)
+        #expect(world.processes.launches.count == 2)
+        #expect(world.processes.launches.last?.environment["HIVE_BRANCH"] == "main")
+        #expect(store.runScript(name: "x", command: "y", projectId: project.id, branchId: UUID()) == nil)
+    }
+
     @Test("Los comandos corren en la rama abierta del proyecto")
     func commandBranch() async throws {
         let world = TestWorld()
@@ -692,6 +759,19 @@ struct AppStoreToolsTests {
         let command = try #require(store.project(project.id)?.commands.first)
         store.run(command.id, projectId: project.id, branchId: worktree.id)
         #expect(world.processes.launches.last?.directory == worktree.worktreePath)
+
+        // Terminó, y el worktree se movió por fuera (git worktree move): correrlo de nuevo reutiliza la
+        // pestaña, pero en la carpeta nueva.
+        let run = try #require(store.commandRuns.first)
+        store.commandExited(run.id, terminal: try #require(run.terminal), code: 0)
+        let moved = repo.dir.url.path + "/wt-movido"
+        repo.sh("git worktree move \(shellQuote(try #require(worktree.worktreePath))) \(shellQuote(moved))")
+        await store.refreshGitNow()
+        #expect(store.project(project.id)?.branches.last?.worktreePath == moved)
+        store.run(command.id, projectId: project.id, branchId: worktree.id)
+        #expect(store.commandRuns.count == 1)
+        #expect(world.processes.launches.last?.directory == moved)
+        #expect(run.directory == moved)
     }
 
     @Test("MCP: guardar y quitar actualiza el .mcp.json")

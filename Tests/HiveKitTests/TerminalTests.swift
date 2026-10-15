@@ -137,4 +137,76 @@ struct TerminalTests {
         #expect(await waitUntil { rt.status == .exited(4) })
         #expect(!rt.isRunning)
     }
+
+    @Test("Reiniciar un agente espera a que termine el proceso viejo y no muestra «terminada» en el medio")
+    func relaunchWaitsForExit() async throws {
+        let real = try await RealSessionStore(kind: .claude)
+        let store = real.store
+        let rt = try #require(store.runtimes[real.session.id])
+        let old = try #require(rt.terminal)
+        #expect(await waitUntil { old.fullText().contains("listo") })
+        store.relaunch(real.session.id)
+        store.relaunch(real.session.id) // un doble clic no lanza dos veces
+        #expect(rt.terminal === old) // todavía esperando al proceso viejo
+        #expect(await waitUntil { rt.terminal !== old })
+        #expect(!old.isProcessRunning)
+        #expect(old.fullText().contains("chau"))
+        #expect(rt.status == .idle && rt.isRunning)
+        try? await Task.sleep(nanoseconds: 200_000_000)
+        #expect(rt.status == .idle) // el aviso de fin del proceso viejo no pisa a la nueva
+        store.stop(real.session.id)
+        #expect(await waitUntil { rt.status == .exited(0) })
+    }
+
+    @Test("Si la archivás mientras se reinicia, no se vuelve a lanzar")
+    func archiveDuringRelaunch() async throws {
+        let real = try await RealSessionStore(kind: .claude)
+        let store = real.store
+        let rt = try #require(store.runtimes[real.session.id])
+        let old = try #require(rt.terminal)
+        #expect(await waitUntil { old.fullText().contains("listo") })
+        store.relaunch(real.session.id)
+        store.archive(real.session.id)
+        #expect(await waitUntil { store.relaunching.isEmpty })
+        #expect(!old.isProcessRunning)
+        #expect(rt.terminal == nil && !rt.isRunning)
+        #expect(store.sessionContext(real.session.id)?.session.isArchived == true)
+    }
+
+    @Test("La salida de la terminal marca la última actividad")
+    func outputTouchesActivity() async throws {
+        let real = try await RealSessionStore(kind: .shell)
+        let rt = try #require(real.store.runtimes[real.session.id])
+        let before = Date()
+        rt.terminal?.sendInput(Array("echo hola\r".utf8)[...])
+        #expect(await waitUntil { rt.lastOutput >= before })
+        rt.terminal?.sendInput(Array("exit\r".utf8)[...])
+        #expect(await waitUntil { !rt.isRunning })
+    }
+}
+
+/// Un store que lanza procesos de verdad, con una sesión abierta. Para los agentes usa un «claude»
+/// falso (un script que saluda, espera y se despide con SIGTERM): nunca el de verdad.
+@MainActor
+private final class RealSessionStore {
+    let world = TestWorld()
+    let repo = GitRepo()
+    let bin = TempDir("hive-bin")
+    let store: AppStore
+    let session: Session
+
+    init(kind: SessionKind) async throws {
+        let script = bin.write("claude", "#!/bin/sh\ntrap 'echo chau; exit 0' TERM\necho listo\nwhile :; do sleep 0.05; done\n")
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+        var real = world.environment
+        real.processes = TerminalProcessStarter()
+        real.loginShell = "/bin/sh"
+        real.cachedLoginPATH = "\(bin.path):/usr/bin:/bin"
+        store = AppStore(environment: real)
+        await store.addProject(at: repo.path)
+        let project = try #require(store.repoProjects.first)
+        store.requestNewSession(branchId: project.branches[0].id, kind: kind)
+        session = try #require(store.project(project.id)?.allSessions.first)
+        store.activate(session.id)
+    }
 }

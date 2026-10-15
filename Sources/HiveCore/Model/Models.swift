@@ -64,10 +64,13 @@ public struct Session: Identifiable, Codable, Hashable, Sendable {
     /// Si tiene fecha, la sesión está archivada: no aparece en el sidebar ni en las pestañas,
     /// pero conserva su conversación para restaurarla.
     public var archivedAt: Date?
+    /// Si el nombre lo pone Hive (nil cuenta como sí): la sesión toma el nombre de lo primero que le
+    /// pedís. Al renombrarla a mano pasa a false y Hive no lo vuelve a tocar.
+    public var autoNamed: Bool?
 
     public init(id: UUID = UUID(), name: String, kind: SessionKind, createdAt: Date = Date(),
                 agentSessionId: String? = nil, lastLaunchedAt: Date? = nil, lastMessage: String? = nil,
-                lastActivityAt: Date? = nil, archivedAt: Date? = nil) {
+                lastActivityAt: Date? = nil, archivedAt: Date? = nil, autoNamed: Bool? = nil) {
         self.id = id
         self.name = name
         self.kind = kind
@@ -77,6 +80,7 @@ public struct Session: Identifiable, Codable, Hashable, Sendable {
         self.lastMessage = lastMessage
         self.lastActivityAt = lastActivityAt
         self.archivedAt = archivedAt
+        self.autoNamed = autoNamed
     }
 
     public var isArchived: Bool { archivedAt != nil }
@@ -260,12 +264,17 @@ public struct HiveState: Codable, Equatable, Sendable {
     public var expanded: [UUID]
     /// Última sesión abierta en cada proyecto (para volver a ella al elegir el proyecto).
     public var lastSessions: [UUID: UUID]?
+    /// Rama que tenía la carpeta principal de cada repo ("" si HEAD estaba desacoplado), para no
+    /// leer git al arrancar. Los estados viejos no la tienen.
+    public var mainHeads: [UUID: String]?
 
-    public init(projects: [Project], selection: SidebarItem? = nil, expanded: [UUID] = [], lastSessions: [UUID: UUID]? = nil) {
+    public init(projects: [Project], selection: SidebarItem? = nil, expanded: [UUID] = [], lastSessions: [UUID: UUID]? = nil,
+                mainHeads: [UUID: String]? = nil) {
         self.projects = projects
         self.selection = selection
         self.expanded = expanded
         self.lastSessions = lastSessions
+        self.mainHeads = mainHeads
     }
 }
 

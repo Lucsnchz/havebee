@@ -71,12 +71,12 @@ struct ModelTests {
     @Test("El estado guardado ida y vuelta queda igual")
     func stateRoundTrip() throws {
         let session = Session(name: "Claude 1", kind: .claude, createdAt: .reference, agentSessionId: "abc",
-                              lastMessage: "Listo", lastActivityAt: .reference, archivedAt: nil)
+                              lastMessage: "Listo", lastActivityAt: .reference, archivedAt: nil, autoNamed: false)
         let branch = Branch(name: "main", mode: .main, sessions: [session], color: .red)
         let project = Project(name: "demo", path: "/repo", branches: [branch], ignoredWorktrees: ["/x"], color: .green,
                               icon: .image("/logo.png"), commands: [ProjectCommand(name: "Dev", command: "npm run dev")])
         let state = HiveState(projects: [project, .scratch(home: "/h")], selection: .session(session.id),
-                              expanded: [project.id], lastSessions: [project.id: session.id])
+                              expanded: [project.id], lastSessions: [project.id: session.id], mainHeads: [project.id: "main"])
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         let decoder = JSONDecoder()
@@ -105,9 +105,11 @@ struct ModelTests {
         #expect(project.commands.isEmpty)
         #expect(!project.isScratch)
         #expect(state.lastSessions == nil)
+        #expect(state.mainHeads == nil)
         let session = try #require(project.branches.first?.sessions.first)
         #expect(session.lastMessage == nil)
         #expect(!session.isArchived)
+        #expect(session.autoNamed == nil) // cuenta como automático
     }
 
     @Test("Íconos de proyecto se guardan y leen", arguments: [
@@ -198,5 +200,33 @@ struct JSONValueTests {
         #expect(value["s"]?.object == nil)
         #expect(value.string == nil)
         #expect(JSONValue.string("x")["clave"] == nil)
+    }
+}
+
+@Suite("Estado guardado que no se puede leer")
+struct StateStoreUnreadableTests {
+    @Test("Un archivo sin permiso de lectura no se toma como vacío ni se aparta")
+    func unreadableFile() throws {
+        let dir = TempDir()
+        let file = dir.write("state.json", "{\"projects\": []}")
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: file.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: file.path) }
+        let store = StateStore(file: file)
+        guard case .unreadable(let reason) = store.load() else {
+            Issue.record("Esperaba un estado ilegible")
+            return
+        }
+        #expect(!reason.isEmpty)
+        #expect(FileManager.default.fileExists(atPath: file.path))
+    }
+
+    @Test("Una carpeta en lugar del archivo tampoco se pisa")
+    func directoryInsteadOfFile() throws {
+        let dir = TempDir()
+        let file = dir.subdir("state.json")
+        guard case .unreadable = StateStore(file: file).load() else {
+            Issue.record("Esperaba un estado ilegible")
+            return
+        }
     }
 }
