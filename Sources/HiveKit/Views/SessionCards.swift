@@ -9,13 +9,19 @@ struct SessionCard: View {
     let branch: Branch
     let session: Session
 
+    /// Abre la sesión y despliega su proyecto y su rama en el árbol (desde el Inicio pueden estar
+    /// plegados, y entonces el sidebar no marcaba nada).
+    static func open(_ id: UUID, in store: AppStore) {
+        HiveNavigator.reveal(store, session: id)
+    }
+
     var body: some View {
         let rt = store.runtimes[session.id]
         let status = rt?.status ?? .dormant
         let unseen = rt?.unseen ?? false
         let ring = Activity.Ring.of(status: status, unseen: unseen)
         Button {
-            store.select(.session(session.id))
+            Self.open(session.id, in: store)
         } label: {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {

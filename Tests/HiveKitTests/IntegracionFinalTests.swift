@@ -252,4 +252,23 @@ struct IntegracionFinalTests {
         #expect(await waitUntil { store.runtimes[session.id]?.status == .waiting })
         #expect(store.sessionContext(session.id)?.session.name == "Revisá los tests")
     }
+
+    @Test("Abrir una sesión desde el Inicio despliega su proyecto y su rama en el árbol")
+    func homeCardReveals() async throws {
+        let world = TestWorld()
+        let repo = GitRepo(name: "tienda")
+        defer { withExtendedLifetime(repo) {} }
+        let store = world.makeStore()
+        await store.addProject(at: repo.path)
+        let project = try #require(store.repoProjects.first)
+        store.requestNewSession(branchId: project.branches[0].id, kind: .claude)
+        let session = try #require(store.project(project.id)?.allSessions.first)
+        store.select(nil)
+        store.setExpanded(project.id, false)
+        store.setExpanded(project.branches[0].id, false)
+        SessionCard.open(session.id, in: store)
+        #expect(store.selection == .session(session.id))
+        #expect(store.isExpanded(project.id))
+        #expect(store.isExpanded(project.branches[0].id))
+    }
 }

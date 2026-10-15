@@ -204,9 +204,7 @@ struct HistorySearchView: View {
         if restore {
             store.unarchive(hit.sessionId)
         } else {
-            store.setExpanded(ctx.project.id, true)
-            store.setExpanded(ctx.branch.id, true)
-            store.select(.session(hit.sessionId))
+            HiveNavigator.reveal(store, session: ctx.session.id)
         }
         dismiss()
     }
