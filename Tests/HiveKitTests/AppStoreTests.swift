@@ -209,6 +209,26 @@ struct AppStoreProjectTests {
         #expect(store.gitStatus(for: main, in: updated) == nil)
     }
 
+    @Test("Un worktree borrado por fuera desaparece solo de Hive, con la selección y sus sesiones")
+    func worktreeDeletedOutside() async throws {
+        let world = TestWorld()
+        let repo = GitRepo()
+        let store = world.makeStore()
+        await store.addProject(at: repo.path)
+        let project = try #require(store.repoProjects.first)
+        _ = await store.createBranch(NewBranchRequest(projectId: project.id, name: "efimera", isNew: true, mode: .worktree))
+        let branch = try #require(store.project(project.id)?.branches.last)
+        store.requestNewSession(branchId: branch.id, kind: .claude)
+        let session = try #require(store.project(project.id)?.branches.last?.sessions.first)
+        store.select(.session(session.id))
+        let path = try #require(branch.worktreePath)
+        repo.sh("git worktree remove --force \(shellQuote(path)) && git branch -D efimera")
+        await store.refreshGitNow()
+        #expect(store.project(project.id)?.branches.map(\.name) == ["main"])
+        #expect(store.runtimes[session.id] == nil)
+        #expect(store.selection == .project(project.id))
+    }
+
     @Test("Quitar una rama: el worktree se conserva y no vuelve a aparecer")
     func removeBranchKeepingWorktree() async throws {
         let world = TestWorld()

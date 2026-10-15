@@ -241,12 +241,24 @@ public final class AppStore {
         if r.ok { await addProject(at: path) } else { alert = AppAlert(title: "No se pudo inicializar git", message: r.errorMessage) }
     }
 
-    /// Suma los worktrees que existen en git pero no en Hive. Devuelve si cambió algo.
+    /// Suma los worktrees que existen en git pero no en Hive y saca los que se borraron por fuera
+    /// (salvo que tengan una sesión corriendo). Devuelve si cambió algo.
     @discardableResult
     func syncWorktrees(_ projectId: UUID, _ worktrees: [GitWorktree]) -> Bool {
-        guard let project = project(projectId), let result = WorktreeSync.apply(worktrees, to: project) else { return false }
+        let runtimes = self.runtimes
+        guard let project = project(projectId),
+              let result = WorktreeSync.apply(worktrees, to: project, isBusy: { branch in
+                  branch.sessions.contains { runtimes[$0.id]?.isRunning == true }
+              }) else { return false }
+        let gone = project.branches.filter { result.removed.contains($0.id) }
+        let selectionWasInside = gone.contains { branch in
+            selection == .branch(branch.id) || branch.sessions.contains { selection == .session($0.id) }
+        }
+        terminate(gone.flatMap { $0.sessions.map(\.id) })
         projects.updateProject(projectId) { $0 = result.project }
         expanded.formUnion(result.added)
+        expanded.subtract(result.removed)
+        if selectionWasInside { select(.project(projectId)) }
         scheduleSave()
         return true
     }
