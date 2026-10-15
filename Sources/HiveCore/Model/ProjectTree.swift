@@ -182,6 +182,96 @@ extension Project {
     }
 }
 
+// MARK: - Navegación con el teclado
+
+/// Las pestañas de un proyecto (vista compacta y ⌘1…⌘9): cada sesión activa con su rama.
+public enum ProjectTabs {
+    public struct Tab: Identifiable, Equatable, Sendable {
+        public let branch: Branch
+        public let session: Session
+        public var id: UUID { session.id }
+
+        public init(branch: Branch, session: Session) {
+            self.branch = branch
+            self.session = session
+        }
+    }
+
+    /// Las pestañas en orden y si hace falta mostrar la rama (cuando hay sesiones de más de una).
+    public static func make(_ project: Project) -> (tabs: [Tab], showBranch: Bool) {
+        let tabs = project.branches.flatMap { branch in branch.activeSessions.map { Tab(branch: branch, session: $0) } }
+        let branches = Set(tabs.map(\.branch.id))
+        return (tabs, branches.count > 1)
+    }
+}
+
+/// Una sesión que puede estar esperándote (para «Siguiente que te espera», ⌘J).
+public struct WaitingCandidate: Equatable, Sendable {
+    public let sessionId: UUID
+    /// Pidió permiso o una respuesta (estado «Necesita permiso»).
+    public let needsPermission: Bool
+    /// Terminó su turno mientras no la mirabas.
+    public let unseen: Bool
+    public let lastActivityAt: Date?
+
+    public init(sessionId: UUID, needsPermission: Bool, unseen: Bool, lastActivityAt: Date?) {
+        self.sessionId = sessionId
+        self.needsPermission = needsPermission
+        self.unseen = unseen
+        self.lastActivityAt = lastActivityAt
+    }
+}
+
+/// Decisiones de los atajos para moverse entre sesiones y proyectos.
+public enum SessionNavigation {
+    /// Las sesiones de un proyecto en el mismo orden que las pestañas (sin las archivadas).
+    public static func orderedSessions(in project: Project) -> [Session] {
+        ProjectTabs.make(project).tabs.map(\.session)
+    }
+
+    /// La sesión `delta` lugares más allá de `id`, dando la vuelta en los extremos. Si `id` no es
+    /// una pestaña del proyecto (por ejemplo, estás en el Resumen), hacia adelante va a la primera
+    /// y hacia atrás a la última.
+    public static func adjacentSession(of id: UUID?, delta: Int, in project: Project) -> UUID? {
+        adjacent(of: id, delta: delta, in: orderedSessions(in: project).map(\.id))
+    }
+
+    /// El proyecto `delta` lugares más allá de `id`, en el orden del sidebar y dando la vuelta.
+    public static func adjacentProject(of id: UUID?, delta: Int, in projects: [Project]) -> UUID? {
+        adjacent(of: id, delta: delta, in: projects.map(\.id))
+    }
+
+    /// La que más te necesita: primero las que piden permiso y después las que terminaron sin que
+    /// las vieras; en cada grupo, la que espera hace más. `current` (la que estás mirando) se salta.
+    public static func nextWaiting(candidates: [WaitingCandidate], excluding current: UUID? = nil) -> UUID? {
+        let waiting = candidates.filter { ($0.needsPermission || $0.unseen) && $0.sessionId != current }
+        return waiting.min { a, b in
+            if a.needsPermission != b.needsPermission { return a.needsPermission }
+            return (a.lastActivityAt ?? .distantPast) < (b.lastActivityAt ?? .distantPast)
+        }?.sessionId
+    }
+
+    static func adjacent(of id: UUID?, delta: Int, in ids: [UUID]) -> UUID? {
+        guard !ids.isEmpty else { return nil }
+        guard let id, let index = ids.firstIndex(of: id) else {
+            return delta >= 0 ? ids.first : ids.last
+        }
+        let count = ids.count
+        return ids[((index + delta) % count + count) % count]
+    }
+}
+
+extension String {
+    /// Acorta por el medio con «…» para que entre en `max` caracteres ("feature/checkout-nuevo" →
+    /// "feature…o-nuevo"). Así se ven el principio y el final, que suelen ser lo que distingue.
+    public func middleTruncated(max: Int) -> String {
+        guard count > max else { return self }
+        guard max > 1 else { return max == 1 ? "…" : "" }
+        let head = (max - 1) / 2
+        return String(prefix(head)) + "…" + String(suffix(max - 1 - head))
+    }
+}
+
 extension Array {
     /// Igual que `move(fromOffsets:toOffset:)` de SwiftUI, para usarlo fuera de las vistas.
     public mutating func moveItems(fromOffsets source: IndexSet, toOffset destination: Int) {

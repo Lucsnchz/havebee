@@ -4,6 +4,9 @@ import SwiftUI
 
 /// La app (la arranca el ejecutable `Hive`).
 public struct HiveApplication: App {
+    /// Identificador de la ventana principal (también es el de su NSWindow).
+    static let mainWindowId = "main"
+
     @NSApplicationDelegateAdaptor(HiveAppDelegate.self) private var appDelegate
     @State private var store = AppStore.shared
     @AppStorage("layout") private var layout: HiveLayout = .tree
@@ -11,29 +14,16 @@ public struct HiveApplication: App {
     public init() {}
 
     public var body: some Scene {
-        Window("Hive", id: "main") {
+        Window("Hive", id: Self.mainWindowId) {
             ContentView()
                 .environment(store)
                 .frame(minWidth: 880, minHeight: 540)
+                // Con la vista compacta, barra de herramientas baja y sin título (las pestañas ya lo dicen).
+                .background(WindowChrome(compact: layout == .compact))
         }
         .defaultSize(width: 1280, height: 800)
         .commands {
-            CommandGroup(replacing: .newItem) {
-                Button("Agregar proyecto…") { store.addProjectInteractive() }
-                    .keyboardShortcut("o")
-            }
-            CommandMenu("Ir") {
-                Button("Buscar…") { store.showSwitcher = true }
-                    .keyboardShortcut("k")
-            }
-            CommandGroup(before: .sidebar) {
-                Picker("Vista", selection: $layout) {
-                    Text("Árbol").tag(HiveLayout.tree)
-                    Text("Compacta").tag(HiveLayout.compact)
-                }
-                .pickerStyle(.inline)
-                Divider()
-            }
+            HiveCommands(store: store)
         }
 
         Settings {
@@ -43,11 +33,31 @@ public struct HiveApplication: App {
 }
 
 final class HiveAppDelegate: NSObject, NSApplicationDelegate {
+    private var keyMonitor: Any?
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // Hive tiene una sola ventana: sin pestañas de ventana (y sin «Nueva pestaña» en ⌘T).
+        NSWindow.allowsAutomaticWindowTabbing = false
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Necesario cuando se corre el binario suelto (swift run) en lugar del .app.
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
-        MainActor.assumeIsolated { AppStore.shared.start() }
+        MainActor.assumeIsolated {
+            let store = AppStore.shared
+            store.start()
+            if let notifier = store.environment.notifier as? SystemNotifier {
+                notifier.onReply = { [weak store] id, text in
+                    guard let store else { return }
+                    ReplySender.send(text, sessionId: id, store: store)
+                }
+            }
+            keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                let handled = MainActor.assumeIsolated { HiveCommands.handleKeyDown(event) }
+                return handled ? nil : event
+            }
+        }
     }
 
     /// Cerrar la ventana no corta las sesiones: siguen corriendo y avisando.
@@ -59,18 +69,65 @@ final class HiveAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         MainActor.assumeIsolated {
-            let store = AppStore.shared
-            if let message = QuitWarning.message(working: store.workingCount, commands: store.runningCommandsCount) {
+            Self.terminateReply(store: AppStore.shared) { message in
                 let alert = NSAlert()
                 alert.messageText = message
                 alert.informativeText = "Si salís se cortan. Las conversaciones se pueden reanudar al volver a abrir Hive."
                 alert.addButton(withTitle: "Salir")
                 alert.addButton(withTitle: "Cancelar")
-                if alert.runModal() != .alertFirstButtonReturn { return .terminateCancel }
+                return alert.runModal() == .alertFirstButtonReturn
             }
-            store.shutdown()
-            return .terminateNow
         }
+    }
+
+    /// Si hay sesiones trabajando o comandos corriendo, pregunta con `confirm` antes de salir.
+    /// Si cancelás, no se corta nada.
+    @MainActor
+    static func terminateReply(store: AppStore, confirm: (String) -> Bool) -> NSApplication.TerminateReply {
+        if let message = QuitWarning.message(working: store.workingCount, commands: store.runningCommandsCount),
+           !confirm(message) {
+            return .terminateCancel
+        }
+        store.shutdown()
+        return .terminateNow
+    }
+}
+
+/// Ajusta la ventana según la vista: en la compacta, barra de herramientas baja y sin título.
+/// La escena no puede cambiar `.windowToolbarStyle` según un ajuste, así que se hace en AppKit.
+private struct WindowChrome: NSViewRepresentable {
+    let compact: Bool
+
+    func makeNSView(context: Context) -> WindowChromeView { WindowChromeView() }
+
+    func updateNSView(_ view: WindowChromeView, context: Context) {
+        view.compact = compact
+    }
+}
+
+private final class WindowChromeView: NSView {
+    var compact = false {
+        didSet { if compact != oldValue { apply() } }
+    }
+    private var observation: NSKeyValueObservation?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        // SwiftUI vuelve a mostrar el título cada vez que cambia: lo ocultamos de nuevo.
+        observation = window?.observe(\.titleVisibility) { [weak self] window, _ in
+            MainActor.assumeIsolated { self?.hideTitleIfCompact(window) }
+        }
+        apply()
+    }
+
+    private func apply() {
+        guard let window else { return }
+        window.toolbarStyle = compact ? .unifiedCompact : .unified
+        window.titleVisibility = compact ? .hidden : .visible
+    }
+
+    private func hideTitleIfCompact(_ window: NSWindow) {
+        if compact && window.titleVisibility != .hidden { window.titleVisibility = .hidden }
     }
 }
 
