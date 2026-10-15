@@ -419,4 +419,25 @@ struct IntegracionFinalTests {
         #expect(store.git.recentCommits(repo.path, limit: 1).first?.subject == "Primer commit")
         #expect(await store.createFirstCommit(projectId: UUID()) == "No encontré el proyecto.")
     }
+
+    @Test("Un worktree que ya no está se marca en la rama con «Quitar de Hive…»")
+    func missingWorktreeCallout() async throws {
+        let world = TestWorld()
+        let repo = GitRepo(name: "tienda")
+        defer { withExtendedLifetime((world, repo)) {} }
+        let store = world.makeStore()
+        await store.addProject(at: repo.path)
+        let project = try #require(store.repoProjects.first)
+        #expect(await store.createBranch(NewBranchRequest(projectId: project.id, name: "vieja", isNew: true, mode: .worktree,
+                                                          copyIgnored: false, setupCommand: nil)) == nil)
+        let branch = try #require(store.project(project.id)?.branches.first { $0.name == "vieja" })
+        repo.sh("git worktree remove --force \(shellQuote(try #require(branch.worktreePath)))")
+        await store.refreshGitNow()
+        #expect(store.isMissing(branch))
+        let drawn = await colors(NavigationStack { BranchDetailView(branchId: branch.id) }.environment(store),
+                                 size: CGSize(width: 900, height: 360), name: "rama-worktree-faltante")
+        #expect(drawn.allSatisfy { $0 > 3 })
+        store.requestRemoval(.branch(branch.id))
+        #expect(store.pendingRemoval?.isWorktree == true)
+    }
 }

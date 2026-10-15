@@ -25,6 +25,13 @@ struct BranchDetailView: View {
                         BranchHeader(project: ctx.project, branch: ctx.branch, status: status, directory: dir)
                     }
 
+                    if store.isMissing(ctx.branch) {
+                        Callout(icon: "exclamationmark.triangle.fill", color: Theme.attention,
+                                title: "No encuentro la carpeta de este worktree",
+                                text: "Se borró o se movió por fuera de Hive. Si ya no la usás, quitá la rama de Hive (la rama de git no se borra).",
+                                action: ("Quitar de Hive…", { store.requestRemoval(.branch(branchId)) }))
+                    }
+
                     if !active {
                         let head = store.mainHeads[ctx.project.id] ?? ""
                         if let operation = mainStatus?.operation {

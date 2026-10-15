@@ -246,7 +246,7 @@ private struct BranchRow: View {
             Spacer(minLength: 4)
             if missing {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.yellow)
+                    .foregroundStyle(Theme.attention)
             }
             if hovering {
                 Menu {
@@ -277,10 +277,8 @@ private struct BranchRow: View {
         .accessibilityLabel(accessibilityText(active: active, status: status))
     }
 
-    private var missing: Bool {
-        guard branch.mode == .worktree, let path = branch.worktreePath else { return false }
-        return !FileManager.default.fileExists(atPath: path)
-    }
+    /// Lo sabe la revisión de git (en segundo plano): mirar el disco acá sería hacerlo en cada dibujo.
+    private var missing: Bool { store.isMissing(branch) }
 
     private func helpText(active: Bool) -> String {
         if missing { return "La carpeta del worktree ya no existe: \(branch.worktreePath?.tildePath ?? "")" }
