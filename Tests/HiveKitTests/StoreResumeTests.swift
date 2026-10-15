@@ -12,11 +12,13 @@ private final class ResumeWorld {
     let repo = GitRepo()
     var store: AppStore!
 
-    /// Guarda un estado con estas sesiones en la rama principal y lo carga.
-    func load(_ sessions: [Session]) {
+    /// Guarda un estado con estas sesiones en la rama principal, lo carga y hace la primera revisión
+    /// de git (como `start()`): hasta que git confirma la rama de la carpeta no se lanza nada ahí.
+    func load(_ sessions: [Session]) async {
         let project = Project(name: "repo", path: repo.path, branches: [Branch(name: "main", mode: .main, sessions: sessions)])
         try! StateStore(file: world.paths.stateFile).save(HiveState(projects: [project], mainHeads: [project.id: "main"]))
         store = world.makeStore()
+        await store.refreshGitNow()
     }
 
     func launchArgs(_ id: UUID) throws -> [String] {
@@ -55,7 +57,7 @@ struct StoreResumeTests {
     func claudeResume() async throws {
         let w = ResumeWorld()
         let session = Session(name: "Claude 1", kind: .claude, createdAt: .reference, agentSessionId: "abc-123", lastLaunchedAt: .reference)
-        w.load([session])
+        await w.load([session])
         #expect(Array(try w.launchArgs(session.id).prefix(4)) == ["--session-id", "abc-123", "--name", "Claude 1"])
 
         let projects = w.world.agents.claudeConfigDir.appendingPathComponent("projects/-repo")
@@ -74,7 +76,7 @@ struct StoreResumeTests {
         try w.codexThread("t-propio", cwd: w.repo.path, modified: since.addingTimeInterval(20))
         try w.codexThread("t-de-otra", cwd: w.repo.path, modified: since.addingTimeInterval(40)) // más nuevo, pero ajeno
         try w.codexThread("t-otra-carpeta", cwd: "/otra/carpeta", modified: since.addingTimeInterval(60))
-        w.load([claimed, lost])
+        await w.load([claimed, lost])
         let args = try w.launchArgs(lost.id)
         #expect(args.first == "resume")
         #expect(args.last == "t-propio")
@@ -88,7 +90,7 @@ struct StoreResumeTests {
         let saved = Session(name: "Gemini 1", kind: .gemini, createdAt: since, agentSessionId: "g-guardado", lastLaunchedAt: since)
         let unknown = Session(name: "Gemini 2", kind: .gemini, createdAt: since, lastLaunchedAt: since)
         try w.geminiChat("g-mas-nuevo", cwd: w.repo.path, modified: since.addingTimeInterval(30))
-        w.load([saved, unknown])
+        await w.load([saved, unknown])
         #expect(try w.launchArgs(saved.id) == ["--resume", "g-guardado"])
         #expect(try w.launchArgs(unknown.id) == ["--resume", "g-mas-nuevo"])
     }
@@ -99,7 +101,7 @@ struct StoreResumeTests {
         w.world.launchesInBackground = true
         let claude = Session(name: "Claude 1", kind: .claude, createdAt: .reference)
         let shell = Session(name: "Terminal 1", kind: .shell, createdAt: .reference)
-        w.load([claude, shell])
+        await w.load([claude, shell])
         let rt = try #require(w.store.runtimes[claude.id])
         w.store.activate(claude.id)
         w.store.activate(claude.id) // otra vez mientras se arma: no lanza dos veces

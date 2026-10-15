@@ -72,6 +72,11 @@ public final class AppStore {
     /// Sube con cada cambio de git que hace Hive (checkout, proyecto o rama nuevos, rama quitada).
     /// Una revisión que empezó antes descarta las ramas actuales que leyó, porque pueden ser viejas.
     @ObservationIgnored var gitGeneration = 0
+    /// Repos cuya rama actual ya leyó git en esta ejecución. La que viene del estado guardado puede
+    /// estar vieja (si cambiaste de rama con Hive cerrado): hasta confirmarla no se lanza nada ahí.
+    @ObservationIgnored var confirmedHeads: Set<UUID> = []
+    /// Sesiones que abriste antes de confirmar la rama de su carpeta: las lanza la revisión de git.
+    @ObservationIgnored var awaitingHead: Set<UUID> = []
     /// Última revisión de git hecha con la app en segundo plano.
     @ObservationIgnored var lastBackgroundRefresh = Date.distantPast
     /// Sesiones y comandos a los que ya avisamos que su carpeta no existe (para no repetirlo).
@@ -226,9 +231,19 @@ public final class AppStore {
     public func activate(_ id: UUID) {
         guard let ctx = sessionContext(id), let rt = runtimes[id] else { return }
         markSeen(rt)
-        if rt.status == .dormant && isActive(ctx.branch, in: ctx.project) {
-            launch(id)
+        guard rt.status == .dormant && isActive(ctx.branch, in: ctx.project) else { return }
+        guard headConfirmed(ctx.branch, in: ctx.project) else {
+            // Recién abierta la app, la rama de la carpeta principal es la guardada: si cambió con
+            // Hive cerrado, el agente arrancaría en otra rama. La lanza la revisión cuando la confirme.
+            awaitingHead.insert(id)
+            return
         }
+        launch(id)
+    }
+
+    /// Si git ya confirmó qué rama tiene la carpeta donde corre esta rama (un worktree es siempre suyo).
+    func headConfirmed(_ branch: Branch, in project: Project) -> Bool {
+        branch.mode == .worktree || project.isScratch || confirmedHeads.contains(project.id)
     }
 
     public func appBecameActive() {

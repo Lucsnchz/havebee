@@ -158,6 +158,21 @@ struct TerminalTests {
         #expect(await waitUntil { rt.status == .exited(0) })
     }
 
+    @Test("Si la archivás mientras se reinicia, no se vuelve a lanzar")
+    func archiveDuringRelaunch() async throws {
+        let real = try await RealSessionStore(kind: .claude)
+        let store = real.store
+        let rt = try #require(store.runtimes[real.session.id])
+        let old = try #require(rt.terminal)
+        #expect(await waitUntil { old.fullText().contains("listo") })
+        store.relaunch(real.session.id)
+        store.archive(real.session.id)
+        #expect(await waitUntil { store.relaunching.isEmpty })
+        #expect(!old.isProcessRunning)
+        #expect(rt.terminal == nil && !rt.isRunning)
+        #expect(store.sessionContext(real.session.id)?.session.isArchived == true)
+    }
+
     @Test("La salida de la terminal marca la última actividad")
     func outputTouchesActivity() async throws {
         let real = try await RealSessionStore(kind: .shell)

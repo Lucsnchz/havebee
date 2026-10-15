@@ -56,6 +56,7 @@ extension AppStore {
         projects.insertRepo(project)
         gitGeneration += 1
         mainHeads[project.id] = found.head ?? ""
+        confirmedHeads.insert(project.id)
         expanded.formUnion([project.id] + project.branches.map(\.id))
         syncWorktrees(project.id, found.worktrees)
         scheduleSave()
@@ -162,6 +163,7 @@ extension AppStore {
             return false
         }
         mainHeads[ctx.project.id] = name
+        confirmedHeads.insert(ctx.project.id)
         refreshGit()
         switch pending.after {
         case .createSession(let kind): createSession(branchId: pending.branchId, kind: kind)
@@ -239,6 +241,7 @@ extension AppStore {
         if missingWorktrees != missing { missingWorktrees = missing }
         // Hive cambió git mientras leíamos: lo leído puede ser viejo. La pasada que pidió ese cambio lo corrige.
         guard generation == gitGeneration else { return }
+        confirmedHeads.formUnion(scan.heads.keys)
         var merged = mainHeads
         for (id, head) in scan.heads where project(id) != nil { merged[id] = head }
         merged = merged.filter { project($0.key) != nil }
@@ -252,6 +255,11 @@ extension AppStore {
         if let selected, let ctx = sessionContext(selected), isActive(ctx.branch, in: ctx.project) {
             activate(selected)
         }
+        // Las que abriste antes de saber la rama de su carpeta: si las seguís mirando, ahora sí se
+        // lanzan (o quedan dormidas, si resultó que la carpeta está en otra rama).
+        let waiting = awaitingHead
+        awaitingHead = []
+        for id in waiting where selection == .session(id) { activate(id) }
         var found = false
         for (id, worktrees) in scan.worktrees where syncWorktrees(id, worktrees) { found = true }
         // Hay ramas nuevas: traemos su estado de git en esta misma pasada.

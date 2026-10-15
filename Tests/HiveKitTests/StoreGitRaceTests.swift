@@ -184,4 +184,49 @@ struct StoreGitScheduleTests {
         #expect(store.runtimes[session.id]?.isRunning == true)
         #expect(world.processes.launches.count == 1)
     }
+
+    /// Un estado guardado con la carpeta principal en «main» y dos sesiones ahí; la primera abierta.
+    private func savedOnMain(_ world: TestWorld, _ repo: GitRepo) throws -> (project: Project, open: Session, other: Session) {
+        let open = Session(name: "Claude 1", kind: .claude), other = Session(name: "Claude 2", kind: .claude)
+        let project = Project(name: "repo", path: repo.path, branches: [Branch(name: "main", mode: .main, sessions: [open, other])])
+        try StateStore(file: world.paths.stateFile).save(HiveState(projects: [project], selection: .session(open.id),
+                                                                   mainHeads: [project.id: "main"]))
+        return (project, open, other)
+    }
+
+    @Test("Con la rama guardada vieja, la sesión abierta no arranca en otra rama")
+    func staleSavedHeadDoesNotLaunch() async throws {
+        let world = TestWorld()
+        let repo = GitRepo()
+        let saved = try savedOnMain(world, repo)
+        repo.sh("git checkout -q -b otra") // con Hive cerrado, alguien cambió de rama
+        let store = world.makeStore()
+        #expect(store.isActive(saved.project.branches[0], in: saved.project)) // lo guardado dice que sí...
+        store.activate(saved.open.id)
+        #expect(world.processes.launches.isEmpty) // ...pero hasta que git lo confirme no se lanza
+        await store.refreshGitNow()
+        #expect(store.mainHead(of: saved.project.id) == "otra")
+        #expect(world.processes.launches.isEmpty)
+        #expect(store.runtimes[saved.open.id]?.status == .dormant)
+        #expect(store.alert == nil) // no corría nada: no hay sesiones para mover
+    }
+
+    @Test("Con la rama guardada bien, la sesión abierta arranca apenas git la confirma")
+    func confirmedSavedHeadLaunches() async throws {
+        let world = TestWorld()
+        let repo = GitRepo()
+        let saved = try savedOnMain(world, repo)
+        let store = world.makeStore()
+        store.activate(saved.other.id) // la miraste un momento y te fuiste a otra
+        store.activate(saved.open.id)
+        #expect(world.processes.launches.isEmpty)
+        await store.refreshGitNow()
+        #expect(store.runtimes[saved.open.id]?.isRunning == true)
+        #expect(store.runtimes[saved.other.id]?.isRunning == false)
+        #expect(world.processes.launches.count == 1)
+        // Ya confirmada, abrir otra la lanza enseguida.
+        store.select(.session(saved.other.id))
+        store.activate(saved.other.id)
+        #expect(world.processes.launches.count == 2)
+    }
 }
