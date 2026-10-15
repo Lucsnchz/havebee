@@ -63,15 +63,16 @@ extension AppStore {
         let terminal = HiveTerminalView(frame: NSRect(x: 0, y: 0, width: 600, height: 300), scrollback: 5_000)
         TerminalTheme.apply(to: terminal)
         terminal.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-        let bridge = CommandBridge(runId: run.id, store: self)
-        terminal.processDelegate = bridge
+        let runId = run.id
+        let events = TerminalEvents(onExit: { [weak self] terminal, code in self?.commandExited(runId, terminal: terminal, code: code) })
+        terminal.processDelegate = events
         let env = SessionEnvironment.base(inherited: environment.inheritedEnvironment, directory: run.directory, path: currentPATH)
             .sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }
         // Shell interactivo de login: así carga nvm, aliases y lo que tengas en tu .zshrc.
         environment.processes.start(terminal, executable: environment.loginShell, args: ["-l", "-i", "-c", run.command],
                                     environment: env, directory: run.directory)
         run.terminal = terminal
-        run.bridge = bridge
+        run.events = events
         run.running = true
         run.exitCode = nil
         run.startedAt = environment.now()
@@ -94,16 +95,13 @@ extension AppStore {
 
     public func restartRun(_ id: UUID) {
         guard let run = commandRuns.first(where: { $0.id == id }) else { return }
-        if run.running { run.terminal?.terminate() }
-        run.terminal?.removeFromSuperview()
+        tearDown(run.terminal)
         start(run)
     }
 
     public func closeRun(_ id: UUID) {
         guard let index = commandRuns.firstIndex(where: { $0.id == id }) else { return }
-        let run = commandRuns[index]
-        if run.running { run.terminal?.terminate() }
-        run.terminal?.removeFromSuperview()
+        tearDown(commandRuns[index].terminal)
         commandRuns.remove(at: index)
         if dockRunId == id { dockRunId = commandRuns.last?.id }
         if commandRuns.isEmpty { dockExpanded = false }

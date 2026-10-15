@@ -59,7 +59,7 @@ extension AppStore {
     func tick() {
         let now = environment.now()
         for rt in runtimes.values where rt.kind.isAgent && rt.status == .working {
-            let verdict = SilenceRule.evaluate(now: now, workingSince: rt.workingSince, lastOutput: rt.activity.last, hooksSeen: rt.hooksSeen)
+            let verdict = SilenceRule.evaluate(now: now, workingSince: rt.workingSince, lastOutput: rt.lastOutput, hooksSeen: rt.hooksSeen)
             if verdict.stopWorking { setStatus(rt, .waiting, notify: verdict.notify ? "Espera tu respuesta." : nil) }
         }
     }

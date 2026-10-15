@@ -104,8 +104,7 @@ extension AppStore {
 
     func terminate(_ ids: [UUID]) {
         for id in ids {
-            runtimes[id]?.terminal?.terminate()
-            runtimes[id]?.terminal?.removeFromSuperview()
+            tearDown(runtimes[id]?.terminal)
             runtimes[id] = nil
             environment.notifier.clear(id)
         }

@@ -74,6 +74,10 @@ public final class AppStore {
     @ObservationIgnored var lastBackgroundRefresh = Date.distantPast
     /// Sesiones y comandos a los que ya avisamos que su carpeta no existe (para no repetirlo).
     @ObservationIgnored var warnedMissing: Set<UUID> = []
+    /// Sesiones que se están reiniciando (esperando a que termine el proceso viejo).
+    @ObservationIgnored var relaunching: Set<UUID> = []
+    /// Quienes esperan que termine el proceso de una terminal (ver `waitForExit`).
+    @ObservationIgnored var exitWaiters: [ObjectIdentifier: [CheckedContinuation<Void, Never>]] = [:]
 
     /// Carga el estado guardado. No arranca nada: eso lo hace `start()`.
     public init(environment: AppEnvironment) {

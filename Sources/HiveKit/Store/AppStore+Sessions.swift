@@ -44,10 +44,11 @@ extension AppStore {
         terminal.caretColor = ctx.project.tint.nsColor
         // En los agentes, /clear deja lo anterior en el scroll con una divisoria.
         terminal.preservesScrollbackOnClear = ctx.session.kind.isAgent
-        let bridge = TerminalBridge(sessionId: id, store: self)
-        terminal.processDelegate = bridge
-        let clock = rt.activity
-        terminal.setProcessOutputHandler { clock.touch() }
+        let events = TerminalEvents(
+            onTitle: { [weak self] title in self?.runtimes[id]?.title = title },
+            onExit: { [weak self] terminal, code in self?.processExited(id, terminal: terminal, code: code) })
+        terminal.processDelegate = events
+        terminal.setProcessOutputHandler { [weak rt] in rt?.lastOutput = Date() }
         terminal.onUserInput = { [weak self] data in self?.userInput(id, data) }
 
         var started = true
@@ -70,7 +71,7 @@ extension AppStore {
         }
         scheduleSave()
         rt.terminal = terminal
-        rt.bridge = bridge
+        rt.events = events
         rt.hooksSeen = false
         rt.workingSince = nil
         rt.status = started ? .idle : .exited(nil)
@@ -113,11 +114,28 @@ extension AppStore {
         loginPATH ?? LoginShell.fallbackPATH(home: environment.home.path, inherited: environment.inheritedEnvironment["PATH"])
     }
 
+    /// Reinicia una sesión. En un agente con el proceso vivo, primero lo corta y espera a que termine
+    /// (como mucho 2 s): así no retoma la conversación mientras la anterior sigue escribiendo. Un shell
+    /// interactivo ignora SIGTERM, así que ahí no se espera: se cierra al soltar su terminal.
     public func relaunch(_ id: UUID) {
+        guard let rt = runtimes[id], !relaunching.contains(id) else { return }
+        guard rt.kind.isAgent, rt.isRunning, let old = rt.terminal, old.isProcessRunning else {
+            replaceTerminal(id)
+            return
+        }
+        relaunching.insert(id)
+        Task { [weak self] in
+            await self?.waitForExit(old)
+            self?.relaunching.remove(id)
+            self?.replaceTerminal(id)
+        }
+    }
+
+    private func replaceTerminal(_ id: UUID) {
         guard let rt = runtimes[id] else { return }
-        if rt.isRunning { rt.terminal?.terminate() }
-        rt.terminal?.removeFromSuperview()
+        tearDown(rt.terminal)
         rt.terminal = nil
+        rt.events = nil
         rt.status = .dormant
         launch(id)
     }
@@ -126,9 +144,34 @@ extension AppStore {
         runtimes[id]?.terminal?.terminate()
     }
 
+    /// Corta el proceso de una terminal y la saca de la pantalla.
+    func tearDown(_ terminal: HiveTerminalView?) {
+        terminal?.terminate()
+        terminal?.removeFromSuperview()
+    }
+
+    /// Corta el proceso de una terminal y espera a que termine, como mucho `timeout` segundos.
+    func waitForExit(_ terminal: HiveTerminalView, timeout: TimeInterval = 2) async {
+        guard terminal.isProcessRunning else { return }
+        let key = ObjectIdentifier(terminal)
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            exitWaiters[key, default: []].append(continuation)
+            terminal.terminate()
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                self?.resumeExitWaiters(key)
+            }
+        }
+    }
+
+    private func resumeExitWaiters(_ key: ObjectIdentifier) {
+        for continuation in exitWaiters.removeValue(forKey: key) ?? [] { continuation.resume() }
+    }
+
     func processExited(_ id: UUID, terminal: HiveTerminalView, code: Int32?) {
-        // Ignoramos avisos de una terminal vieja que ya reemplazamos al reiniciar.
-        guard let rt = runtimes[id], rt.terminal === terminal else { return }
+        resumeExitWaiters(ObjectIdentifier(terminal))
+        // Ignoramos avisos de una terminal vieja que ya reemplazamos (o estamos reemplazando) al reiniciar.
+        guard let rt = runtimes[id], rt.terminal === terminal, !relaunching.contains(id) else { return }
         rt.status = .exited(code)
         rt.unseen = false
         updateBadge()
@@ -151,8 +194,7 @@ extension AppStore {
     public func archive(_ id: UUID) {
         guard let ctx = sessionContext(id) else { return }
         if let rt = runtimes[id] {
-            rt.terminal?.terminate()
-            rt.terminal?.removeFromSuperview()
+            tearDown(rt.terminal)
             rt.terminal = nil
             rt.status = .dormant
             rt.unseen = false

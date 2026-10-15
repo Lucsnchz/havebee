@@ -540,7 +540,7 @@ struct AppStoreSessionTests {
         #expect(rt.status == .working)
 
         // Salida durante 10 segundos y después silencio.
-        rt.activity.touch(s.world.now.addingTimeInterval(10))
+        rt.lastOutput = s.world.now.addingTimeInterval(10)
         s.world.advance(12)
         s.store.tick()
         #expect(rt.status == .working)
