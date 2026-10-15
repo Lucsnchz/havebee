@@ -49,7 +49,7 @@ Todo Hive se maneja con el teclado. Los atajos están en los menús **Sesión** 
 | ⌘T | Nueva sesión del mismo agente que la abierta (o Claude) en la rama actual |
 | ⇧⌘N | Nueva rama… |
 | ⌘R | Reiniciar la sesión (o reanudarla si terminó) |
-| ⌘. | Detener la sesión |
+| ⌘. | Detener la sesión (en una hoja, como el buscador, cancela) |
 | ⌘W | Archivar la sesión abierta (en Ajustes o en otra ventana, cierra) |
 | ⇧⌘W | Cerrar la ventana |
 | ⌥⌘1 / ⌥⌘2 | Mostrar u ocultar el Historial / los Cambios |
