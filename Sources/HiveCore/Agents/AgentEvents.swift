@@ -81,13 +81,19 @@ public enum AgentEventInterpreter {
         case ("claude", "Notification"):
             let type = payload["notification_type"]?.string ?? ""
             let message = payload["message"]?.string ?? ""
-            if type == "permission_prompt" || type == "elicitation_dialog" || message.localizedCaseInsensitiveContains("permission") {
+            switch notificationEffect(type: type, message: message) {
+            case .attention:
+                // Si ya pedía permiso (por ejemplo, por PermissionRequest), no hay nada nuevo que avisar.
+                guard status != .attention else { break }
                 outcome.status = .attention
                 outcome.notification = message.isEmpty ? permissionNotification : message
-            } else if status == .working {
+            case .idle:
                 // "Claude está esperando tu respuesta" después de un rato sin actividad.
+                guard status == .working else { break }
                 outcome.status = .waiting
                 outcome.notification = message.isEmpty ? nil : message
+            case .informative:
+                break
             }
         case ("claude", "Stop"):
             let full = payload["last_assistant_message"]?.string
@@ -121,6 +127,33 @@ public enum AgentEventInterpreter {
             return text.isEmpty ? nil : (entry.role, text)
         }
         return outcome
+    }
+
+    /// Qué hace un Notification de Claude según su `notification_type`.
+    enum NotificationEffect: Equatable {
+        /// Necesita que hagas algo (permiso, pregunta de un MCP, un subagente que espera).
+        case attention
+        /// Terminó y espera tu respuesta: solo cuenta si estaba trabajando.
+        case idle
+        /// Avisos del sistema que no cambian el estado (un subagente terminó, uso de la compu, cuota…).
+        case informative
+    }
+
+    static let attentionTypes: Set<String> = [
+        "permission_prompt", "elicitation_dialog", "elicitation_url_dialog", "worker_permission_prompt", "agent_needs_input",
+    ]
+    static let informativeTypes: Set<String> = [
+        "agent_completed", "push_notification", "model_refusal_fallback", "plugin_notification",
+    ]
+    static let informativePrefixes = ["computer_use_", "quota_", "auth_"]
+
+    static func notificationEffect(type: String, message: String) -> NotificationEffect {
+        if attentionTypes.contains(type) { return .attention }
+        if type == "idle_prompt" { return .idle }
+        if informativeTypes.contains(type) || informativePrefixes.contains(where: { type.hasPrefix($0) }) { return .informative }
+        // Tipo desconocido (o versiones viejas sin tipo): la palabra «permission» es el respaldo.
+        if message.localizedCaseInsensitiveContains("permission") { return .attention }
+        return type.isEmpty ? .idle : .informative
     }
 
     /// Una línea de hasta 200 caracteres para avisos y tarjetas.
