@@ -42,6 +42,45 @@ struct UsageReaderTests {
         #expect(UsageReader.codex(rolloutURL: dir.url.appendingPathComponent("no-existe.jsonl")) == nil)
     }
 
+    @Test("Codex: encuentra el token_count aunque después haya MB de salida de un comando")
+    func codexFarBack() throws {
+        let dir = TempDir("hive-usage")
+        // Un comando con mucha salida después del último token_count (en los rollouts reales llegan a ser decenas de MB).
+        let output = #"{"type":"response_item","payload":{"type":"function_call_output","call_id":"c","output":""# + String(repeating: "x", count: 3 << 20) + "\"}}\n"
+        let file = dir.write("rollout.jsonl", AHFixtures.codexRollout + "\n" + output + output)
+        let snapshot = try #require(UsageReader.codex(rolloutURL: file))
+        #expect(snapshot.limits.first?.usedPercent == 80)
+        #expect(snapshot.contextPercent != nil)
+        // Con un tope menor que la distancia, no lo encuentra (y no recorre todo el archivo).
+        #expect(UsageReader.codex(rolloutURL: file, maxScan: 1 << 20) == nil)
+    }
+
+    @Test("Recorre las líneas de atrás hacia adelante aunque crucen los pedazos")
+    func reverseLines() throws {
+        let dir = TempDir("hive-usage")
+        let lines = (1...40).map { "línea \($0) " + String(repeating: "·", count: $0 * 3) }
+        let file = dir.write("lineas.txt", lines.joined(separator: "\n") + "\n")
+        for chunk in [7, 64, 1 << 20] {
+            let handle = try FileHandle(forReadingFrom: file)
+            var seen: [String] = []
+            ReverseLines.scan(handle, maxBytes: 1 << 20, chunk: chunk) { line in
+                seen.append(String(decoding: line, as: UTF8.self))
+                return false
+            }
+            try handle.close()
+            #expect(seen == lines.reversed(), "pedazos de \(chunk) bytes")
+        }
+        // Para cuando se le pide.
+        let handle = try FileHandle(forReadingFrom: file)
+        var count = 0
+        ReverseLines.scan(handle, maxBytes: 1 << 20, chunk: 16) { _ in
+            count += 1
+            return count == 3
+        }
+        try handle.close()
+        #expect(count == 3)
+    }
+
     @Test("Claude: contexto y límites de 5 horas y semanal del statusLine")
     func claude() throws {
         let json = try #require(JSONValue.parse(Self.claudeStatus))

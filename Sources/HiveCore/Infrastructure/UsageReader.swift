@@ -60,28 +60,47 @@ public struct UsageSnapshot: Equatable, Sendable {
 /// Lee el uso de contexto y los límites de Claude (lo que su statusLine le pasa a Hive) y de Codex
 /// (el último `token_count` de su rollout).
 public enum UsageReader {
-    /// Codex: el último `token_count` de los últimos 64 KB del rollout.
-    public static func codex(rolloutURL: URL) -> UsageSnapshot? {
+    /// Codex: el último `token_count` del rollout, buscado desde el final. Casi siempre está en los
+    /// últimos KB, pero mientras corre un comando con mucha salida puede quedar decenas de MB atrás:
+    /// el archivo se recorre hacia atrás de a pedazos, sin cargarlo entero, hasta `maxScan` bytes.
+    public static func codex(rolloutURL: URL, maxScan: Int = 64 << 20) -> UsageSnapshot? {
         guard let handle = try? FileHandle(forReadingFrom: rolloutURL) else { return nil }
         defer { try? handle.close() }
-        let size = (try? handle.seekToEnd()) ?? 0
-        let start = size > 65_536 ? size - 65_536 : 0
-        try? handle.seek(toOffset: start)
-        guard let data = try? handle.readToEnd() else { return nil }
-        var text = String(decoding: data, as: UTF8.self)
-        // Si empezamos en el medio del archivo, la primera línea está cortada.
-        if start > 0, let newline = text.firstIndex(of: "\n") { text = String(text[text.index(after: newline)...]) }
         let modified = (try? rolloutURL.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date()
-        return codexSnapshot(fromLines: text, fallbackDate: modified)
+        var usage = CodexUsage(fallbackDate: modified)
+        let marker = Data(#""token_count""#.utf8)
+        ReverseLines.scan(handle, maxBytes: maxScan) { line in
+            if line.range(of: marker, in: line.startIndex..<line.endIndex) != nil { usage.add(line) }
+            return usage.isComplete
+        }
+        return usage.snapshot
     }
 
     public static func codexSnapshot(fromLines text: String, fallbackDate: Date) -> UsageSnapshot? {
+        var usage = CodexUsage(fallbackDate: fallbackDate)
+        for line in text.split(separator: "\n").reversed() where line.contains("\"token_count\"") {
+            usage.add(Data(line.utf8))
+            if usage.isComplete { break }
+        }
+        return usage.snapshot
+    }
+
+    /// Junta, de la línea más nueva a la más vieja, el último contexto y los últimos límites de Codex.
+    struct CodexUsage {
+        let fallbackDate: Date
         var context: Double?
         var limits: [UsageLimit]?
         var updatedAt: Date?
-        for line in text.split(separator: "\n").reversed() where line.contains("\"token_count\"") {
-            guard let json = JSONValue.parse(String(line)), json["type"]?.string == "event_msg",
-                  let payload = json["payload"], payload["type"]?.string == "token_count" else { continue }
+
+        init(fallbackDate: Date) {
+            self.fallbackDate = fallbackDate
+        }
+
+        var isComplete: Bool { context != nil && limits != nil }
+
+        mutating func add(_ line: Data) {
+            guard let json = JSONValue.parse(line), json["type"]?.string == "event_msg",
+                  let payload = json["payload"], payload["type"]?.string == "token_count" else { return }
             let lineDate = json["timestamp"]?.string.flatMap(AgentTimestamp.parse)
             if context == nil, let info = payload["info"], let window = info["model_context_window"]?.asDouble, window > 0,
                let used = info["last_token_usage"]?["total_tokens"]?.asDouble {
@@ -89,16 +108,18 @@ public enum UsageReader {
                 updatedAt = updatedAt ?? lineDate
             }
             if limits == nil, let rates = payload["rate_limits"], case .object = rates {
-                let parsed = ["primary", "secondary"].compactMap { codexLimit(rates[$0], lineDate: lineDate ?? fallbackDate) }
+                let parsed = ["primary", "secondary"].compactMap { UsageReader.codexLimit(rates[$0], lineDate: lineDate ?? fallbackDate) }
                 if !parsed.isEmpty {
                     limits = parsed
                     updatedAt = updatedAt ?? lineDate
                 }
             }
-            if context != nil && limits != nil { break }
         }
-        guard context != nil || limits != nil else { return nil }
-        return UsageSnapshot(agent: .codex, contextPercent: context, limits: limits ?? [], updatedAt: updatedAt ?? fallbackDate)
+
+        var snapshot: UsageSnapshot? {
+            guard context != nil || limits != nil else { return nil }
+            return UsageSnapshot(agent: .codex, contextPercent: context, limits: limits ?? [], updatedAt: updatedAt ?? fallbackDate)
+        }
     }
 
     static func codexLimit(_ value: JSONValue?, lineDate: Date) -> UsageLimit? {
@@ -156,5 +177,46 @@ public enum UsageReader {
         }
         let day = date.formatted(Date.FormatStyle(locale: locale, calendar: calendar, timeZone: calendar.timeZone).weekday(.abbreviated))
         return "se reinicia el \(day.replacingOccurrences(of: ".", with: "")) \(time)"
+    }
+}
+
+/// Recorre las líneas de un archivo de la última a la primera, leyendo de a pedazos desde el final.
+enum ReverseLines {
+    /// Llama a `visit` con cada línea completa (sin el salto), de atrás hacia adelante, hasta que
+    /// devuelva true o se hayan recorrido `maxBytes`.
+    static func scan(_ handle: FileHandle, maxBytes: Int, chunk: Int = 1 << 20, visit: (Data) -> Bool) {
+        guard let size = try? handle.seekToEnd(), size > 0 else { return }
+        let floor = size > UInt64(maxBytes) ? size - UInt64(maxBytes) : 0
+        var end = size
+        // El principio de la línea que empezó en el pedazo anterior (más atrás en el archivo).
+        var carry = Data()
+        while end > floor {
+            let start = end - min(UInt64(chunk), end - floor)
+            guard (try? handle.seek(toOffset: start)) != nil,
+                  let piece = try? handle.read(upToCount: Int(end - start)), !piece.isEmpty else { return }
+            var buffer = piece
+            buffer.append(carry)
+            // Los saltos de línea del pedazo, para cortar las líneas sin recorrerlas dos veces.
+            var newlines: [Int] = []
+            buffer.withUnsafeBytes { raw in
+                guard let base = raw.baseAddress else { return }
+                var offset = 0
+                while offset < raw.count, let found = memchr(base + offset, 10, raw.count - offset) {
+                    let index = base.distance(to: UnsafeRawPointer(found))
+                    newlines.append(index)
+                    offset = index + 1
+                }
+            }
+            var lineEnd = buffer.count
+            for newline in newlines.reversed() {
+                let line = buffer[(newline + 1)..<lineEnd]
+                if !line.isEmpty, visit(Data(line)) { return }
+                lineEnd = newline
+            }
+            carry = Data(buffer[0..<lineEnd])
+            end = start
+        }
+        // Lo que quedó es una línea entera solo si llegamos al principio del archivo.
+        if floor == 0, !carry.isEmpty { _ = visit(carry) }
     }
 }
