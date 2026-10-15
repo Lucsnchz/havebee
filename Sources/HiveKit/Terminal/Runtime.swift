@@ -12,10 +12,14 @@ public final class SessionRuntime {
     public internal(set) var unseen = false
     public internal(set) var title = ""
     var terminal: HiveTerminalView?
+    /// Lo que pidió el agente al quedar esperando tu permiso (nil en cualquier otro estado).
+    public var notice: String? { status == .attention ? attentionNotice : nil }
+    var attentionNotice: String?
 
     @ObservationIgnored var events: TerminalEvents?
     /// Último momento en que la terminal recibió salida (para la regla del silencio).
     @ObservationIgnored var lastOutput = Date.distantPast
+    /// Desde cuándo figura trabajando (para la regla del silencio y para mostrar cuánto lleva).
     @ObservationIgnored var workingSince: Date?
     /// Recibimos al menos un evento del agente (hooks / notify) en esta ejecución.
     @ObservationIgnored var hooksSeen = false
