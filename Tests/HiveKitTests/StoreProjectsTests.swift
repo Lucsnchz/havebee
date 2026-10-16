@@ -7,7 +7,7 @@ import Testing
 @MainActor
 @Suite("Store: agregar proyectos y worktrees faltantes")
 struct StoreProjectsTests {
-    @Test("Un worktree borrado por fuera avisa una sola vez y queda en missingWorktrees")
+    @Test("Un worktree borrado por fuera avisa una sola vez mientras la revisión de git no lo saca")
     func missingWorktree() async throws {
         let world = TestWorld()
         let repo = GitRepo()
@@ -22,14 +22,15 @@ struct StoreProjectsTests {
         store.saveCommand(projectId: project.id, commandId: nil, name: "Test", command: "make test")
         let command = try #require(store.project(project.id)?.commands.first)
 
+        // La próxima revisión de git saca la rama de Hive (no tiene nada corriendo); hasta entonces,
+        // abrir lo que hay adentro avisa que la carpeta no está.
         try FileManager.default.removeItem(atPath: path)
-        await store.refreshGitNow()
+
+        // Mirar la sesión varias veces avisa una sola vez y marca la carpeta como faltante.
+        store.activate(session.id)
         #expect(store.missingWorktrees.contains(path))
         #expect(store.isMissing(branch))
         #expect(!store.isMissing(project.branches[0]))
-
-        // Mirar la sesión varias veces avisa una sola vez.
-        store.activate(session.id)
         #expect(store.alerts.count == 1)
         #expect(store.alert?.title == "No encuentro la carpeta de «borrada»")
         #expect(store.alert?.message.hasPrefix(path) == true)
@@ -49,6 +50,7 @@ struct StoreProjectsTests {
         try FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
         await store.refreshGitNow()
         #expect(!store.isMissing(branch))
+        #expect(store.project(project.id)?.branches.contains { $0.id == branch.id } == true)
         store.activate(session.id)
         #expect(world.processes.launches.count == 1)
     }
