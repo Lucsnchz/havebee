@@ -125,11 +125,34 @@ public struct AgentStorage: Sendable {
 
     /// El archivo de un thread de Codex: sessions/AAAA/MM/DD/rollout-<fecha>-<thread>.jsonl
     /// (o archived_sessions/ si lo archivaste).
+    ///
+    /// Se consulta desde el hilo principal con cada aviso de un thread nuevo (`isCodexSubagentThread`),
+    /// así que primero mira solo la carpeta del día: los IDs de Codex son UUID v7 y traen la fecha en
+    /// que se crearon. Recorrer sessions/ entero (miles de rollouts) queda para los IDs que no la traen.
     public func codexRolloutURL(_ threadId: String) -> URL? {
         guard !threadId.isEmpty else { return nil }
         let key = codexHome.path + "|" + threadId
         if let cached = Self.rolloutCache.get(key), FileManager.default.fileExists(atPath: cached.path) { return cached }
         let suffix = "-\(threadId).jsonl"
+        let fm = FileManager.default
+        var folders: [URL] = []
+        if let created = Self.uuidV7Date(threadId) {
+            // La carpeta usa la fecha local de Codex: el día de antes y el de después cubren cualquier huso.
+            let calendar = Calendar.current
+            for offset in [0, -1, 1] {
+                guard let day = calendar.date(byAdding: .day, value: offset, to: created) else { continue }
+                let c = calendar.dateComponents([.year, .month, .day], from: day)
+                folders.append(codexHome.appendingPathComponent(
+                    String(format: "sessions/%04d/%02d/%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)))
+            }
+        }
+        folders.append(codexHome.appendingPathComponent("archived_sessions"))
+        for folder in folders {
+            guard let name = (try? fm.contentsOfDirectory(atPath: folder.path))?.first(where: { $0.hasSuffix(suffix) }) else { continue }
+            let file = folder.appendingPathComponent(name)
+            Self.rolloutCache.set(key, file)
+            return file
+        }
         for folder in ["sessions", "archived_sessions"] {
             let root = codexHome.appendingPathComponent(folder)
             guard let walker = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil) else { continue }
@@ -139,6 +162,16 @@ public struct AgentStorage: Sendable {
             }
         }
         return nil
+    }
+
+    /// La fecha de creación de un UUID v7 (los primeros 48 bits son milisegundos desde 1970).
+    /// nil si el texto no es un UUID o es de otra versión.
+    static func uuidV7Date(_ id: String) -> Date? {
+        guard let uuid = UUID(uuidString: id) else { return nil }
+        let b = uuid.uuid
+        guard b.6 >> 4 == 7 else { return nil }
+        let ms = [b.0, b.1, b.2, b.3, b.4, b.5].reduce(UInt64(0)) { $0 << 8 | UInt64($1) }
+        return Date(timeIntervalSince1970: Double(ms) / 1000)
     }
 
     static func isSubagentMeta(_ payload: JSONValue?) -> Bool {
