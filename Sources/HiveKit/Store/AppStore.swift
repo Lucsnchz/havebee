@@ -33,6 +33,9 @@ public final class AppStore {
     var mcpVersion = 0
     /// Comandos del proyecto corriendo (en la esquina de la ventana).
     public internal(set) var commandRuns: [CommandRun] = []
+    /// Sube cuando cambia el día: lo de ayer deja de contar como «usado hoy» y el orden de los
+    /// proyectos se recalcula solo (ver `visibleProjects`).
+    var dayStamp = 0
 
     // Diálogos y hojas abiertas.
     /// Alertas en cola: se muestran de a una y en orden.
@@ -75,6 +78,7 @@ public final class AppStore {
     /// Cola serie donde el watcher lee los eventos de los agentes (fuera del hilo principal).
     nonisolated static let eventsQueue = DispatchQueue(label: "hive.events", qos: .userInitiated)
     @ObservationIgnored var timers: [Timer] = []
+    @ObservationIgnored var dayObserver: NSObjectProtocol?
     @ObservationIgnored var refreshTask: Task<Void, Never>?
     /// Llegó un pedido de revisión mientras otra corría: al terminar se hace otra pasada.
     @ObservationIgnored var refreshPending = false
@@ -148,6 +152,7 @@ public final class AppStore {
         timers.append(Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.periodicGitRefresh() }
         })
+        observeDayChanges()
         // La rama de cada carpeta principal se cargó del estado guardado: primero se confirma sola (es
         // rápido y así arranca enseguida la sesión abierta) y después viene la revisión completa.
         Task { [weak self] in await self?.confirmSavedHeads() }
@@ -416,8 +421,13 @@ public final class AppStore {
         }
     }
 
+    /// Mueve repos. Los índices son de la lista que se ve sin «Terminales» (ver `visibleProjects`);
+    /// lo que se guarda como orden manual es el orden que se ve, con el cambio. Un proyecto no cambia
+    /// de grupo por moverlo: las vistas usan `moveProjects(in:from:to:)`.
     public func moveProjects(from source: IndexSet, to destination: Int) {
-        projects.moveRepos(fromOffsets: source, toOffset: destination)
+        var visible = visibleProjects.map(\.project).filter { !$0.isScratch }
+        visible.moveItems(fromOffsets: source, toOffset: destination)
+        projects = visible + (projects.scratch.map { [$0] } ?? [])
         scheduleSave()
     }
 
@@ -432,10 +442,23 @@ public final class AppStore {
         scheduleSave()
     }
 
-    public func position(of item: SidebarItem) -> (index: Int, count: Int)? { projects.position(of: item) }
+    /// Posición entre sus hermanos visibles. Un proyecto, entre los de su grupo (fijados, activos o apagados).
+    public func position(of item: SidebarItem) -> (index: Int, count: Int)? {
+        if case .project(let id) = item {
+            guard project(id)?.isScratch == false else { return nil }
+            return projectOrdering.position(of: id, in: projects)
+        }
+        return projects.position(of: item)
+    }
 
-    /// Sube (-1) o baja (+1) un elemento un lugar.
+    /// Sube (-1) o baja (+1) un elemento un lugar (un proyecto, dentro de su grupo).
     public func move(_ item: SidebarItem, by delta: Int) {
+        if case .project(let id) = item {
+            guard project(id)?.isScratch == false, let moved = projectOrdering.moving(projects, id: id, by: delta) else { return }
+            projects = moved
+            scheduleSave()
+            return
+        }
         if projects.move(item, by: delta) { scheduleSave() }
     }
 }

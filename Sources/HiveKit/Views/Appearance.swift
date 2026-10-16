@@ -85,6 +85,27 @@ struct ProjectTile: View {
     }
 }
 
+/// Un proyecto apagado (sin nada prendido ni usado hoy), en el riel y en el árbol: más transparente
+/// y con menos color, pero legible. En claro se atenúa menos: las iniciales blancas se perderían
+/// contra el fondo.
+struct DimmedProject: ViewModifier {
+    let dimmed: Bool
+    @Environment(\.colorScheme) private var colorScheme
+
+    static func opacity(for scheme: ColorScheme) -> Double { scheme == .dark ? 0.5 : 0.6 }
+
+    func body(content: Content) -> some View {
+        content
+            .saturation(dimmed ? 0.5 : 1)
+            .opacity(dimmed ? Self.opacity(for: colorScheme) : 1)
+            .animation(.easeOut(duration: 0.2), value: dimmed)
+    }
+}
+
+extension View {
+    func dimmedProject(_ dimmed: Bool) -> some View { modifier(DimmedProject(dimmed: dimmed)) }
+}
+
 /// El único aro alrededor del ícono, y solo de estado: un arco del acento que gira si algo está
 /// trabajando (con «Reducir movimiento», un aro fijo), naranja lleno si algo necesita permiso,
 /// verde si algo te espera y nada si no pasa nada. El punteado queda para «agregar» y «soltar

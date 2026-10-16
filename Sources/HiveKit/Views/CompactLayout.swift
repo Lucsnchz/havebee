@@ -30,6 +30,9 @@ private struct ProjectRail: View {
     @State private var dropTargeted = false
 
     var body: some View {
+        // El mismo orden que el árbol y que ⌃⌘1…⌃⌘9: fijados, activos de hoy, apagados y «Terminales».
+        let items = store.visibleProjects
+        let pinnedCount = items.filter { $0.group == .pinned }.count
         VStack(spacing: 0) {
             HomeRailItem()
                 .padding(.top, 12)
@@ -38,16 +41,23 @@ private struct ProjectRail: View {
                 .padding(.top, 10)
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 14) {
-                    ForEach(Array(store.repoProjects.enumerated()), id: \.element.id) { index, project in
-                        RailItem(project: project, shortcut: HiveCommands.Shortcut.project(index))
+                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                        if item.group != .scratch {
+                            // Un divisor fino entre los fijados y el resto.
+                            if index == pinnedCount && pinnedCount > 0 {
+                                RailDivider()
+                            }
+                            RailItem(project: item.project, isActive: item.isActive, shortcut: HiveCommands.Shortcut.project(index))
+                        }
                     }
                 }
                 .padding(.vertical, 14)
+                .animation(.snappy, value: items.map(\.id))
             }
             Divider().padding(.horizontal, 16)
-            if let scratch = store.scratchProject {
-                RailItem(project: scratch,
-                         shortcut: store.projects.firstIndex(where: \.isScratch).flatMap(HiveCommands.Shortcut.project))
+            if let index = items.firstIndex(where: { $0.group == .scratch }) {
+                RailItem(project: items[index].project, isActive: items[index].isActive,
+                         shortcut: HiveCommands.Shortcut.project(index))
                     .padding(.top, 10)
             }
             // Los límites de las cuentas, en chiquito (nada mientras no haya datos).
@@ -155,6 +165,8 @@ private struct RailIndicator: View {
 struct RailItem: View {
     @Environment(AppStore.self) private var store
     let project: Project
+    /// Tiene algo prendido o se usó hoy. Si no, se ve atenuado (sin aro: no hay nada que mostrar).
+    var isActive = true
     /// ⌃⌘N para ir a este proyecto (los nueve primeros).
     var shortcut: HiveCommands.Shortcut?
     @State private var hovering = false
@@ -168,7 +180,7 @@ struct RailItem: View {
             ZStack(alignment: .leading) {
                 RailIndicator(selected: selected, hovering: hovering)
                 ProjectTile(project: project, size: 40, activity: activity, showsBadge: true)
-                    .opacity(selected || hovering ? 1 : 0.85)
+                    .dimmedProject(!isActive && !selected && !hovering)
                     .scaleEffect(hovering && !selected ? 1.04 : 1)
                     .frame(maxWidth: .infinity)
             }
@@ -178,7 +190,7 @@ struct RailItem: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .help(shortcut.map { "\(project.name) (\($0))" } ?? project.name)
-        .accessibilityLabel(Self.accessibilityText(project: project, activity: activity))
+        .accessibilityLabel(Self.accessibilityText(project: project, activity: activity, isActive: isActive))
         .contextMenu {
             if project.isScratch, let branch = project.branches.first {
                 ScratchMenu(project: project, branch: branch)
@@ -188,15 +200,27 @@ struct RailItem: View {
         }
     }
 
-    /// «ecommerce, 2 sesiones te esperan».
-    static func accessibilityText(project: Project, activity: Activity) -> String {
-        guard activity.waitingForYou > 0 else { return project.name }
-        return "\(project.name), \(waitingText(activity.waitingForYou))"
+    /// «ecommerce, fijado, 2 sesiones te esperan» o «bevo, sin actividad hoy».
+    static func accessibilityText(project: Project, activity: Activity, isActive: Bool = true) -> String {
+        var parts = [project.name]
+        if project.pinned { parts.append("fijado") }
+        if activity.waitingForYou > 0 {
+            parts.append(activity.waitingForYou == 1 ? "una sesión te espera" : "\(activity.waitingForYou) sesiones te esperan")
+        } else if !isActive {
+            parts.append("sin actividad hoy")
+        }
+        return parts.joined(separator: ", ")
     }
 }
 
-private func waitingText(_ count: Int) -> String {
-    count == 1 ? "una sesión te espera" : "\(count) sesiones te esperan"
+/// Divisor fino entre los proyectos fijados y el resto.
+private struct RailDivider: View {
+    var body: some View {
+        Capsule()
+            .fill(Color.primary.opacity(0.18))
+            .frame(width: 28, height: 1)
+            .accessibilityHidden(true)
+    }
 }
 
 // MARK: - Pestañas

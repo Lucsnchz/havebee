@@ -27,7 +27,9 @@ Se cambia con el botón de la izquierda de la barra de herramientas o desde *Vis
 - **Árbol**: la barra lateral con Proyectos → Ramas → Sesiones.
 - **Compacta**: una barra angosta con los íconos de los proyectos en grande y, arriba de todo, «Inicio». Al tocar un proyecto se abre en su última sesión activa. Arriba, las sesiones del proyecto como pestañas, una pestaña «Resumen» con las ramas y un **+** para crear sesiones en la rama actual o en otra.
 
-En las dos, el ícono de cada proyecto tiene un borde de estado: un arco que gira si alguna sesión está trabajando, verde si alguna terminó y te espera, naranja si alguna necesita permiso. En la vista compacta, además, un globito con cuántas sesiones te esperan.
+En las dos, los proyectos van en el mismo orden (el mismo de ⌃⌘1…⌃⌘9): arriba los fijados (clic derecho → «Fijar arriba») y un divisor fino; después los activos, que tienen algo prendido o se usaron hoy; después los apagados, atenuados; y al final «Terminales». Dentro de cada grupo manda el orden que elegís (arrastrando en el árbol, o con «Subir» y «Bajar»), así un proyecto no salta de lugar por usarlo. Al cambiar el día, lo de ayer pasa solo a los apagados.
+
+El ícono de cada proyecto tiene un solo aro, y es de estado: un arco que gira si alguna sesión está trabajando, naranja si alguna necesita permiso y verde si alguna terminó y te espera. Un globito dice cuántas sesiones te esperan, con «!» delante si alguna pide permiso (es igual en el árbol y en la vista compacta).
 
 La vista de cada rama muestra botones para crear sesiones, una tarjeta por sesión (estado, hace cuánto se usó y lo último que respondió la IA), los cambios y los últimos commits.
 
@@ -57,7 +59,7 @@ Todo Hive se maneja con el teclado. Los atajos están en los menús **Sesión** 
 | ⌘K | Buscar (con `>`, acciones) |
 | ⌘J | Siguiente que te espera: primero la que pide permiso, después la que terminó hace más |
 | ⌘1 … ⌘9 | Pestaña 1 a 9 del proyecto abierto |
-| ⌃⌘1 … ⌃⌘9 | Proyecto 1 a 9 |
+| ⌃⌘1 … ⌃⌘9 | Proyecto 1 a 9, en el orden en que se ven (fijados, activos, apagados y «Terminales») |
 | ⇧⌘] / ⇧⌘[ | Sesión siguiente / anterior (da la vuelta) |
 | ⌥⌘↓ / ⌥⌘↑ | Proyecto siguiente / anterior |
 | ⌘F, ⌘G, ⇧⌘G, ⌘E | Buscar en la terminal, siguiente, anterior y usar la selección |
