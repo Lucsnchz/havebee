@@ -54,10 +54,11 @@ struct DiffSheet: View {
     private var fileList: some View {
         ScrollViewReader { proxy in
             ScrollView {
+                let hasStaged = target.files.contains(where: \.staged)
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(target.files.enumerated()), id: \.offset) { index, file in
                         if index == 0 || target.files[index - 1].staged != file.staged {
-                            Text(file.staged ? "PREPARADOS" : "CAMBIOS")
+                            Text(Self.sectionTitle(staged: file.staged, hasStaged: hasStaged))
                                 .font(.system(size: 10.5, weight: .semibold))
                                 .foregroundStyle(.secondary)
                                 .padding(.horizontal, 12)
@@ -96,6 +97,12 @@ struct DiffSheet: View {
             }
             .onChange(of: selected) { _, value in proxy.scrollTo(value) }
         }
+    }
+
+    /// Título de cada grupo de la lista, con los mismos nombres que el panel de cambios: «PREPARADOS» y
+    /// «SIN PREPARAR», o «CAMBIOS» si no hay nada preparado.
+    static func sectionTitle(staged: Bool, hasStaged: Bool) -> String {
+        (staged ? "Preparados" : ChangesList.unstagedTitle(hasStaged: hasStaged)).uppercased()
     }
 
     private func header(_ file: DiffTarget.File) -> some View {

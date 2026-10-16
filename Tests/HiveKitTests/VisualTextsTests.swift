@@ -14,6 +14,10 @@ struct VisualTextsTests {
         #expect(GitCounters.changesSymbol == "plusminus")
         #expect(ChangesList.unstagedTitle(hasStaged: true) == "Sin preparar")
         #expect(ChangesList.unstagedTitle(hasStaged: false) == "Cambios")
+        // La lista del diff usa los mismos nombres que el panel.
+        #expect(DiffSheet.sectionTitle(staged: true, hasStaged: true) == "PREPARADOS")
+        #expect(DiffSheet.sectionTitle(staged: false, hasStaged: true) == "SIN PREPARAR")
+        #expect(DiffSheet.sectionTitle(staged: false, hasStaged: false) == "CAMBIOS")
         #expect(SessionStatusBar.changesLabel(0) == "Sin cambios")
         #expect(SessionStatusBar.changesLabel(1) == "1 cambio")
         #expect(SessionStatusBar.changesLabel(3) == "3 cambios")
