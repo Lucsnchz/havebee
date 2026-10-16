@@ -25,27 +25,18 @@ extension TintColor {
 struct ProjectTile: View {
     let project: Project
     var size: CGFloat = 20
-    /// Si se pasa, se dibuja un borde con el estado de las sesiones del proyecto.
+    /// Si se pasa, se dibuja el aro con el estado de las sesiones del proyecto (el único borde del ícono).
     var activity: Activity? = nil
-    /// Globito con la cantidad de sesiones que te esperan.
+    /// Globito con la cantidad de sesiones que te esperan («!» delante si alguna pide permiso).
     var showsBadge = false
 
     var body: some View {
         tile
             .overlay { StatusRing(ring: activity?.ring ?? .none, size: size) }
             .overlay(alignment: .topTrailing) {
-                if showsBadge, let activity, activity.waitingForYou > 0 {
-                    // «!» si algo pide permiso (no solo el color), si no cuántas te esperan.
-                    Text(activity.badgeText)
-                        .font(.system(size: max(9, size * 0.26), weight: .bold).monospacedDigit())
-                        .foregroundStyle(Theme.onAccent)
-                        .padding(.horizontal, 4)
-                        .frame(minWidth: size * 0.4, minHeight: size * 0.4)
-                        .background(activity.ring.color ?? Theme.pending, in: Capsule())
-                        .overlay(Capsule().strokeBorder(Color(nsColor: .windowBackgroundColor), lineWidth: 2))
+                if showsBadge, let activity {
+                    ActivityBadge(activity: activity, outlined: true)
                         .offset(x: size * 0.18, y: -size * 0.18)
-                        .transition(.scale.combined(with: .opacity))
-                        .accessibilityLabel(activity.badgeAccessibilityText)
                 }
             }
     }
@@ -72,7 +63,10 @@ struct ProjectTile: View {
                     .font(.system(size: size * 0.64))
             case .image(let path):
                 if let image = ImageCache.image(at: path) {
+                    // El color del proyecto queda en el fondo, apenas, detrás del logo: así se sigue
+                    // distinguiendo sin otro borde que se confunda con el aro de estado.
                     shape.fill(Color(white: 0.97))
+                    shape.fill(tint.opacity(0.22))
                     Image(nsImage: image)
                         .resizable()
                         .interpolation(.high)
@@ -88,17 +82,41 @@ struct ProjectTile: View {
         }
         .frame(width: size, height: size)
         .clipShape(shape)
-        .overlay {
-            // Con logo, un borde del color del proyecto mantiene la distinción por color.
-            if case .image? = project.icon {
-                shape.strokeBorder(tint, lineWidth: max(1.5, size * 0.07))
-            }
-        }
     }
 }
 
-/// Borde alrededor del ícono: arco miel que gira si algo está trabajando, verde si algo te espera
-/// y naranja punteado si algo necesita permiso (se distingue también sin ver los colores).
+/// Un proyecto apagado (sin nada prendido ni usado hoy), en el riel y en el árbol: más transparente
+/// y con menos color, pero legible. En claro se atenúa menos: las iniciales blancas se perderían
+/// contra el fondo.
+struct DimmedProject: ViewModifier {
+    let dimmed: Bool
+    @Environment(\.colorScheme) private var colorScheme
+
+    static func opacity(for scheme: ColorScheme) -> Double { scheme == .dark ? 0.5 : 0.6 }
+
+    /// Cuándo se atenúa, igual en el riel y en el árbol: sin actividad hoy, salvo que sea el
+    /// proyecto abierto (o tenga elegida una rama o sesión suya) o que tenga el puntero encima.
+    static func dims(isActive: Bool, isCurrent: Bool, hovering: Bool) -> Bool {
+        !isActive && !isCurrent && !hovering
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .saturation(dimmed ? 0.5 : 1)
+            .opacity(dimmed ? Self.opacity(for: colorScheme) : 1)
+            .animation(.easeOut(duration: 0.2), value: dimmed)
+    }
+}
+
+extension View {
+    func dimmedProject(_ dimmed: Bool) -> some View { modifier(DimmedProject(dimmed: dimmed)) }
+}
+
+/// El único aro alrededor del ícono, y solo de estado: un arco del acento que gira si algo está
+/// trabajando (con «Reducir movimiento», un aro fijo), naranja lleno si algo necesita permiso,
+/// verde si algo te espera y nada si no pasa nada. El punteado queda para «agregar» y «soltar
+/// acá»; como el naranja y el verde se distinguen solo por el color, el permiso lleva además el
+/// «!» del globito (`ActivityBadge`).
 struct StatusRing: View {
     let ring: Activity.Ring
     let size: CGFloat
@@ -119,8 +137,7 @@ struct StatusRing: View {
                 shape.strokeBorder(Theme.pending, lineWidth: width)
                     .transition(.opacity)
             case .attention:
-                shape.strokeBorder(Theme.attention, style: StrokeStyle(lineWidth: width, lineCap: .round,
-                                                                       dash: [size * 0.18, size * 0.08]))
+                shape.strokeBorder(Theme.attention, lineWidth: width)
                     .transition(.opacity)
             case .working:
                 if reduceMotion {

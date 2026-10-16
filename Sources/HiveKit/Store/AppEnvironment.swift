@@ -53,13 +53,15 @@ public struct AppEnvironment {
     /// Armar el lanzamiento de las sesiones fuera del hilo principal (en la app, sí; en los tests,
     /// por defecto no, para que lanzar sea inmediato).
     public var launchesInBackground: Bool
+    /// Dónde empieza y termina el día (para ordenar los proyectos por «usados hoy»).
+    public var calendar: Calendar
 
     public init(paths: HivePaths, git: GitClient, agents: AgentStorage, notifier: SessionNotifying, processes: ProcessStarting,
                 settings: @escaping () -> AppSettings, inheritedEnvironment: [String: String], home: URL, loginShell: String,
                 cachedLoginPATH: String?, resolveLoginPATH: @escaping @Sendable () -> String?, storeLoginPATH: @escaping (String) -> Void,
                 logos: @escaping @Sendable (String) -> [String], isAppActive: @escaping () -> Bool, setDockBadge: @escaping (String?) -> Void,
                 now: @escaping () -> Date, saveDelay: TimeInterval, stopGrace: TimeInterval = 3,
-                launchesInBackground: Bool = true) {
+                launchesInBackground: Bool = true, calendar: Calendar = .autoupdatingCurrent) {
         self.paths = paths
         self.git = git
         self.agents = agents
@@ -79,6 +81,7 @@ public struct AppEnvironment {
         self.saveDelay = saveDelay
         self.stopGrace = stopGrace
         self.launchesInBackground = launchesInBackground
+        self.calendar = calendar
     }
 
     public static func live() -> AppEnvironment {

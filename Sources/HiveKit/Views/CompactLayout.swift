@@ -1,6 +1,7 @@
 import AppKit
 import HiveCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Vista compacta: barra angosta con los proyectos y las sesiones del proyecto como pestañas.
 struct CompactLayout: View {
@@ -28,8 +29,15 @@ struct CompactLayout: View {
 private struct ProjectRail: View {
     @Environment(AppStore.self) private var store
     @State private var dropTargeted = false
+    /// El proyecto que se está arrastrando para reordenar el riel.
+    @State private var dragging: UUID?
+    /// Con «Reducir movimiento», los proyectos cambian de lugar sin deslizarse.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        // El mismo orden que el árbol y que ⌃⌘1…⌃⌘9: fijados, activos de hoy, apagados y «Terminales».
+        let items = store.visibleProjects
+        let pinnedCount = items.filter { $0.group == .pinned }.count
         VStack(spacing: 0) {
             HomeRailItem()
                 .padding(.top, 12)
@@ -38,16 +46,30 @@ private struct ProjectRail: View {
                 .padding(.top, 10)
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 14) {
-                    ForEach(Array(store.repoProjects.enumerated()), id: \.element.id) { index, project in
-                        RailItem(project: project, shortcut: HiveCommands.Shortcut.project(index))
+                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                        if item.group != .scratch {
+                            // Un divisor fino entre los fijados y el resto.
+                            if index == pinnedCount && pinnedCount > 0 {
+                                RailDivider()
+                            }
+                            RailItem(project: item.project, isActive: item.isActive, shortcut: HiveCommands.Shortcut.project(index))
+                                // Arrastrar para reordenar, dentro de su grupo (fijar es con el menú).
+                                .onDrag {
+                                    dragging = item.id
+                                    return RailReorderDelegate.provider(for: item.id)
+                                }
+                                .onDrop(of: [RailReorderDelegate.type],
+                                        delegate: RailReorderDelegate(target: item.id, dragging: $dragging, store: store, animated: !reduceMotion))
+                        }
                     }
                 }
                 .padding(.vertical, 14)
+                .animation(reduceMotion ? nil : .snappy, value: items.map(\.id))
             }
             Divider().padding(.horizontal, 16)
-            if let scratch = store.scratchProject {
-                RailItem(project: scratch,
-                         shortcut: store.projects.firstIndex(where: \.isScratch).flatMap(HiveCommands.Shortcut.project))
+            if let index = items.firstIndex(where: { $0.group == .scratch }) {
+                RailItem(project: items[index].project, isActive: items[index].isActive,
+                         shortcut: HiveCommands.Shortcut.project(index))
                     .padding(.top, 10)
             }
             // Los límites de las cuentas, en chiquito (nada mientras no haya datos).
@@ -109,7 +131,6 @@ private struct HomeRailItem: View {
     var body: some View {
         let selected = store.selection == nil
         let activity = store.activity(of: store.projects.flatMap(\.activeSessions))
-        let waiting = activity.waitingForYou
         Button {
             store.select(nil)
         } label: {
@@ -123,16 +144,8 @@ private struct HomeRailItem: View {
                     .background(Color.primary.opacity(selected ? 0.12 : (hovering ? 0.08 : 0.05)),
                                 in: RoundedRectangle(cornerRadius: 11, style: .continuous))
                     .overlay(alignment: .topTrailing) {
-                        if waiting > 0 {
-                            Text("\(waiting)")
-                                .font(.system(size: 10, weight: .bold).monospacedDigit())
-                                .foregroundStyle(Theme.onAccent)
-                                .padding(.horizontal, 4)
-                                .frame(minWidth: 16, minHeight: 16)
-                                .background(activity.attention > 0 ? Theme.attention : Theme.pending, in: Capsule())
-                                .overlay(Capsule().strokeBorder(Color(nsColor: .windowBackgroundColor), lineWidth: 2))
-                                .offset(x: 7, y: -7)
-                        }
+                        ActivityBadge(activity: activity, outlined: true)
+                            .offset(x: 7, y: -7)
                     }
                     .frame(maxWidth: .infinity)
             }
@@ -142,7 +155,7 @@ private struct HomeRailItem: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .help("Inicio: lo que te espera en todos los proyectos (\(HiveCommands.Shortcut.home.description))")
-        .accessibilityLabel(waiting == 0 ? "Inicio" : "Inicio, \(waitingText(waiting))")
+        .accessibilityLabel(ActivityBadge.homeAccessibilityText(activity))
     }
 }
 
@@ -164,6 +177,8 @@ private struct RailIndicator: View {
 struct RailItem: View {
     @Environment(AppStore.self) private var store
     let project: Project
+    /// Tiene algo prendido o se usó hoy. Si no, se ve atenuado (sin aro: no hay nada que mostrar).
+    var isActive = true
     /// ⌃⌘N para ir a este proyecto (los nueve primeros).
     var shortcut: HiveCommands.Shortcut?
     @State private var hovering = false
@@ -177,7 +192,7 @@ struct RailItem: View {
             ZStack(alignment: .leading) {
                 RailIndicator(selected: selected, hovering: hovering)
                 ProjectTile(project: project, size: 40, activity: activity, showsBadge: true)
-                    .opacity(selected || hovering ? 1 : 0.85)
+                    .dimmedProject(DimmedProject.dims(isActive: isActive, isCurrent: selected, hovering: hovering))
                     .scaleEffect(hovering && !selected ? 1.04 : 1)
                     .frame(maxWidth: .infinity)
             }
@@ -187,7 +202,8 @@ struct RailItem: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .help(shortcut.map { "\(project.name) (\($0))" } ?? project.name)
-        .accessibilityLabel(Self.accessibilityText(project: project, activity: activity))
+        .accessibilityLabel(Self.accessibilityText(project: project, activity: activity, isActive: isActive))
+        .accessibilityValue(ActivityBadge.projectAccessibilityValue(activity))
         .contextMenu {
             if project.isScratch, let branch = project.branches.first {
                 ScratchMenu(project: project, branch: branch)
@@ -197,15 +213,64 @@ struct RailItem: View {
         }
     }
 
-    /// «ecommerce, 2 sesiones te esperan».
-    static func accessibilityText(project: Project, activity: Activity) -> String {
-        guard activity.waitingForYou > 0 else { return project.name }
-        return "\(project.name), \(waitingText(activity.waitingForYou))"
+    /// «ecommerce, fijado, 2 sesiones te esperan» o «bevo, sin actividad hoy», como en el árbol. Si
+    /// alguna pide permiso o trabaja, lo dice después (`accessibilityValue`).
+    static func accessibilityText(project: Project, activity: Activity, isActive: Bool = true) -> String {
+        ActivityBadge.projectAccessibilityLabel(project.name, pinned: project.pinned, activity: activity, isActive: isActive)
     }
 }
 
-private func waitingText(_ count: Int) -> String {
-    count == 1 ? "una sesión te espera" : "\(count) sesiones te esperan"
+/// Reordena el riel mientras arrastrás: al pasar sobre otro proyecto del mismo grupo, el arrastrado
+/// toma su lugar (lo que se guarda es el orden que se ve). Solo acepta arrastres que empezaron en el
+/// riel: las carpetas que soltás para agregar proyectos las sigue tomando el riel entero.
+struct RailReorderDelegate: DropDelegate {
+    /// Tipo propio del arrastre, que no sale de Hive: si fuera texto, al soltarlo sobre una terminal
+    /// se escribiría el id del proyecto.
+    static let type = UTType(filenameExtension: "hive-proyecto-del-riel", conformingTo: .data) ?? .data
+
+    static func provider(for id: UUID) -> NSItemProvider {
+        let provider = NSItemProvider()
+        provider.registerDataRepresentation(forTypeIdentifier: type.identifier, visibility: .ownProcess) { completion in
+            completion(Data(id.uuidString.utf8), nil)
+            return nil
+        }
+        return provider
+    }
+
+    let target: UUID
+    @Binding var dragging: UUID?
+    let store: AppStore
+    /// Deslizar al reordenar (no con «Reducir movimiento»).
+    var animated = true
+
+    func validateDrop(info: DropInfo) -> Bool { dragging != nil }
+
+    func dropEntered(info: DropInfo) {
+        guard let dragging, dragging != target else { return }
+        withAnimation(animated ? .snappy : nil) { _ = store.moveProject(dragging, onto: target) }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        guard let dragging else { return nil }
+        // Sobre un proyecto de otro grupo no se puede soltar (fijar es con el menú): que se note.
+        return DropProposal(operation: store.canMoveProject(dragging, onto: target) ? .move : .forbidden)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        let handled = dragging != nil
+        dragging = nil
+        return handled
+    }
+}
+
+/// Divisor fino entre los proyectos fijados y el resto.
+private struct RailDivider: View {
+    var body: some View {
+        Capsule()
+            .fill(Color.primary.opacity(0.18))
+            .frame(width: 28, height: 1)
+            .accessibilityHidden(true)
+    }
 }
 
 // MARK: - Pestañas

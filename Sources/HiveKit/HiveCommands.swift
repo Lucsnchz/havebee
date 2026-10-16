@@ -150,8 +150,8 @@ struct HiveCommands: Commands {
             .hiveShortcut(.nextProject)
         Button("Proyecto anterior") { HiveNavigator.goToAdjacentProject(store, delta: -1) }
             .hiveShortcut(.previousProject)
-        // Los proyectos en el orden del sidebar (⌃⌘1…⌃⌘9).
-        ForEach(Array(store.projects.prefix(Shortcut.projects.count).enumerated()), id: \.element.id) { index, project in
+        // Los proyectos en el orden en que se ven en el riel y en el árbol (⌃⌘1…⌃⌘9).
+        ForEach(Array(HiveNavigator.orderedProjects(store).prefix(Shortcut.projects.count).enumerated()), id: \.element.id) { index, project in
             Button(project.name) { HiveNavigator.goToProject(store, index: index) }
                 .hiveShortcut(Shortcut.projects[index])
         }
@@ -249,7 +249,7 @@ extension HiveCommands {
         static let actualSize = Shortcut("Tamaño real", "0")
         /// ⌘1…⌘9: pestañas del proyecto abierto.
         static let tabs = (1...9).map { Shortcut("Pestaña \($0)", KeyEquivalent(Character("\($0)"))) }
-        /// ⌃⌘1…⌃⌘9: proyectos en el orden del sidebar.
+        /// ⌃⌘1…⌃⌘9: proyectos en el orden en que se ven (fijados, activos, apagados y «Terminales»).
         static let projects = (1...9).map { Shortcut("Proyecto \($0)", KeyEquivalent(Character("\($0)")), [.command, .control]) }
 
         /// ⌘N de la pestaña en `index` (desde 0), si es una de las nueve primeras.
@@ -493,9 +493,16 @@ enum HiveNavigator {
         reveal(store, session: tabs[index].session.id)
     }
 
+    /// Los proyectos en el orden en que se ven (fijados, activos, apagados y «Terminales»): el de
+    /// ⌃⌘1…⌃⌘9 y el de ⌥⌘↓ / ⌥⌘↑.
+    static func orderedProjects(_ store: AppStore) -> [Project] {
+        store.visibleProjects.map(\.project)
+    }
+
     static func goToProject(_ store: AppStore, index: Int) {
-        guard store.projects.indices.contains(index) else { return }
-        open(store, project: store.projects[index].id)
+        let projects = orderedProjects(store)
+        guard projects.indices.contains(index) else { return }
+        open(store, project: projects[index].id)
     }
 
     static func goToAdjacentSession(_ store: AppStore, delta: Int) {
@@ -505,7 +512,7 @@ enum HiveNavigator {
     }
 
     static func goToAdjacentProject(_ store: AppStore, delta: Int) {
-        guard let next = SessionNavigation.adjacentProject(of: store.currentProjectId, delta: delta, in: store.projects) else { return }
+        guard let next = SessionNavigation.adjacentProject(of: store.currentProjectId, delta: delta, in: orderedProjects(store)) else { return }
         open(store, project: next)
     }
 

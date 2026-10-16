@@ -7,33 +7,20 @@ struct SidebarView: View {
     @State private var dropTargeted = false
 
     var body: some View {
+        // El mismo orden que el riel y que ⌃⌘1…⌃⌘9: fijados, activos de hoy, apagados y «Terminales».
+        // Cada grupo se reordena arrastrando dentro de él (fijar es con el menú).
+        let items = store.visibleProjects
+        let pinned = items.filter { $0.group == .pinned }
         List(selection: Binding(get: { store.selection }, set: { store.select($0) })) {
-            ForEach(store.repoProjects) { project in
-                DisclosureGroup(isExpanded: expansion(project.id)) {
-                    ForEach(project.branches) { branch in
-                        DisclosureGroup(isExpanded: expansion(branch.id)) {
-                            ForEach(branch.activeSessions) { session in
-                                SessionRow(project: project, branch: branch, session: session)
-                                    .tag(SidebarItem.session(session.id))
-                                    .contextMenu { SessionMenu(project: project, branch: branch, session: session) }
-                            }
-                            .onMove { store.moveSessions(in: branch.id, from: $0, to: $1) }
-                        } label: {
-                            BranchRow(project: project, branch: branch)
-                                .tag(SidebarItem.branch(branch.id))
-                                .contextMenu { BranchMenu(project: project, branch: branch) }
-                        }
-                    }
-                    .onMove { store.moveBranches(in: project.id, from: $0, to: $1) }
-                } label: {
-                    ProjectRow(project: project)
-                        .tag(SidebarItem.project(project.id))
-                        .contextMenu { ProjectMenu(project: project) }
-                }
+            projectRows(pinned, group: .pinned)
+            if !pinned.isEmpty && items.contains(where: { $0.group == .active || $0.group == .idle }) {
+                PinnedDivider()
             }
-            .onMove { store.moveProjects(from: $0, to: $1) }
+            projectRows(items.filter { $0.group == .active }, group: .active)
+            projectRows(items.filter { $0.group == .idle }, group: .idle)
 
-            if let scratch = store.scratchProject, let branch = scratch.branches.first {
+            if let scratchItem = items.last(where: { $0.group == .scratch }), let branch = scratchItem.project.branches.first {
+                let scratch = scratchItem.project
                 Section {
                     DisclosureGroup(isExpanded: expansion(scratch.id)) {
                         ForEach(branch.activeSessions) { session in
@@ -43,7 +30,7 @@ struct SidebarView: View {
                         }
                         .onMove { store.moveSessions(in: branch.id, from: $0, to: $1) }
                     } label: {
-                        ProjectRow(project: scratch)
+                        ProjectRow(project: scratch, isActive: scratchItem.isActive)
                             .tag(SidebarItem.project(scratch.id))
                             .contextMenu { ScratchMenu(project: scratch, branch: branch) }
                     }
@@ -98,6 +85,13 @@ struct SidebarView: View {
         }
     }
 
+    private func projectRows(_ items: [ProjectOrdering.Item], group: ProjectOrdering.Group) -> some View {
+        ForEach(items) { item in
+            ProjectNode(project: item.project, isActive: item.isActive)
+        }
+        .onMove { store.moveProjects(in: group, from: $0, to: $1) }
+    }
+
     private func expansion(_ id: UUID) -> Binding<Bool> {
         Binding(get: { store.isExpanded(id) }, set: { store.setExpanded(id, $0) })
     }
@@ -109,6 +103,51 @@ struct SidebarView: View {
 }
 
 // MARK: - Filas
+
+/// Un proyecto del árbol con sus ramas y sesiones.
+private struct ProjectNode: View {
+    @Environment(AppStore.self) private var store
+    let project: Project
+    let isActive: Bool
+
+    var body: some View {
+        DisclosureGroup(isExpanded: expansion(project.id)) {
+            ForEach(project.branches) { branch in
+                DisclosureGroup(isExpanded: expansion(branch.id)) {
+                    ForEach(branch.activeSessions) { session in
+                        SessionRow(project: project, branch: branch, session: session)
+                            .tag(SidebarItem.session(session.id))
+                            .contextMenu { SessionMenu(project: project, branch: branch, session: session) }
+                    }
+                    .onMove { store.moveSessions(in: branch.id, from: $0, to: $1) }
+                } label: {
+                    BranchRow(project: project, branch: branch)
+                        .tag(SidebarItem.branch(branch.id))
+                        .contextMenu { BranchMenu(project: project, branch: branch) }
+                }
+            }
+            .onMove { store.moveBranches(in: project.id, from: $0, to: $1) }
+        } label: {
+            ProjectRow(project: project, isActive: isActive)
+                .tag(SidebarItem.project(project.id))
+                .contextMenu { ProjectMenu(project: project) }
+        }
+    }
+
+    private func expansion(_ id: UUID) -> Binding<Bool> {
+        Binding(get: { store.isExpanded(id) }, set: { store.setExpanded(id, $0) })
+    }
+}
+
+/// Divisor fino entre los proyectos fijados y el resto (no se elige ni se arrastra).
+private struct PinnedDivider: View {
+    var body: some View {
+        Divider()
+            .padding(.horizontal, 4)
+            .selectionDisabled()
+            .accessibilityHidden(true)
+    }
+}
 
 /// Fila fija de arriba: vuelve al Inicio y dice cuántas sesiones te esperan.
 private struct HomeRow: View {
@@ -130,9 +169,7 @@ private struct HomeRow: View {
                 Text("Inicio")
                     .font(HiveFont.body.weight(.semibold))
                 Spacer(minLength: 4)
-                if activity.waitingForYou > 0 {
-                    CountBadge(activity: activity)
-                }
+                ActivityBadge(activity: activity)
             }
             .padding(.horizontal, 8)
             .frame(height: 28)
@@ -143,56 +180,33 @@ private struct HomeRow: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .help("Las sesiones que te esperan, en todos los proyectos")
-        .accessibilityLabel(homeAccessibilityText(activity))
+        .accessibilityLabel(ActivityBadge.homeAccessibilityText(activity))
         .accessibilityAddTraits(selected ? .isSelected : [])
-    }
-
-    private func homeAccessibilityText(_ activity: Activity) -> String {
-        switch activity.waitingForYou {
-        case 0: "Inicio"
-        case 1: "Inicio, una sesión te espera"
-        default: "Inicio, \(activity.waitingForYou) sesiones te esperan"
-        }
-    }
-}
-
-/// Globito con cuántas sesiones te esperan («!» delante si alguna pide permiso).
-private struct CountBadge: View {
-    let activity: Activity
-
-    var body: some View {
-        HStack(spacing: 1) {
-            if activity.attention > 0 {
-                Image(systemName: "exclamationmark")
-                    .font(.system(size: 8, weight: .heavy))
-            }
-            Text("\(activity.waitingForYou)")
-        }
-        .font(.system(size: 10, weight: .bold).monospacedDigit())
-        .foregroundStyle(Theme.onAccent)
-        .padding(.horizontal, 5)
-        .padding(.vertical, 1)
-        .background(activity.ring.color ?? Theme.pending, in: Capsule())
-        .help(activity.waitingForYou == 1 ? "Una sesión te espera" : "\(activity.waitingForYou) sesiones te esperan")
-        .transition(.scale.combined(with: .opacity))
     }
 }
 
 private struct ProjectRow: View {
     @Environment(AppStore.self) private var store
     let project: Project
+    /// Tiene algo prendido o se usó hoy. Si no, se ve atenuado, como en el riel.
+    var isActive = true
     @State private var hovering = false
 
     var body: some View {
         let activity = store.activity(of: project)
         // Con el proyecto abierto, cada sesión ya muestra su estado: el globito sería repetirlo.
         let showsBadge = !store.isExpanded(project.id) && activity.waitingForYou > 0
+        // Como en el riel: no se atenúa si estás adentro (el proyecto, una rama o una sesión suya).
+        let dimmed = DimmedProject.dims(isActive: isActive, isCurrent: store.currentProjectId == project.id, hovering: hovering)
         HStack(spacing: 8) {
-            ProjectTile(project: project, size: 20, activity: activity)
-                .padding(2)
-            Text(project.name)
-                .fontWeight(.semibold)
-                .lineLimit(1)
+            HStack(spacing: 8) {
+                ProjectTile(project: project, size: 20, activity: activity)
+                    .padding(2)
+                Text(project.name)
+                    .fontWeight(.semibold)
+                    .lineLimit(1)
+            }
+            .dimmedProject(dimmed)
             Spacer(minLength: 4)
             if hovering && !project.isScratch {
                 Button {
@@ -205,7 +219,7 @@ private struct ProjectRow: View {
                 .help("Nueva rama…")
                 .accessibilityLabel("Nueva rama en \(project.name)")
             } else if showsBadge {
-                CountBadge(activity: activity)
+                ActivityBadge(activity: activity)
             }
         }
         .padding(.vertical, 1)
@@ -213,15 +227,10 @@ private struct ProjectRow: View {
         .onHover { hovering = $0 }
         .help(project.path.tildePath)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilityText(activity))
-    }
-
-    private func accessibilityText(_ activity: Activity) -> String {
-        var parts = ["Proyecto \(project.name)"]
-        if activity.attention > 0 { parts.append(activity.attention == 1 ? "una sesión necesita permiso" : "\(activity.attention) sesiones necesitan permiso") }
-        if activity.pending > 0 { parts.append(activity.pending == 1 ? "una sesión te espera" : "\(activity.pending) sesiones te esperan") }
-        if activity.working > 0 { parts.append(activity.working == 1 ? "una sesión trabajando" : "\(activity.working) sesiones trabajando") }
-        return parts.joined(separator: ", ")
+        // Lo mismo que dice el riel, con «Proyecto» delante: en el árbol también hay ramas y sesiones.
+        .accessibilityLabel(ActivityBadge.projectAccessibilityLabel("Proyecto \(project.name)", pinned: project.pinned,
+                                                                    activity: activity, isActive: isActive))
+        .accessibilityValue(ActivityBadge.projectAccessibilityValue(activity))
     }
 }
 
@@ -353,9 +362,12 @@ struct ProjectMenu: View {
     var body: some View {
         Button("Nueva rama…") { store.newBranchTarget = NewBranchTarget(id: project.id) }
         Divider()
+        // Fijado: arriba de todo en el riel y en el árbol, aunque hoy no lo uses.
+        Button(project.pinned ? "Dejar de fijar" : "Fijar arriba") { store.setPinned(!project.pinned, project: project.id) }
+        MoveItems(item: .project(project.id))
+        Divider()
         Button("Personalizar…") { store.customizeTarget = CustomizeTarget(id: project.id) }
         TintColorMenu { color in if let color { store.setColor(color, project: project.id) } }
-        MoveItems(item: .project(project.id))
         Divider()
         OpenInItems(path: project.path)
         Divider()
@@ -419,7 +431,7 @@ struct ScratchMenu: View {
     }
 }
 
-/// "Subir" / "Bajar": alternativa a arrastrar en el sidebar.
+/// «Subir» / «Bajar»: alternativa a arrastrar en el sidebar (un proyecto, dentro de su grupo).
 struct MoveItems: View {
     @Environment(AppStore.self) private var store
     let item: SidebarItem

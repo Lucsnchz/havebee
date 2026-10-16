@@ -142,10 +142,12 @@ public struct Project: Identifiable, Codable, Hashable, Sendable {
     public var commands: [ProjectCommand]
     /// El proyecto especial «Terminales»: tu carpeta personal, sin git, para terminales sueltas.
     public var isScratch: Bool
+    /// Fijado arriba en el riel y en el árbol (clic derecho › «Fijar arriba»), use o no hoy.
+    public var pinned: Bool
 
     public init(id: UUID = UUID(), name: String, path: String, branches: [Branch] = [],
                 ignoredWorktrees: [String] = [], color: TintColor? = nil, icon: ProjectIcon? = nil,
-                commands: [ProjectCommand] = [], isScratch: Bool = false) {
+                commands: [ProjectCommand] = [], isScratch: Bool = false, pinned: Bool = false) {
         self.id = id
         self.name = name
         self.path = path
@@ -155,6 +157,7 @@ public struct Project: Identifiable, Codable, Hashable, Sendable {
         self.icon = icon
         self.commands = commands
         self.isScratch = isScratch
+        self.pinned = pinned
     }
 
     public var activeSessions: [Session] { branches.flatMap(\.activeSessions) }
@@ -183,7 +186,7 @@ public struct Project: Identifiable, Codable, Hashable, Sendable {
 
 extension Project {
     private enum CodingKeys: String, CodingKey {
-        case id, name, path, branches, ignoredWorktrees, color, icon, commands, isScratch
+        case id, name, path, branches, ignoredWorktrees, color, icon, commands, isScratch, pinned
     }
 
     /// Lee estados guardados por versiones anteriores de Hive (sin los campos nuevos).
@@ -198,6 +201,7 @@ extension Project {
         icon = try c.decodeIfPresent(ProjectIcon.self, forKey: .icon)
         commands = try c.decodeIfPresent([ProjectCommand].self, forKey: .commands) ?? []
         isScratch = try c.decodeIfPresent(Bool.self, forKey: .isScratch) ?? false
+        pinned = try c.decodeIfPresent(Bool.self, forKey: .pinned) ?? false
     }
 }
 
