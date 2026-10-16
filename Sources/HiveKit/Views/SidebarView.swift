@@ -210,7 +210,7 @@ private struct ProjectRow: View {
         var parts = ["Proyecto \(project.name)"]
         if activity.attention > 0 { parts.append(activity.attention == 1 ? "una sesión necesita permiso" : "\(activity.attention) sesiones necesitan permiso") }
         if activity.pending > 0 { parts.append(activity.pending == 1 ? "una sesión te espera" : "\(activity.pending) sesiones te esperan") }
-        if activity.working > 0 { parts.append(activity.working == 1 ? "una trabajando" : "\(activity.working) trabajando") }
+        if activity.working > 0 { parts.append(activity.working == 1 ? "una sesión trabajando" : "\(activity.working) sesiones trabajando") }
         return parts.joined(separator: ", ")
     }
 }
@@ -225,6 +225,8 @@ private struct BranchRow: View {
         let active = store.isActive(branch, in: project)
         let status = store.gitStatus(for: branch, in: project)
         let tint = (branch.color ?? project.tint).color
+        // Mira el disco: una vez por dibujo, no en cada texto que lo usa.
+        let missing = worktreeMissing
         HStack(spacing: 6) {
             Image(systemName: "arrow.triangle.branch")
                 .foregroundStyle(tint)
@@ -268,17 +270,17 @@ private struct BranchRow: View {
         }
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
-        .help(helpText(active: active))
+        .help(helpText(active: active, missing: missing))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilityText(active: active, status: status))
+        .accessibilityLabel(accessibilityText(active: active, missing: missing, status: status))
     }
 
-    private var missing: Bool {
+    private var worktreeMissing: Bool {
         guard branch.mode == .worktree, let path = branch.worktreePath else { return false }
         return !FileManager.default.fileExists(atPath: path)
     }
 
-    private func helpText(active: Bool) -> String {
+    private func helpText(active: Bool, missing: Bool) -> String {
         if missing { return "La carpeta del worktree ya no existe: \(branch.worktreePath?.tildePath ?? "")" }
         if branch.mode == .worktree { return "Worktree en \(branch.worktreePath?.tildePath ?? "")" }
         if active { return "Activa en la carpeta principal" }
@@ -286,7 +288,7 @@ private struct BranchRow: View {
         return "Inactiva: la carpeta principal está en «\(head)»"
     }
 
-    private func accessibilityText(active: Bool, status: GitStatus?) -> String {
+    private func accessibilityText(active: Bool, missing: Bool, status: GitStatus?) -> String {
         var parts = ["Rama \(branch.name)"]
         if branch.mode == .worktree { parts.append("worktree") } else if !active { parts.append("inactiva") }
         if missing { parts.append("la carpeta ya no existe") }
@@ -421,6 +423,9 @@ struct NewSessionItems: View {
 
     var body: some View {
         let availability = AgentAvailability.shared(for: store)
+        // Los ítems de un agente sin instalar no se pueden tocar para volver a revisar: se revisa
+        // al armar el menú (como mucho cada 10 s; el resultado llega al toque).
+        let _ = availability.refreshIfStale()
         ForEach(SessionKind.allCases) { kind in
             let installed = availability.isInstalled(kind)
             Button {

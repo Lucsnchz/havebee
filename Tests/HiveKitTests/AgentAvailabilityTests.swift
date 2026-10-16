@@ -118,6 +118,37 @@ struct AgentAvailabilityTests {
         #expect(await availability.recheck(.gemini))
         #expect(!(await availability.recheck(.codex)))
     }
+
+    @Test("Los menús vuelven a revisar solo si la última revisión es vieja")
+    func refreshIfStale() async {
+        let processes = AgentAvailabilityCountingProcesses()
+        let availability = AgentAvailability(processes: processes, path: "/fake/bin")
+        await availability.refresh().value
+        #expect(processes.resolves == 3)
+        #expect(!availability.isInstalled(.gemini))
+        processes.installed = ["gemini"]
+        // Recién revisado: no repite.
+        #expect(availability.refreshIfStale(maxAge: 60) == nil)
+        #expect(processes.resolves == 3)
+        // Un minuto después, sí (y ve lo que se instaló).
+        await availability.refreshIfStale(maxAge: 60, now: Date().addingTimeInterval(61))?.value
+        #expect(processes.resolves == 6)
+        #expect(availability.isInstalled(.gemini))
+    }
+}
+
+/// Lanzador falso que cuenta cuántas veces se buscó un binario.
+@MainActor
+private final class AgentAvailabilityCountingProcesses: ProcessStarting {
+    var installed: Set<String> = []
+    private(set) var resolves = 0
+
+    func resolve(_ binary: String, path: String) -> String? {
+        resolves += 1
+        return installed.contains(binary) ? "/fake/bin/\(binary)" : nil
+    }
+
+    func start(_ terminal: HiveTerminalView, executable: String, args: [String], environment: [String], directory: String) {}
 }
 
 /// Cuenta llamadas desde cualquier hilo (el PATH de login se pide fuera del principal).
