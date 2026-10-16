@@ -45,12 +45,14 @@ public enum HistoryExport {
         return (start > text.startIndex ? "…" : "") + flat + (end < text.endIndex ? "…" : "")
     }
 
-    /// Un fragmento en una línea sin las marcas de Markdown que se verían crudas: títulos («## »),
-    /// viñetas (pasan a «• »), negritas («**así**») y código («`así`» y «```php»). Lo demás queda
-    /// igual: los «_» son parte de nombres como `rate_limit` o `__construct`.
-    public static func withoutMarkdown(_ line: String) -> String {
-        line.replacingOccurrences(of: #"(^|[\s…])#{1,6}\s+"#, with: "$1", options: .regularExpression)
-            .replacingOccurrences(of: #"(^|[\s…])[-*+]\s+"#, with: "$1• ", options: .regularExpression)
+    /// Un texto sin las marcas de Markdown que en una fila se verían crudas: títulos («## »), viñetas
+    /// (pasan a «• »), negritas («**así**») y código («`así`» y «```php»). Va antes de juntar las
+    /// líneas: los títulos y las viñetas solo cuentan al principio de una línea, así que un « - » en
+    /// medio de una («$precio - $descuento») queda como está. Los «_» también: son parte de nombres
+    /// como `rate_limit` o `__construct`.
+    public static func withoutMarkdown(_ text: String) -> String {
+        text.replacingOccurrences(of: #"(?m)^([ \t]*)#{1,6}[ \t]+"#, with: "$1", options: .regularExpression)
+            .replacingOccurrences(of: #"(?m)^([ \t]*)[-*+][ \t]+"#, with: "$1• ", options: .regularExpression)
             .replacingOccurrences(of: #"\*\*(\S(?:.*?\S)?)\*\*"#, with: "$1", options: .regularExpression)
             .replacingOccurrences(of: #"```[A-Za-z0-9_+-]*\s*"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: "`", with: "")

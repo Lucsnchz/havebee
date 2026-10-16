@@ -42,13 +42,15 @@ struct SwitcherHistoryTests {
     }
 
     @Test("Las filas del historial no muestran las marcas de Markdown", arguments: [
-        ("## Listo Agregué la **validación** de stock: - Si no alcanza, tira `OutOfStock`. - Los 12 tests pasan.",
-         "Listo Agregué la validación de stock: • Si no alcanza, tira OutOfStock. • Los 12 tests pasan."),
-        ("…cambié el ```php if ($item->stock < $qty) { ``` y listo", "…cambié el if ($item->stock < $qty) { y listo"),
-        ("…y después * otra viñeta", "…y después • otra viñeta"),
-        // Lo que no es Markdown queda igual.
-        ("Llegó un rate_limit en __construct", "Llegó un rate_limit en __construct"),
+        ("## Listo\n\nAgregué la **validación** de stock:\n\n- Si no alcanza, tira `OutOfStock`.\n- Los 12 tests pasan.",
+         "Listo\n\nAgregué la validación de stock:\n\n• Si no alcanza, tira OutOfStock.\n• Los 12 tests pasan."),
+        ("Cambié el\n```php\nif ($item->stock < $qty) {\n```\ny listo", "Cambié el\nif ($item->stock < $qty) {\ny listo"),
+        ("Pasos:\n  * uno\n  + dos\n### Notas", "Pasos:\n  • uno\n  • dos\nNotas"),
+        // Un « - » o un « * » en medio de una línea no es una viñeta, ni un «#» pegado es un título.
+        ("$total = $precio - $descuento * 2 + $envio", "$total = $precio - $descuento * 2 + $envio"),
+        ("Opción A - más rápida", "Opción A - más rápida"),
         ("Arreglá el issue #123 en src/**/*.php", "Arreglá el issue #123 en src/**/*.php"),
+        ("Llegó un rate_limit en __construct", "Llegó un rate_limit en __construct"),
         ("Agregá validación de stock", "Agregá validación de stock"),
     ])
     func withoutMarkdown(snippet: String, expected: String) {

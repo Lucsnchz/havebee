@@ -281,7 +281,7 @@ public struct HistoryStore: Sendable {
         public let entryId: UUID
         public let role: HistoryEntry.Role
         public let date: Date
-        /// ±60 caracteres alrededor de la coincidencia, en una línea.
+        /// ±60 caracteres alrededor de la coincidencia, en una línea y sin las marcas de Markdown.
         public let snippet: String
     }
 
@@ -295,7 +295,10 @@ public struct HistoryStore: Sendable {
         for id in ids {
             let entries = HistoryExport.timeline(log: load(id), full: loadArchive(id))
             for entry in entries where entry.role != .marker {
-                guard let snippet = HistoryExport.snippet(entry.text, query: q) else { continue }
+                guard let raw = HistoryExport.snippet(entry.text, query: q) else { continue }
+                // Sin Markdown, limpiado antes de juntar las líneas (así se sabe qué es una viñeta). Si lo
+                // que buscás tiene alguna marca («**», «`»), el fragmento queda tal cual.
+                let snippet = HistoryExport.snippet(HistoryExport.withoutMarkdown(entry.text), query: q) ?? raw
                 hits.append(SearchHit(sessionId: id, entryId: entry.id, role: entry.role, date: entry.date, snippet: snippet))
             }
         }

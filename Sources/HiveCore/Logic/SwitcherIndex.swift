@@ -90,7 +90,8 @@ public enum SwitcherIndex {
     /// Los resultados del historial como filas del buscador: el fragmento como título y, abajo, quién
     /// lo dijo, en qué sesión y cuándo. Se saltean los de sesiones que ya no existen.
     /// El fragmento se recorta alrededor de `query` para que la coincidencia entre en una línea, y sin
-    /// las marcas de Markdown («## Listo», «**validación**»), que en una fila se verían crudas.
+    /// las marcas de Markdown («## Listo», «**validación**»), que en una fila se verían crudas (la
+    /// búsqueda ya las saca; acá se repasa por si el fragmento llegó de otro lado).
     public static func historyItems(_ hits: [HistoryStore.SearchHit], query: String, in projects: [Project],
                                     now: Date = Date(), calendar: Calendar = .current) -> [SwitcherItem] {
         var places: [UUID: (project: Project, branch: Branch, session: Session)] = [:]
