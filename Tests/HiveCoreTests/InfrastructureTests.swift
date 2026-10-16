@@ -203,10 +203,47 @@ struct HistoryStoreTests {
         #expect(byMarker["/clear"]?.contains("contexto limpio") == true)
         #expect(byMarker["/compact"]?.contains("Se compactó el contexto") == true)
         #expect(byMarker["/compact"]?.contains("contexto limpio") == false)
-        #expect(byMarker["⚠︎ Se cortó: rate_limit"]?.contains("contexto limpio") == false)
+        // El corte se lee con una frase clara y el código de la API queda como detalle.
+        #expect(byMarker["⚠︎ Se cortó: llegaste al límite de uso"]?.contains("contexto limpio") == false)
+        #expect(byMarker["⚠︎ Se cortó: llegaste al límite de uso"]?.contains("(código `rate_limit`)") == true)
+        #expect(byMarker["/clear"]?.contains("código") == false)
         #expect(byMarker["Nueva conversación"]?.contains("contexto limpio") == true)
         #expect(markdown.contains("## Aviso automático · "))
         #expect(store.load(id).last?.role == .system)
+    }
+
+    @Test("Los cortes se muestran con una frase clara y el código aparte", arguments: [
+        ("⚠︎ Se cortó: rate_limit", "⚠︎ Se cortó: llegaste al límite de uso", "rate_limit"),
+        ("⚠︎ Se cortó: overloaded", "⚠︎ Se cortó: Anthropic está saturado", "overloaded"),
+        ("⚠︎ Se cortó: server_error", "⚠︎ Se cortó: Anthropic está saturado", "server_error"),
+        ("⚠︎ Se cortó: authentication_failed", "⚠︎ Se cortó: hay que volver a iniciar sesión (/login)", "authentication_failed"),
+        ("⚠︎ Se cortó: oauth_token_expired", "⚠︎ Se cortó: hay que volver a iniciar sesión (/login)", "oauth_token_expired"),
+        ("⚠︎ Se cortó: max_output_tokens", "⚠︎ Se cortó: la respuesta llegó al límite de tokens", "max_output_tokens"),
+        ("⚠︎ Se cortó: billing_error", "⚠︎ Se cortó: hubo un problema de facturación", "billing_error"),
+        // Un código que no conocemos: frase genérica, y el código igual queda a mano.
+        ("⚠︎ Se cortó: invalid_request", "⚠︎ Se cortó por un error", "invalid_request"),
+        // Sin código («unknown» es lo que se guarda cuando el evento no traía ninguno).
+        ("⚠︎ Se cortó: unknown", "⚠︎ Se cortó por un error", nil),
+        ("⚠︎ Se cortó:", "⚠︎ Se cortó por un error", nil),
+        // Los demás marcadores quedan como están.
+        ("/clear", "/clear", nil),
+        ("/compact", "/compact", nil),
+        ("Nueva conversación", "Nueva conversación", nil),
+    ] as [(String, String, String?)])
+    func markerTitle(text: String, title: String, code: String?) {
+        let marker = HistoryStore.markerTitle(text)
+        #expect(marker.title == title)
+        #expect(marker.code == code)
+    }
+
+    @Test("Lo que guarda StopFailure se muestra traducido")
+    func stopFailureMarkerRoundTrip() throws {
+        let outcome = AgentEventInterpreter.interpret(
+            HiveEvent(sessionId: UUID(), source: "claude", name: "StopFailure", payload: ["error": "rate_limit"]),
+            status: .working, agentSessionId: "c-1")
+        let stored = try #require(outcome.history.first { $0.role == .marker }?.text)
+        #expect(stored == "⚠︎ Se cortó: rate_limit") // se guarda el código, como siempre
+        #expect(HistoryStore.markerTitle(stored).title == "⚠︎ Se cortó: llegaste al límite de uso")
     }
 
     @Test("Sin historial devuelve vacío; las líneas rotas se saltean")

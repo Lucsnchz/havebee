@@ -11,10 +11,13 @@ public enum HistoryExport {
 
     public static func plainText(_ entry: HistoryEntry, agent: String) -> String {
         switch entry.role {
-        case .user: "Vos: \(entry.text)"
-        case .assistant: "\(agent): \(entry.text)"
-        case .system: "Aviso automático: \(entry.text)"
-        case .marker: "—— \(entry.text) ——"
+        case .user: return "Vos: \(entry.text)"
+        case .assistant: return "\(agent): \(entry.text)"
+        case .system: return "Aviso automático: \(entry.text)"
+        case .marker:
+            // Un corte, con la frase clara y el código de la API entre paréntesis.
+            let marker = HistoryStore.markerTitle(entry.text)
+            return "—— \(marker.title)\(marker.code.map { " (\($0))" } ?? "") ——"
         }
     }
 

@@ -330,8 +330,25 @@ public struct HistoryStore: Sendable {
         case .system:
             return "\n## Aviso automático · \(when)\n\n\(entry.text)\n"
         case .marker:
-            return "\n---\n\n> **\(entry.text) · \(when)**: \(markerMeaning(entry.text))\n\n---\n"
+            let marker = markerTitle(entry.text)
+            let code = marker.code.map { " (código `\($0)`)" } ?? ""
+            return "\n---\n\n> **\(marker.title) · \(when)**: \(markerMeaning(entry.text))\(code)\n\n---\n"
         }
+    }
+
+    /// Cómo se muestra un marcador. Un corte se guarda con el código de la API («⚠︎ Se cortó: rate_limit»)
+    /// y se muestra con una frase clara («⚠︎ Se cortó: llegaste al límite de uso»), con el código aparte
+    /// como detalle. Los demás marcadores («/clear», «Nueva conversación») quedan como están.
+    public static func markerTitle(_ text: String) -> (title: String, code: String?) {
+        let prefix = AgentEventInterpreter.stopFailureMarker
+        guard text.hasPrefix(prefix) else { return (text, nil) }
+        let raw = text.dropFirst(prefix.count).trimmingCharacters(in: .whitespaces)
+        // «unknown» es lo que se guarda cuando el evento no traía ningún código: no aporta nada.
+        let code = raw.isEmpty || raw == "unknown" ? nil : raw
+        guard let code, let reason = AgentEventInterpreter.stopFailureReason(code) else {
+            return ("⚠︎ Se cortó por un error", code)
+        }
+        return ("\(prefix) \(reason)", code)
     }
 
     /// Qué significa cada marcador: /clear y «Nueva conversación» empiezan de cero, /compact no.

@@ -209,6 +209,9 @@ struct HistoryExportTests {
 
         Aviso automático: <task-notification>ok</task-notification>
         """)
+        // Un corte se copia con la frase clara y el código de la API entre paréntesis.
+        let cut = HistoryEntry(date: .reference, role: .marker, text: "⚠︎ Se cortó: rate_limit")
+        #expect(HistoryExport.plainText(cut, agent: "Claude Code") == "—— ⚠︎ Se cortó: llegaste al límite de uso (rate_limit) ——")
         #expect(HistoryExport.plainText([], agent: "Codex").isEmpty)
     }
 

@@ -385,18 +385,33 @@ private struct HistoryRow: View {
 
     private var time: String { entry.date.formatted(date: .omitted, time: .shortened) }
 
+    /// Una divisoria con lo que pasó. Un corte se lee con una frase clara («Se cortó: llegaste al
+    /// límite de uso») y el código de la API queda abajo, chiquito, por si hace falta buscarlo.
     private var marker: some View {
         let failed = entry.text.hasPrefix(AgentEventInterpreter.stopFailureMarker)
-        return HStack(spacing: 8) {
-            Rectangle().fill((failed ? Theme.attention : Color.primary).opacity(0.2)).frame(height: 1)
-            Text("\(entry.text) · \(time)")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(failed ? AnyShapeStyle(Theme.attention) : AnyShapeStyle(.secondary))
-                .fixedSize()
-            Rectangle().fill((failed ? Theme.attention : Color.primary).opacity(0.2)).frame(height: 1)
+        let label = HistoryStore.markerTitle(entry.text)
+        let meaning = HistoryStore.markerMeaning(entry.text)
+        let rule = Rectangle().fill((failed ? Theme.attention : Color.primary).opacity(0.2)).frame(minWidth: 12, maxHeight: 1)
+        return VStack(spacing: 2) {
+            HStack(spacing: 8) {
+                rule
+                Text("\(label.title) · \(time)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(failed ? AnyShapeStyle(Theme.attention) : AnyShapeStyle(.secondary))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .layoutPriority(1)
+                rule
+            }
+            if let code = label.code {
+                Text(code)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.tertiary)
+                    .accessibilityLabel("Código del error: \(code)")
+            }
         }
         .padding(.vertical, 4)
-        .help(HistoryStore.markerMeaning(entry.text))
+        .help(label.code.map { "\(meaning) Código del error: \($0)." } ?? meaning)
         .accessibilityElement(children: .combine)
     }
 
