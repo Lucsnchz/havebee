@@ -23,7 +23,7 @@ private func ahRender<V: View>(_ view: V, size: CGSize, name: String, dark: Bool
     host.layoutSubtreeIfNeeded()
     try? await Task.sleep(nanoseconds: UInt64(settle * 1_000_000_000))
     host.layoutSubtreeIfNeeded()
-    guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return nil }
+    guard let rep = Snapshot.bitmap(for: host) else { return nil }
     host.cacheDisplay(in: host.bounds, to: rep)
     if let dir = ProcessInfo.processInfo.environment["HIVE_SNAPSHOTS"], let png = rep.representation(using: .png, properties: [:]) {
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)

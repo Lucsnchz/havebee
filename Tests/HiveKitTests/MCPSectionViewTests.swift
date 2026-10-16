@@ -20,7 +20,7 @@ private enum MCPViewRender {
         host.layoutSubtreeIfNeeded()
         try? await Task.sleep(nanoseconds: 500_000_000) // deja correr las tareas de carga (.task)
         host.layoutSubtreeIfNeeded()
-        guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return nil }
+        guard let rep = Snapshot.bitmap(for: host) else { return nil }
         host.cacheDisplay(in: host.bounds, to: rep)
         if let dir = ProcessInfo.processInfo.environment["HIVE_SNAPSHOTS"], let png = rep.representation(using: .png, properties: [:]) {
             try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)

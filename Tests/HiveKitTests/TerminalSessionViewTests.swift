@@ -28,7 +28,7 @@ private enum SessionSnapshot {
         // Con la barra de herramientas: se captura el marco de la ventana entero.
         let target: NSView = withToolbar ? (window.contentView?.superview ?? host) : host
         target.layoutSubtreeIfNeeded()
-        guard let rep = target.bitmapImageRepForCachingDisplay(in: target.bounds) else { return nil }
+        guard let rep = Snapshot.bitmap(for: target) else { return nil }
         target.cacheDisplay(in: target.bounds, to: rep)
         if let dir = ProcessInfo.processInfo.environment["HIVE_SNAPSHOTS"], let png = rep.representation(using: .png, properties: [:]) {
             try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)

@@ -41,7 +41,7 @@ enum Snapshot {
             let wait = reps.isEmpty ? settle : 0.15
             try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
             host.layoutSubtreeIfNeeded()
-            guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { continue }
+            guard let rep = bitmap(for: host) else { continue }
             host.cacheDisplay(in: host.bounds, to: rep)
             if let dir = ProcessInfo.processInfo.environment["HIVE_SNAPSHOTS"], let png = rep.representation(using: .png, properties: [:]) {
                 try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
@@ -51,6 +51,19 @@ enum Snapshot {
         }
         window.close()
         return reps
+    }
+
+    /// Un lienzo a 2x, sea cual sea la pantalla: con un monitor común (o con la pantalla apagada) la
+    /// ventana fuera de pantalla queda a 1x, las líneas finas y el texto chico casi no aparecen en la
+    /// grilla de `distinctColors` y las capturas para revisar salen borrosas.
+    static func bitmap(for view: NSView, scale: CGFloat = 2) -> NSBitmapImageRep? {
+        let size = view.bounds.size
+        guard size.width > 0, size.height > 0,
+              let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size.width * scale), pixelsHigh: Int(size.height * scale),
+                                         bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                         colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return nil }
+        rep.size = size
+        return rep
     }
 
     /// Cuántos colores distintos hay en una grilla de puntos (una imagen vacía tiene uno).

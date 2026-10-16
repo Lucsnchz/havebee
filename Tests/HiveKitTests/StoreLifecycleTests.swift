@@ -227,7 +227,7 @@ private func renderNucleoSnapshot(_ view: some View, size: CGSize, name: String,
     try? await Task.sleep(nanoseconds: 400_000_000)
     host.layoutSubtreeIfNeeded()
     defer { window.close() }
-    guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return 0 }
+    guard let rep = Snapshot.bitmap(for: host) else { return 0 }
     host.cacheDisplay(in: host.bounds, to: rep)
     if let dir = ProcessInfo.processInfo.environment["HIVE_SNAPSHOTS"], let png = rep.representation(using: .png, properties: [:]) {
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
