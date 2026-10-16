@@ -146,13 +146,27 @@ struct TerminalSessionViewTests {
     func missingAgentRule() {
         let nowhere: (String) -> String? = { _ in nil }
         let found: (String) -> String? = { "/fake/bin/\($0)" }
-        #expect(MissingAgent.isMissing(kind: .gemini, exitCode: nil, resolve: nowhere))
-        #expect(!MissingAgent.isMissing(kind: .gemini, exitCode: nil, resolve: found))
+        #expect(MissingAgent.isMissing(kind: .gemini, exitCode: nil, processStarted: false, resolve: nowhere))
+        #expect(!MissingAgent.isMissing(kind: .gemini, exitCode: nil, processStarted: false, resolve: found))
         // Salió con un código (por ejemplo /quit): existía, aunque el PATH guardado sea viejo.
-        #expect(!MissingAgent.isMissing(kind: .codex, exitCode: 0, resolve: nowhere))
-        #expect(!MissingAgent.isMissing(kind: .claude, exitCode: 1, resolve: nowhere))
+        #expect(!MissingAgent.isMissing(kind: .codex, exitCode: 0, processStarted: true, resolve: nowhere))
+        #expect(!MissingAgent.isMissing(kind: .claude, exitCode: 1, processStarted: true, resolve: nowhere))
+        // Detener (o un cierre forzado) termina por una señal y llega sin código: también existía.
+        #expect(!MissingAgent.isMissing(kind: .codex, exitCode: nil, processStarted: true, resolve: nowhere))
         // Una terminal común nunca «falta».
-        #expect(!MissingAgent.isMissing(kind: .shell, exitCode: nil, resolve: nowhere))
+        #expect(!MissingAgent.isMissing(kind: .shell, exitCode: nil, processStarted: false, resolve: nowhere))
+    }
+
+    @Test("Una terminal sabe si llegó a lanzar su proceso")
+    func terminalStartedFlag() async {
+        _ = NSApplication.shared
+        let dir = TempDir("hive-started")
+        let terminal = HiveTerminalView(frame: NSRect(x: 0, y: 0, width: 300, height: 100), scrollback: 100)
+        #expect(!terminal.hasStartedProcess)
+        // /usr/bin/true termina enseguida: no queda nada vivo.
+        terminal.startProcess(executable: "/usr/bin/true", args: [], environment: [], currentDirectory: dir.path)
+        #expect(terminal.hasStartedProcess)
+        #expect(await waitUntil(timeout: 10) { !terminal.isProcessRunning })
     }
 
     @Test("Comandos: el panel de salida, la esquinita y el editor")

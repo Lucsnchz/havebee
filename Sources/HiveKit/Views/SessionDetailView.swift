@@ -29,7 +29,9 @@ struct SessionDetailView: View {
                         TerminalContainer(terminal: rt.terminal)
                             .background(terminalBackground)
                         if case .exited(let code) = rt.status {
-                            ExitedBar(code: code, kind: ctx.session.kind) { store.relaunch(sessionId) }
+                            ExitedBar(code: code, kind: ctx.session.kind, processStarted: rt.terminal?.hasStartedProcess ?? false) {
+                                store.relaunch(sessionId)
+                            }
                         }
                     }
                     SessionStatusBar(project: ctx.project, branch: ctx.branch)
@@ -245,6 +247,8 @@ private struct ExitedBar: View {
     @Environment(AppStore.self) private var store
     let code: Int32?
     let kind: SessionKind
+    /// Si la terminal llegó a lanzar el proceso (entonces el programa existía).
+    let processStarted: Bool
     let onResume: () -> Void
     @State private var missing = false
     @State private var copied = false
@@ -280,22 +284,32 @@ private struct ExitedBar: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .background(.bar)
-        .task(id: code) {
+        // También con `processStarted`: al reintentar, la terminal nueva puede terminar con el mismo
+        // código (nil) sin que la barra se vuelva a crear.
+        .task(id: ExitKey(code: code, processStarted: processStarted)) {
             let environment = store.environment
             let path = environment.cachedLoginPATH
                 ?? LoginShell.fallbackPATH(home: environment.home.path, inherited: environment.inheritedEnvironment["PATH"])
-            missing = MissingAgent.isMissing(kind: kind, exitCode: code) { environment.processes.resolve($0, path: path) }
+            missing = MissingAgent.isMissing(kind: kind, exitCode: code, processStarted: processStarted) {
+                environment.processes.resolve($0, path: path)
+            }
         }
+    }
+
+    private struct ExitKey: Equatable {
+        let code: Int32?
+        let processStarted: Bool
     }
 }
 
 /// Si una sesión que terminó es de un agente que no está instalado.
 enum MissingAgent {
-    /// Solo cuenta un agente que no llegó a arrancar (sin código de salida) y cuyo programa no está
-    /// en el PATH. Si salió con un código, existía: el PATH guardado puede ser el de la vez anterior
-    /// y no tener, por ejemplo, la carpeta de nvm donde está Codex.
-    static func isMissing(kind: SessionKind, exitCode: Int32?, resolve: (String) -> String?) -> Bool {
-        guard kind.isAgent, exitCode == nil, let binary = kind.binary else { return false }
+    /// Solo cuenta un agente cuyo proceso nunca arrancó y cuyo programa no está en el PATH. Si
+    /// arrancó, existía: salir con un código (/quit) o por una señal (Detener, un cierre forzado,
+    /// que llegan sin código) no quiere decir que falte. El PATH guardado puede ser el de la vez
+    /// anterior y no tener, por ejemplo, la carpeta de nvm donde está Codex.
+    static func isMissing(kind: SessionKind, exitCode: Int32?, processStarted: Bool, resolve: (String) -> String?) -> Bool {
+        guard kind.isAgent, !processStarted, exitCode == nil, let binary = kind.binary else { return false }
         return resolve(binary) == nil
     }
 }

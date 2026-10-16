@@ -79,6 +79,10 @@ public final class HiveTerminalView: TerminalView, TerminalViewDelegate, LocalPr
     /// Lo usan el menú de la sesión, el dock y los paneles.
     var isProcessRunning: Bool { process.running }
 
+    /// Si alguna vez se le pidió lanzar un proceso. Una sesión de agente que terminó sin haberlo
+    /// lanzado es la que no encontró el programa en el PATH.
+    var hasStartedProcess: Bool { startDirectory != nil }
+
     func setProcessOutputHandler(_ handler: @escaping () -> Void) { onOutput = handler }
 
     /// Todo el texto de la terminal, con el scroll incluido (para copiar o guardar).
