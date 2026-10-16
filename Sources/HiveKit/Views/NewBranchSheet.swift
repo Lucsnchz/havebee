@@ -230,13 +230,18 @@ struct NewBranchSheet: View {
     }
 
     private var firstSessionChips: some View {
-        HStack(spacing: 8) {
+        let availability = AgentAvailability.shared(for: store)
+        return HStack(spacing: 8) {
             SessionChoiceChip(kind: nil, selected: firstSession == nil) { storedFirstSession = "" }
             ForEach(SessionKind.allCases) { kind in
-                SessionChoiceChip(kind: kind, selected: firstSession == kind) { storedFirstSession = kind.rawValue }
+                SessionChoiceChip(kind: kind, selected: firstSession == kind, installed: availability.isInstalled(kind)) {
+                    storedFirstSession = kind.rawValue
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        // Que no quede «no instalado» un agente que instalaste con Hive abierto.
+        .onAppear { availability.refreshIfStale() }
     }
 
     /// Nombre final y carpeta, en gris, para ver qué se va a crear antes de crearlo.
@@ -261,7 +266,16 @@ struct NewBranchSheet: View {
 
     private var mode: BranchMode { BranchMode(rawValue: storedMode) ?? .worktree }
 
-    private var firstSession: SessionKind? { SessionKind(rawValue: storedFirstSession) }
+    private var firstSession: SessionKind? {
+        Self.firstSession(stored: storedFirstSession, missing: AgentAvailability.shared(for: store).missing)
+    }
+
+    /// La primera sesión de la rama nueva: la que elegiste la última vez, salvo que su agente no esté
+    /// instalado (abriría una sesión que no arranca). Elegirlo queda guardado para cuando lo instales.
+    static func firstSession(stored: String, missing: Set<SessionKind>) -> SessionKind? {
+        guard let kind = SessionKind(rawValue: stored), !missing.contains(kind) else { return nil }
+        return kind
+    }
 
     private var branchName: String {
         isNew ? name.trimmingCharacters(in: .whitespaces) : existingShortName
@@ -483,6 +497,8 @@ struct NewBranchSheet: View {
 private struct SessionChoiceChip: View {
     let kind: SessionKind?
     let selected: Bool
+    /// Sin instalar se ve apagado y no se puede elegir (como en «Nueva sesión de…»).
+    var installed = true
     let action: () -> Void
     @State private var hovering = false
 
@@ -508,7 +524,15 @@ private struct SessionChoiceChip: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+        .opacity(installed ? 1 : 0.45)
+        .disabled(!installed)
         .onHover { hovering = $0 }
-        .help(kind.map { "Abrir una sesión de \($0.label) al crear la rama" } ?? "Sin sesión: solo crear la rama")
+        .help(help)
+    }
+
+    private var help: String {
+        guard let kind else { return "Sin sesión: solo crear la rama" }
+        return installed ? "Abrir una sesión de \(kind.label) al crear la rama"
+            : "\(kind.label) no está instalado. Instalalo desde la terminal: \(kind.installHint)"
     }
 }

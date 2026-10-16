@@ -36,8 +36,8 @@ private final class FlujosConflictRepo {
 @MainActor
 @Suite("Vistas de los flujos peligrosos", .serialized)
 struct FlujosViewTests {
-    func check(_ view: some View, size: CGSize, name: String) async {
-        let defaults = SnapshotDefaults()
+    func check(_ view: some View, size: CGSize, name: String, defaults: SnapshotDefaults? = nil) async {
+        let defaults = defaults ?? SnapshotDefaults()
         let reps = await Snapshot.render(view, size: size, name: name, defaults: defaults.defaults, settle: 0.8)
         #expect(reps.count == 2, "No se pudo dibujar \(name)")
         for rep in reps { #expect(Snapshot.distinctColors(rep) > 3, "\(name) parece vacía") }
@@ -81,5 +81,27 @@ struct FlujosViewTests {
         let project = try #require(store.repoProjects.first)
         await check(RemoteActionsMenu(project: project, branch: project.branches[0], busy: "Publicando…").environment(store).padding(),
                     size: CGSize(width: 220, height: 60), name: "flujos-03-remoto-publicando")
+    }
+
+    @Test("Nueva rama sin Gemini instalado: su chip queda apagado y la primera sesión pasa a «Ninguna»")
+    func newBranchWithoutGemini() async throws {
+        let world = TestWorld()
+        world.processes.installed = ["claude", "codex"]
+        let repo = GitRepo(name: "bevo")
+        let store = world.makeStore()
+        await store.addProject(at: repo.path)
+        let project = try #require(store.repoProjects.first)
+        let availability = AgentAvailability.shared(for: store)
+        #expect(await waitUntil { availability.checked })
+        let defaults = SnapshotDefaults()
+        // La última vez elegiste Gemini (cuando estaba instalado).
+        defaults.defaults.set(SessionKind.gemini.rawValue, forKey: "newBranchFirstSession")
+        await check(NewBranchSheet(projectId: project.id).environment(store), size: CGSize(width: 500, height: 620),
+                    name: "flujos-04-nueva-rama-sin-gemini", defaults: defaults)
+        #expect(NewBranchSheet.firstSession(stored: SessionKind.gemini.rawValue, missing: availability.missing) == nil)
+        #expect(NewBranchSheet.firstSession(stored: SessionKind.codex.rawValue, missing: availability.missing) == .codex)
+        // Cuando lo instalás, vuelve lo que habías elegido.
+        #expect(NewBranchSheet.firstSession(stored: SessionKind.gemini.rawValue, missing: []) == .gemini)
+        #expect(NewBranchSheet.firstSession(stored: "", missing: []) == nil)
     }
 }
