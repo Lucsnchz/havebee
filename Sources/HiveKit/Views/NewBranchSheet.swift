@@ -184,12 +184,18 @@ struct NewBranchSheet: View {
                   systemImage: "checkmark.circle")
                 .foregroundStyle(.secondary)
         } else {
-            Picker("Modo", selection: Binding(get: { mode }, set: { storedMode = $0.rawValue })) {
-                Text("Worktree (carpeta propia)").tag(BranchMode.worktree)
-                Text("Carpeta principal (checkout)").tag(BranchMode.main)
+            // Segmentado, como «Origen»: así en la tarjeta queda un solo grupo de radios (la carpeta).
+            VStack(alignment: .leading, spacing: 6) {
+                Picker("Modo", selection: Binding(get: { mode }, set: { storedMode = $0.rawValue })) {
+                    Text("Worktree").tag(BranchMode.worktree)
+                    Text("Carpeta principal").tag(BranchMode.main)
+                }
+                .pickerStyle(.segmented)
+                Text(Self.modeExplanation(mode))
+                    .font(.caption)
+                    .foregroundStyle(Theme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .pickerStyle(.radioGroup)
-            .labelsHidden()
             if mode == .worktree {
                 Picker("Carpeta", selection: Binding(get: { location }, set: { location = $0; locationTouched = true })) {
                     Text(siblingLabel).tag(WorktreeLocation.sibling)
@@ -197,11 +203,13 @@ struct NewBranchSheet: View {
                 }
                 .pickerStyle(.radioGroup)
                 VStack(alignment: .leading, spacing: 3) {
-                    Toggle("Copiar .env, auth.json y permisos de Claude", isOn: $copyIgnored)
+                    // Sin nada para copiar, el interruptor se ve apagado y no se puede tocar.
+                    Toggle("Copiar .env, auth.json y permisos de Claude",
+                           isOn: Binding(get: { copyIgnored && !Self.nothingToCopy(includeFiles) }, set: { copyIgnored = $0 }))
+                        .disabled(Self.nothingToCopy(includeFiles))
                     Text(includesCaption)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.leading, 20)
+                        .foregroundStyle(Theme.secondaryText)
                 }
                 VStack(alignment: .leading, spacing: 5) {
                     Toggle("Preparar al crear", isOn: $runSetup)
@@ -212,19 +220,12 @@ struct NewBranchSheet: View {
                         .textFieldStyle(.roundedBorder)
                         .font(.system(.callout, design: .monospaced))
                         .disabled(!runSetup)
-                        .padding(.leading, 20)
                     if let setupOrigin, !setupEdited {
                         Text(setupOrigin.label)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .padding(.leading, 20)
+                            .foregroundStyle(Theme.secondaryText)
                     }
                 }
-            } else {
-                Text("Usa la carpeta del proyecto. Para trabajar en esta rama Hive hace git switch, y la carpeta principal tiene una sola rama activa a la vez.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -327,11 +328,27 @@ struct NewBranchSheet: View {
         return "Junto al proyecto"
     }
 
-    private var includesCaption: String {
-        guard let includeFiles else { return "Buscando archivos ignorados…" }
-        if includeFiles.isEmpty { return "No hay archivos ignorados para copiar." }
-        let found = WorktreeIncludes.summary(includeFiles, shown: 3)
-        return copyIgnored ? "Se copian: " + found : "No se copian (encontré " + found + ")."
+    private var includesCaption: String { Self.includesCaption(includeFiles, copy: copyIgnored) }
+
+    /// Qué se copia al worktree nuevo, en palabras: «Se copian: .env, auth.json y 2 más».
+    static func includesCaption(_ files: [String]?, copy: Bool) -> String {
+        guard let files else { return "Buscando .env y otros archivos fuera de git…" }
+        if files.isEmpty { return "No hay .env ni otros archivos fuera de git para copiar." }
+        let found = WorktreeIncludes.summary(files, shown: 3)
+        return copy ? "Se copian: " + found : "No se copian (encontré " + found + ")."
+    }
+
+    /// Ya se buscó y no hay nada para copiar (mientras se busca, el interruptor sigue activo).
+    static func nothingToCopy(_ files: [String]?) -> Bool { files?.isEmpty == true }
+
+    /// Debajo de «Worktree | Carpeta principal»: qué quiere decir cada uno.
+    static func modeExplanation(_ mode: BranchMode) -> String {
+        switch mode {
+        case .worktree:
+            "Una carpeta propia para esta rama: podés tener varias abiertas a la vez sin pisarte."
+        case .main:
+            "Usa la carpeta del proyecto. Hive hace git switch a esta rama, y la carpeta principal tiene una sola rama activa a la vez."
+        }
     }
 
     // MARK: - Carga
