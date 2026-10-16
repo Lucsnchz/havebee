@@ -130,9 +130,7 @@ private struct HomeRow: View {
                 Text("Inicio")
                     .font(HiveFont.body.weight(.semibold))
                 Spacer(minLength: 4)
-                if activity.waitingForYou > 0 {
-                    CountBadge(activity: activity)
-                }
+                ActivityBadge(activity: activity)
             }
             .padding(.horizontal, 8)
             .frame(height: 28)
@@ -148,33 +146,7 @@ private struct HomeRow: View {
     }
 
     private func homeAccessibilityText(_ activity: Activity) -> String {
-        switch activity.waitingForYou {
-        case 0: "Inicio"
-        case 1: "Inicio, una sesión te espera"
-        default: "Inicio, \(activity.waitingForYou) sesiones te esperan"
-        }
-    }
-}
-
-/// Globito con cuántas sesiones te esperan («!» delante si alguna pide permiso).
-private struct CountBadge: View {
-    let activity: Activity
-
-    var body: some View {
-        HStack(spacing: 1) {
-            if activity.attention > 0 {
-                Image(systemName: "exclamationmark")
-                    .font(.system(size: 8, weight: .heavy))
-            }
-            Text("\(activity.waitingForYou)")
-        }
-        .font(.system(size: 10, weight: .bold).monospacedDigit())
-        .foregroundStyle(Theme.onAccent)
-        .padding(.horizontal, 5)
-        .padding(.vertical, 1)
-        .background(activity.ring.color ?? Theme.pending, in: Capsule())
-        .help(activity.waitingForYou == 1 ? "Una sesión te espera" : "\(activity.waitingForYou) sesiones te esperan")
-        .transition(.scale.combined(with: .opacity))
+        ActivityBadge.accessibilityText(activity).map { "Inicio, \($0)" } ?? "Inicio"
     }
 }
 
@@ -205,7 +177,7 @@ private struct ProjectRow: View {
                 .help("Nueva rama…")
                 .accessibilityLabel("Nueva rama en \(project.name)")
             } else if showsBadge {
-                CountBadge(activity: activity)
+                ActivityBadge(activity: activity)
             }
         }
         .padding(.vertical, 1)

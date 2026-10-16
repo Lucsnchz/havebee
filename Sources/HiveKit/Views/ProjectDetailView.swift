@@ -91,7 +91,8 @@ private struct ProjectHeader: View {
             Button {
                 store.customizeTarget = CustomizeTarget(id: project.id)
             } label: {
-                ProjectTile(project: project, size: 56, activity: store.activity(of: project))
+                // El globito suma el «!» de permiso: el aro naranja y el verde solo se distinguen por el color.
+                ProjectTile(project: project, size: 56, activity: store.activity(of: project), showsBadge: true)
                     .padding(4)
             }
             .buttonStyle(.plain)

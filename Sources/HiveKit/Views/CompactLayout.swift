@@ -109,7 +109,6 @@ private struct HomeRailItem: View {
     var body: some View {
         let selected = store.selection == nil
         let activity = store.activity(of: store.projects.flatMap(\.activeSessions))
-        let waiting = activity.waitingForYou
         Button {
             store.select(nil)
         } label: {
@@ -123,16 +122,8 @@ private struct HomeRailItem: View {
                     .background(Color.primary.opacity(selected ? 0.12 : (hovering ? 0.08 : 0.05)),
                                 in: RoundedRectangle(cornerRadius: 11, style: .continuous))
                     .overlay(alignment: .topTrailing) {
-                        if waiting > 0 {
-                            Text("\(waiting)")
-                                .font(.system(size: 10, weight: .bold).monospacedDigit())
-                                .foregroundStyle(Theme.onAccent)
-                                .padding(.horizontal, 4)
-                                .frame(minWidth: 16, minHeight: 16)
-                                .background(activity.attention > 0 ? Theme.attention : Theme.pending, in: Capsule())
-                                .overlay(Capsule().strokeBorder(Color(nsColor: .windowBackgroundColor), lineWidth: 2))
-                                .offset(x: 7, y: -7)
-                        }
+                        ActivityBadge(activity: activity, outlined: true)
+                            .offset(x: 7, y: -7)
                     }
                     .frame(maxWidth: .infinity)
             }
@@ -142,7 +133,7 @@ private struct HomeRailItem: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .help("Inicio: lo que te espera en todos los proyectos (\(HiveCommands.Shortcut.home.description))")
-        .accessibilityLabel(waiting == 0 ? "Inicio" : "Inicio, \(waitingText(waiting))")
+        .accessibilityLabel(ActivityBadge.accessibilityText(activity).map { "Inicio, \($0)" } ?? "Inicio")
     }
 }
 
