@@ -152,7 +152,7 @@ struct BranchCard: View {
                     Spacer(minLength: 6)
                     Text(modeLabel(active: active))
                         .font(HiveFont.meta.weight(.medium))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(store.isMissing(branch) ? AnyShapeStyle(Theme.attention) : AnyShapeStyle(.secondary))
                 }
                 HStack(spacing: 8) {
                     if let status {
@@ -179,8 +179,10 @@ struct BranchCard: View {
         .accessibilityHint("Abre la rama")
     }
 
+    /// Lo mismo que dice el encabezado de la rama: «Worktree», «Carpeta principal», «Inactiva» o «Sin carpeta».
     private func modeLabel(active: Bool) -> String {
-        branch.mode == .worktree ? "Worktree" : (active ? "Principal" : "Inactiva")
+        // Inactiva o bloqueada por un rebase se leen igual: no hace falta mirar la carpeta principal.
+        BranchSituation.of(mode: branch.mode, active: active, missing: store.isMissing(branch), mainBusy: false).label
     }
 
     private func accessibilityText(active: Bool, status: GitStatus?) -> String {
