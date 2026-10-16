@@ -108,6 +108,17 @@ public struct ProjectOrdering: Sendable {
         return moving(projects, in: group(of: project), fromOffsets: [index], toOffset: delta > 0 ? target + 1 : target)
     }
 
+    /// Arrastrar un proyecto sobre otro (el riel): toma su lugar, si son del mismo grupo. Si venía
+    /// de arriba queda abajo del otro, y al revés. nil si no hay nada que mover.
+    public func moving(_ projects: [Project], dragging id: UUID, onto target: UUID) -> [Project]? {
+        guard id != target, let dragged = projects.first(where: { $0.id == id }),
+              let destination = projects.first(where: { $0.id == target }) else { return nil }
+        let group = group(of: dragged)
+        guard group == self.group(of: destination), group != .scratch,
+              let (from, _) = position(of: id, in: projects), let (to, _) = position(of: target, in: projects) else { return nil }
+        return moving(projects, in: group, fromOffsets: [from], toOffset: to > from ? to + 1 : to)
+    }
+
     /// Fija o desfija un proyecto. Al fijarlo queda último entre los fijados (justo arriba del
     /// divisor); al desfijarlo, primero de su grupo, pegado a donde estaba. «Terminales» no se fija.
     public func pinning(_ projects: [Project], id: UUID, pinned: Bool) -> [Project] {

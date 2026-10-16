@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import HiveCore
 import Testing
+import UniformTypeIdentifiers
 @testable import HiveKit
 
 /// Un mundo con proyectos guardados de antes (sin git: el orden no lo necesita).
@@ -161,6 +162,29 @@ struct StoreProjectOrderTests {
         #expect(store.projects.map(\.name) == ["fijado", "hoy", "viejo", "Terminales"])
         store.moveProjects(in: .scratch, from: [0], to: 0) // «Terminales» no se mueve
         #expect(store.projects.last?.isScratch == true)
+    }
+
+    @Test("Arrastrar en el riel: toma el lugar del otro dentro del grupo y se guarda")
+    func dragInRail() throws {
+        let w = try RielWorld()
+        let store = w.makeStore()
+        store.setPinned(true, project: w.old.id)
+        #expect(store.visibleProjects.map(\.project.name) == ["fijado", "viejo", "hoy", "Terminales"])
+        #expect(store.moveProject(w.old.id, onto: w.pinned.id))
+        #expect(store.visibleProjects.map(\.project.name) == ["viejo", "fijado", "hoy", "Terminales"])
+        #expect(w.makeStore().visibleProjects.map(\.project.name) == ["viejo", "fijado", "hoy", "Terminales"])
+        // «hoy» no es fijado: no se mete entre ellos.
+        #expect(!store.moveProject(w.today.id, onto: w.old.id))
+        #expect(store.visibleProjects.map(\.project.name) == ["viejo", "fijado", "hoy", "Terminales"])
+    }
+
+    @Test("El arrastre del riel usa un tipo propio: soltarlo en una terminal no escribe nada")
+    func railDragType() {
+        let type = RailReorderDelegate.type
+        #expect(!TerminalDrop.types.map(\.rawValue).contains(type.identifier))
+        #expect(!type.conforms(to: .text) && !type.conforms(to: .url))
+        let id = UUID()
+        #expect(RailReorderDelegate.provider(for: id).registeredTypeIdentifiers == [type.identifier])
     }
 
     @Test("El riel dice si el proyecto está fijado o sin actividad")

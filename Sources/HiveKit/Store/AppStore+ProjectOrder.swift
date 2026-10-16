@@ -31,6 +31,16 @@ extension AppStore {
         scheduleSave()
     }
 
+    /// Arrastrar un proyecto sobre otro en el riel: toma su lugar si son del mismo grupo.
+    /// Devuelve si se movió.
+    @discardableResult
+    public func moveProject(_ id: UUID, onto target: UUID) -> Bool {
+        guard let moved = projectOrdering.moving(projects, dragging: id, onto: target) else { return false }
+        projects = moved
+        scheduleSave()
+        return true
+    }
+
     /// Cambió el día (pasó la medianoche, o la Mac se despertó al otro día): se recalcula el orden.
     func dayChanged() {
         dayStamp += 1

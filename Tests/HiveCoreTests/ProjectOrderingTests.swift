@@ -178,6 +178,28 @@ struct ProjectOrderingTests {
         #expect(order.moving(manual, id: UUID(), by: 1) == nil)
     }
 
+    @Test("Arrastrar uno sobre otro (el riel): toma su lugar, solo dentro del grupo")
+    func dragOnto() throws {
+        let p = rielProject("p", pinned: true)
+        let a1 = rielProject("a1", used: today)
+        let a2 = rielProject("a2", used: today)
+        let a3 = rielProject("a3", used: today)
+        let i = rielProject("i")
+        let scratch = Project.scratch(home: "/h")
+        let manual = [i, a1, p, a2, a3, scratch]
+        let order = ordering()
+        // De arriba hacia abajo queda abajo del otro; de abajo hacia arriba, arriba.
+        #expect(try #require(order.moving(manual, dragging: a1.id, onto: a3.id)).map(\.name) == ["p", "a2", "a3", "a1", "i", "Terminales"])
+        #expect(try #require(order.moving(manual, dragging: a3.id, onto: a1.id)).map(\.name) == ["p", "a3", "a1", "a2", "i", "Terminales"])
+        #expect(try #require(order.moving(manual, dragging: a2.id, onto: a3.id)).map(\.name) == ["p", "a1", "a3", "a2", "i", "Terminales"])
+        // Entre grupos, sobre sí mismo, con «Terminales» o con un id desconocido: nada.
+        #expect(order.moving(manual, dragging: a1.id, onto: p.id) == nil)
+        #expect(order.moving(manual, dragging: i.id, onto: a1.id) == nil)
+        #expect(order.moving(manual, dragging: a1.id, onto: a1.id) == nil)
+        #expect(order.moving(manual, dragging: scratch.id, onto: i.id) == nil)
+        #expect(order.moving(manual, dragging: UUID(), onto: a1.id) == nil)
+    }
+
     @Test("Fijar lo deja último de los fijados; desfijarlo, primero de su grupo")
     func pinAndUnpin() throws {
         let p1 = rielProject("p1", pinned: true)

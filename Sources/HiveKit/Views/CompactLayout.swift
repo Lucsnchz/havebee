@@ -1,6 +1,7 @@
 import AppKit
 import HiveCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Vista compacta: barra angosta con los proyectos y las sesiones del proyecto como pestañas.
 struct CompactLayout: View {
@@ -28,6 +29,8 @@ struct CompactLayout: View {
 private struct ProjectRail: View {
     @Environment(AppStore.self) private var store
     @State private var dropTargeted = false
+    /// El proyecto que se está arrastrando para reordenar el riel.
+    @State private var dragging: UUID?
 
     var body: some View {
         // El mismo orden que el árbol y que ⌃⌘1…⌃⌘9: fijados, activos de hoy, apagados y «Terminales».
@@ -48,6 +51,12 @@ private struct ProjectRail: View {
                                 RailDivider()
                             }
                             RailItem(project: item.project, isActive: item.isActive, shortcut: HiveCommands.Shortcut.project(index))
+                                // Arrastrar para reordenar, dentro de su grupo (fijar es con el menú).
+                                .onDrag {
+                                    dragging = item.id
+                                    return RailReorderDelegate.provider(for: item.id)
+                                }
+                                .onDrop(of: [RailReorderDelegate.type], delegate: RailReorderDelegate(target: item.id, dragging: $dragging, store: store))
                         }
                     }
                 }
@@ -210,6 +219,45 @@ struct RailItem: View {
             parts.append("sin actividad hoy")
         }
         return parts.joined(separator: ", ")
+    }
+}
+
+/// Reordena el riel mientras arrastrás: al pasar sobre otro proyecto del mismo grupo, el arrastrado
+/// toma su lugar (lo que se guarda es el orden que se ve). Solo acepta arrastres que empezaron en el
+/// riel: las carpetas que soltás para agregar proyectos las sigue tomando el riel entero.
+struct RailReorderDelegate: DropDelegate {
+    /// Tipo propio del arrastre, que no sale de Hive: si fuera texto, al soltarlo sobre una terminal
+    /// se escribiría el id del proyecto.
+    static let type = UTType(filenameExtension: "hive-proyecto-del-riel", conformingTo: .data) ?? .data
+
+    static func provider(for id: UUID) -> NSItemProvider {
+        let provider = NSItemProvider()
+        provider.registerDataRepresentation(forTypeIdentifier: type.identifier, visibility: .ownProcess) { completion in
+            completion(Data(id.uuidString.utf8), nil)
+            return nil
+        }
+        return provider
+    }
+
+    let target: UUID
+    @Binding var dragging: UUID?
+    let store: AppStore
+
+    func validateDrop(info: DropInfo) -> Bool { dragging != nil }
+
+    func dropEntered(info: DropInfo) {
+        guard let dragging, dragging != target else { return }
+        withAnimation(.snappy) { _ = store.moveProject(dragging, onto: target) }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        dragging == nil ? nil : DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        let handled = dragging != nil
+        dragging = nil
+        return handled
     }
 }
 
