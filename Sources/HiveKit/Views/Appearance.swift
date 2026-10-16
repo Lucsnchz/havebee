@@ -20,6 +20,28 @@ extension TintColor {
     }
 }
 
+/// Selección de navegación: resalta toda la fila, separada del aro de actividad del ícono.
+/// Sigue visible cuando el foco está en la terminal y también con contraste aumentado.
+struct NavigationSelectionBackground: View {
+    let selected: Bool
+    var hovering = false
+    var cornerRadius: CGFloat = 14
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        shape
+            .fill(selected ? Theme.accentFill.opacity(colorScheme == .dark ? 0.28 : 0.22)
+                           : Color.primary.opacity(hovering ? 0.06 : 0))
+            .overlay {
+                shape.strokeBorder(selected ? Theme.accent : .clear, lineWidth: contrast == .increased ? 3 : 2)
+            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+}
+
 // MARK: - Ícono de proyecto
 
 struct ProjectTile: View {

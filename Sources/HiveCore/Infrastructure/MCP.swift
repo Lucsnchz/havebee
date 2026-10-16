@@ -52,6 +52,58 @@ public enum MCPConfigError: Error, Equatable, Sendable, LocalizedError {
 
 /// Lee y escribe el `.mcp.json` del repo (el formato de Claude Code) y lo traduce para Codex y Gemini.
 public enum MCPConfig {
+    /// Los MCP de un worktree deben apuntar a su checkout (Boost, SITE_PATH de Herd, etc.).
+    /// Se escribe una copia privada para el agente; nunca se modifica el .mcp.json versionado.
+    public static func forWorktree(file: URL?, root: String, directory: String, output: URL,
+                                  herdExecutable: String? = nil) -> (file: URL?, servers: [MCPServer]) {
+        guard let file else { return (nil, []) }
+        let servers = load(file)
+        guard !samePath(root, directory) else { return (file, servers) }
+        let rebased = rebasing(servers, root: root, directory: directory).map { server in
+            var server = server
+            if server.command == "php", let herdExecutable {
+                server.config["command"] = .string(herdExecutable)
+                server.config["args"] = .array((["php"] + server.args).map(JSONValue.string))
+            }
+            return server
+        }
+        guard rebased != servers else { return (file, servers) }
+        let config = JSONValue.object(["mcpServers": .object(Dictionary(uniqueKeysWithValues: rebased.map { ($0.name, .object($0.config)) }))])
+        do {
+            let folder = output.deletingLastPathComponent()
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            let data = try JSONSerialization.data(withJSONObject: config.anyValue, options: [.prettyPrinted, .sortedKeys])
+            try data.write(to: output, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: output.path)
+            return (output, rebased)
+        } catch {
+            // Nunca arrancar un MCP con rutas del checkout principal si falló la copia.
+            // Claude recibe la ruta que falló y muestra el error al abrir; Codex/Gemini usan el
+            // valor en memoria. Nunca volver al archivo original con rutas del proyecto principal.
+            // La ruta fallida podría contener una configuración vieja: tampoco se la reutiliza.
+            return (output.appendingPathExtension("unavailable-\(UUID().uuidString)"), rebased)
+        }
+    }
+
+    public static func rebasing(_ servers: [MCPServer], root: String, directory: String) -> [MCPServer] {
+        let paths = Set([root.hasSuffix("/") ? String(root.dropLast()) : root,
+                         URL(fileURLWithPath: root).standardizedFileURL.path,
+                         URL(fileURLWithPath: root).resolvingSymlinksInPath().path]).sorted { $0.count > $1.count }
+        func transform(_ value: JSONValue) -> JSONValue {
+            switch value {
+            case .string(let text):
+                if let root = paths.first(where: { text == $0 || text.hasPrefix($0 + "/") }) {
+                    return .string(directory + text.dropFirst(root.count))
+                }
+                return value
+            case .array(let array): return .array(array.map(transform))
+            case .object(let object): return .object(object.mapValues(transform))
+            default: return value
+            }
+        }
+        return servers.map { MCPServer(name: $0.name, config: $0.config.mapValues(transform)) }
+    }
+
     public static func url(in dir: String) -> URL {
         URL(fileURLWithPath: dir).appendingPathComponent(".mcp.json")
     }

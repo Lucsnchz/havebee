@@ -86,6 +86,7 @@ public struct RenameRequest: Identifiable {
 
 public struct NewBranchTarget: Identifiable {
     public let id: UUID // proyecto
+    public var initialBranch: String? = nil
 }
 
 public struct CustomizeTarget: Identifiable {

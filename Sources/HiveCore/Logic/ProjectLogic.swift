@@ -108,10 +108,13 @@ public struct NewBranchRequest: Sendable {
     public var envAppURL: String?
     /// Comando de preparación que el store corre después de crear el worktree.
     public var setupCommand: String?
+    public var automaticLaravelSetup: Bool
+    public var herd: HerdSites?
 
     public init(projectId: UUID, name: String, isNew: Bool, base: String = "", mode: BranchMode, firstSession: SessionKind? = nil,
                 remoteRef: String? = nil, location: WorktreeLocation = .nested, copyIgnored: Bool = false,
-                envAppURL: String? = nil, setupCommand: String? = nil) {
+                envAppURL: String? = nil, setupCommand: String? = nil,
+                automaticLaravelSetup: Bool = false, herd: HerdSites? = nil) {
         self.projectId = projectId
         self.name = name
         self.isNew = isNew
@@ -123,6 +126,8 @@ public struct NewBranchRequest: Sendable {
         self.copyIgnored = copyIgnored
         self.envAppURL = envAppURL
         self.setupCommand = setupCommand
+        self.automaticLaravelSetup = automaticLaravelSetup
+        self.herd = herd
     }
 }
 
@@ -178,7 +183,10 @@ public enum BranchPlanner {
                                        fileSystem: WorktreeIncludes.FileSystem = .live) -> Result<PreparedBranch, BranchError> {
         let name = request.name.trimmingCharacters(in: .whitespaces)
         guard !name.isEmpty else { return .failure(.emptyName) }
-        guard !project.branches.contains(where: { $0.name == name }) else { return .failure(.alreadyInHive(name)) }
+        if let existing = project.branches.first(where: { $0.name == name }),
+           request.isNew || request.mode != .worktree || existing.mode == .worktree {
+            return .failure(.alreadyInHive(name))
+        }
         let trees = git.worktrees(project.path)
 
         func newPath() -> String {
@@ -193,18 +201,49 @@ public enum BranchPlanner {
         }
         func worktreeReady(_ path: String) -> PreparedBranch {
             var copied: [String] = []
+            var missingCopies: [String] = []
             if request.copyIgnored {
                 let files = WorktreeIncludes.files(in: project.path, git: git, fileSystem: fileSystem)
                 copied = WorktreeIncludes.copy(files, from: project.path, to: path, fileSystem: fileSystem)
+                missingCopies = files.filter { !fileSystem.exists((path as NSString).appendingPathComponent($0)) }
             }
-            if let url = request.envAppURL, copied.contains(".env") {
+            let automatic = request.automaticLaravelSetup && LaravelWorktreeSetup.detects(project.path, read: fileSystem.read)
+            let inheritedEnv = copied.contains(".env")
+            let plan = automatic ? LaravelWorktreeSetup.make(projectPath: project.path, worktreePath: path,
+                                                              herd: request.herd, read: fileSystem.read, exists: exists) : nil
+            var preparationError: String?
+            if automatic, !missingCopies.contains(".env"), !fileSystem.exists((path as NSString).appendingPathComponent(".env")),
+               let example = fileSystem.read((path as NSString).appendingPathComponent(".env.example")) {
+                do {
+                    try fileSystem.write(example, (path as NSString).appendingPathComponent(".env"))
+                    copied.append(".env")
+                } catch { preparationError = "No pude crear .env: \(error.localizedDescription)" }
+            }
+            let appURL = plan?.url ?? request.envAppURL
+            if automatic || (appURL != nil && inheritedEnv) {
                 let env = (path as NSString).appendingPathComponent(".env")
-                if let text = fileSystem.read(env) { try? fileSystem.write(EnvFile.rewriteAppURL(url, in: text), env) }
+                if let text = fileSystem.read(env) {
+                    var updated = appURL.map { EnvFile.rewriteAppURL($0, in: text) } ?? text
+                    if automatic && inheritedEnv {
+                        updated = EnvFile.preserveSQLiteConnection(in: updated, root: project.path, exists: fileSystem.exists)
+                    }
+                    do { if updated != text { try fileSystem.write(updated, env) } }
+                    catch { preparationError = "No pude configurar .env: \(error.localizedDescription)" }
+                }
             }
-            let setup = request.setupCommand?.trimmingCharacters(in: .whitespacesAndNewlines)
+            var setup = plan?.command ?? request.setupCommand?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let preparationError { setup = "printf '%s\\n' \(shellQuote(preparationError)) >&2; exit 1" }
+            if !missingCopies.isEmpty {
+                let checks = missingCopies.map { file in
+                    "test -f \(shellQuote(file)) || { printf '%s\\n' \(shellQuote("No pude copiar \(file). Copialo desde el proyecto principal y reintentá.")) >&2; exit 1; }"
+                }
+                setup = (checks + [setup ?? ""]).joined(separator: "\n")
+            }
             let scripts = ProjectScripts.resolve(projectPath: project.path, folder: (path as NSString).lastPathComponent,
                                                  mainHasCert: false, read: fileSystem.read)
-            return PreparedBranch(branch: Branch(name: name, mode: .worktree, worktreePath: path), copiedFiles: copied,
+            var branch = Branch(name: name, mode: .worktree, worktreePath: path)
+            branch.herdSite = plan?.site
+            return PreparedBranch(branch: branch, copiedFiles: copied,
                                   setupCommand: setup?.isEmpty == false ? setup : nil, archiveCommand: scripts.archive?.command)
         }
 

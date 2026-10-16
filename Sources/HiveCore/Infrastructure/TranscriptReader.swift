@@ -207,6 +207,7 @@ public enum TranscriptReader {
     static func classifyClaudeUser(_ raw: String) -> (HistoryEntry.Role, String)? {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
+        if InterruptedWork.isPrompt(text) { return (.system, text) }
         let hidden = ["<command-name>", "<command-message>", "<command-args>", "<local-command-", "<bash-input>", "<bash-stdout>",
                       "<bash-stderr>", "<system-reminder>", "<user-memory-input>", "[Request interrupted"]
         if hidden.contains(where: { text.hasPrefix($0) }) { return nil }
@@ -247,7 +248,8 @@ public enum TranscriptReader {
         if roleName == "user" && isCodexInjected(clean) { return [] }
         let stamp = json["timestamp"]?.string
         let key = "\(stamp ?? "l\(index)")#\(roleName)#\(stableHash(clean))"
-        return [TranscriptMessage(key: key, conversationId: conversation, role: roleName == "user" ? .user : .assistant,
+        let role: HistoryEntry.Role = roleName == "user" ? (InterruptedWork.isPrompt(clean) ? .system : .user) : .assistant
+        return [TranscriptMessage(key: key, conversationId: conversation, role: role,
                                   text: clean, date: stamp.flatMap(AgentTimestamp.parse))]
     }
 

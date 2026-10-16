@@ -11,6 +11,8 @@ public struct LaunchPlan: Equatable, Sendable {
 
     /// Solo se dibuja en Hive, nunca se manda al proceso como entrada ni como argumentos.
     public var restoredHistory: [HistoryEntry] = []
+    /// El plan incluye exactamente un prompt de continuación en los argumentos del agente.
+    public var continuesInterruptedWork = false
 
     public var environmentList: [String] {
         environment.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }
@@ -47,6 +49,8 @@ public struct LaunchContext: Sendable {
     public var handoffContext: String?
     /// Línea de tiempo leída fuera del hilo principal, para recuperar el scroll al lanzar.
     public var historyEntries: [HistoryEntry]
+    /// El builder confirmó un pendiente y encontró la conversación nativa que lo contiene.
+    public var resumeInterruptedWork: Bool
 
     public init(session: Session, project: Project, branch: Branch, directory: String, path: String,
                 inheritedEnvironment: [String: String], paths: HivePaths, claudeInline: Bool = true, historyHint: Bool = true,
@@ -54,7 +58,7 @@ public struct LaunchContext: Sendable {
                 grokConversationExists: Bool = false, discoveredAgentId: String? = nil, mcpFile: URL? = nil, mcpServers: [MCPServer] = [],
                 geminiSettingsPath: String? = nil, codexExistingNotify: [String]? = nil,
                 claudeUsage: Bool = false, claudeUserStatusLine: String? = nil, handoffContext: String? = nil,
-                historyEntries: [HistoryEntry] = []) {
+                historyEntries: [HistoryEntry] = [], resumeInterruptedWork: Bool = false) {
         self.session = session
         self.project = project
         self.branch = branch
@@ -76,6 +80,7 @@ public struct LaunchContext: Sendable {
         self.claudeUserStatusLine = claudeUserStatusLine
         self.handoffContext = handoffContext
         self.historyEntries = historyEntries
+        self.resumeInterruptedWork = resumeInterruptedWork
     }
 }
 
@@ -118,8 +123,11 @@ public enum LaunchPlanner {
             if ctx.claudeInline || ctx.session.handoffFrom != nil || !restored.isEmpty {
                 env["CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN"] = "1"
             }
+            let continuing = ctx.resumeInterruptedWork && ctx.claudeConversationExists
+            // --mcp-config es variádico: sin el separador tomaría el prompt por otro archivo MCP.
+            if continuing { args += ["--", InterruptedWork.prompt] }
             return LaunchPlan(binary: "claude", args: args, environment: env, agentSessionId: agentId,
-                              restoredHistory: restored)
+                              restoredHistory: restored, continuesInterruptedWork: continuing)
 
         case .codex:
             let thread = ctx.session.agentSessionId ?? ctx.discoveredAgentId
@@ -134,8 +142,10 @@ public enum LaunchPlanner {
                 args += ["-c", #"tui.alternate_screen="never""#]
             }
             if let thread { args.append(thread) }
+            let continuing = ctx.resumeInterruptedWork && thread != nil
+            if continuing { args.append(InterruptedWork.prompt) }
             return LaunchPlan(binary: "codex", args: args, environment: env, agentSessionId: thread,
-                              restoredHistory: restored)
+                              restoredHistory: restored, continuesInterruptedWork: continuing)
 
         case .gemini:
             // El chat que ya era de esta sesión le gana a cualquiera que aparezca en la carpeta.
@@ -150,7 +160,10 @@ public enum LaunchPlanner {
             var args = ctx.grokConversationExists ? ["--resume", agentId] : ["--session-id", agentId]
             // Sin pantalla alternativa, la charla queda en el scroll para leerla y copiarla.
             if ctx.claudeInline { args.append("--no-alt-screen") }
-            return LaunchPlan(binary: "grok", args: args, environment: env, agentSessionId: agentId)
+            let continuing = ctx.resumeInterruptedWork && ctx.grokConversationExists
+            if continuing { args.append(InterruptedWork.prompt) }
+            return LaunchPlan(binary: "grok", args: args, environment: env, agentSessionId: agentId,
+                              continuesInterruptedWork: continuing)
         }
     }
 }

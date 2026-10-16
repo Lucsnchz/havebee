@@ -7,7 +7,7 @@ public enum WorktreeIncludes {
     public static let fileName = ".worktreeinclude"
 
     public static let defaultPatterns = [
-        ".env", ".env.*", "auth.json", ".claude/settings.local.json",
+        ".env", ".env.*", "auth.json", ".mcp.json", ".claude/settings.local.json",
         "local.properties", "keystore.properties", "*.jks", "*.keystore",
     ]
 
@@ -54,7 +54,7 @@ public enum WorktreeIncludes {
         /// subcarpeta con su propio .git, como los de Claude Code en .claude/worktrees o un submódulo):
         /// sus .env no son de este proyecto.
         static func liveFiles(root: String, skipping: Set<String>, limit: Int = 50_000) -> [String] {
-            let keys: [URLResourceKey] = [.isDirectoryKey, .isRegularFileKey]
+            let keys: [URLResourceKey] = [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey]
             var queue: [(url: URL, relative: String)] = [(URL(fileURLWithPath: root, isDirectory: true), "")]
             var result: [String] = []
             var seen = 0
@@ -69,6 +69,7 @@ public enum WorktreeIncludes {
                     let name = url.lastPathComponent
                     let relative = folder.relative.isEmpty ? name : folder.relative + "/" + name
                     let values = try? url.resourceValues(forKeys: Set(keys))
+                    if values?.isSymbolicLink == true { continue }
                     if values?.isDirectory == true {
                         let nestedRepo = FileManager.default.fileExists(atPath: url.appendingPathComponent(".git").path)
                         if !skipping.contains(name) && !nestedRepo { queue.append((url, relative)) }

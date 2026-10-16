@@ -73,11 +73,13 @@ public struct Session: Identifiable, Codable, Hashable, Sendable {
     public var autoNamed: Bool?
     /// La IA anterior de esta conversación. El nuevo agente recibe el historial compartido al arrancar.
     public var handoffFrom: SessionKind?
+    /// Trabajo confirmado que todavía no terminó. Sobrevive a un cierre o caída de Hive.
+    public var pendingWork: PendingAgentWork?
 
     public init(id: UUID = UUID(), name: String, kind: SessionKind, createdAt: Date = Date(),
                 agentSessionId: String? = nil, lastLaunchedAt: Date? = nil, lastMessage: String? = nil,
                 lastActivityAt: Date? = nil, archivedAt: Date? = nil, autoNamed: Bool? = nil,
-                handoffFrom: SessionKind? = nil) {
+                handoffFrom: SessionKind? = nil, pendingWork: PendingAgentWork? = nil) {
         self.id = id
         self.name = name
         self.kind = kind
@@ -89,6 +91,7 @@ public struct Session: Identifiable, Codable, Hashable, Sendable {
         self.archivedAt = archivedAt
         self.autoNamed = autoNamed
         self.handoffFrom = handoffFrom
+        self.pendingWork = pendingWork
     }
 
     public var isArchived: Bool { archivedAt != nil }
@@ -127,6 +130,12 @@ public struct Branch: Identifiable, Codable, Hashable, Sendable {
     public var sessions: [Session]
     /// Si es nil, la rama usa el color del proyecto.
     public var color: TintColor?
+
+    /// Preparación pendiente o fallida; se conserva para poder reintentar después de reabrir Hive.
+    public var setupCommand: String?
+    public var setupFirstSession: SessionKind?
+    /// Alias de Herd creado por la preparación automática de este worktree.
+    public var herdSite: String?
 
     public init(id: UUID = UUID(), name: String, mode: BranchMode, worktreePath: String? = nil,
                 sessions: [Session] = [], color: TintColor? = nil) {

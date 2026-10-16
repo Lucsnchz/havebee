@@ -124,10 +124,18 @@ extension AppStore {
     /// y avisa qué copió.
     public func createBranch(_ request: NewBranchRequest) async -> String? {
         guard let project = project(request.projectId) else { return "No encontré el proyecto." }
+        if let existing = project.branches.first(where: { $0.name == request.name }), hasRunningWork(existing) {
+            return "Cerrá las sesiones y comandos de esta rama antes de crear su worktree."
+        }
         let git = self.git
         gitGeneration += 1
         gitOperations += 1
-        let result = await Task.detached { BranchPlanner.prepareDetailed(request, project: project, git: git) }.value
+        let herdRoot = HerdSites.defaultRoot(home: environment.home)
+        let result = await Task.detached {
+            var request = request
+            if request.herd != nil { request.herd = HerdSites.parse(configRoot: herdRoot) }
+            return BranchPlanner.prepareDetailed(request, project: project, git: git)
+        }.value
         gitOperations -= 1
         gitGeneration += 1
         let prepared: PreparedBranch
@@ -139,12 +147,17 @@ extension AppStore {
             return error.errorDescription
         }
         var branch = prepared.branch
+        branch.setupCommand = prepared.setupCommand
+        branch.setupFirstSession = prepared.setupCommand == nil ? nil : request.firstSession
         projects.updateProject(project.id) { p in
             if let path = branch.worktreePath { p.ignoredWorktrees.removeAll { samePath($0, path) } }
             // Una revisión pudo encontrar el worktree nuevo mientras git lo creaba: no lo duplicamos.
             if let i = p.branches.firstIndex(where: { $0.name == branch.name }) {
                 p.branches[i].mode = branch.mode
                 p.branches[i].worktreePath = branch.worktreePath
+                p.branches[i].setupCommand = branch.setupCommand
+                p.branches[i].setupFirstSession = branch.setupFirstSession
+                p.branches[i].herdSite = branch.herdSite
                 branch = p.branches[i]
             } else {
                 p.branches.append(branch)
@@ -155,14 +168,11 @@ extension AppStore {
         select(.branch(branch.id))
         refreshGit()
         // setupCommand nil: la casilla «Preparar» estaba apagada.
-        if let setup = prepared.setupCommand, let path = branch.worktreePath {
-            runScript(name: "Preparar \(branch.name)", command: setup, projectId: project.id, branchId: branch.id,
-                      environment: ProjectScripts.environment(rootPath: project.path, worktreePath: path, branch: branch.name))
-        }
+        if prepared.setupCommand != nil { retryPreparation(branch.id) }
         if !prepared.copiedFiles.isEmpty {
             showNotice("Copié \(WorktreeIncludes.summary(prepared.copiedFiles)) a «\(branch.name)»")
         }
-        if let kind = request.firstSession { requestNewSession(branchId: branch.id, kind: kind) }
+        if prepared.setupCommand == nil, let kind = request.firstSession { requestNewSession(branchId: branch.id, kind: kind) }
         return nil
     }
 
@@ -297,6 +307,7 @@ extension AppStore {
         // mitad de camino. La pasada que pide ese cambio al terminar lo corrige.
         guard generation == gitGeneration, gitOperations == 0 else { return }
         applyHeads(scan.heads)
+        for (id, branches) in scan.branches where repositoryBranches[id] != branches { repositoryBranches[id] = branches }
         var found = false
         for (id, worktrees) in scan.worktrees where syncWorktrees(id, worktrees) { found = true }
         // Hay ramas nuevas: traemos su estado de git en esta misma pasada.
@@ -414,6 +425,7 @@ extension AppStore {
 
 /// Lo que leyó una revisión de git.
 private struct GitScan: Sendable {
+    var branches: [UUID: RepositoryBranches] = [:]
     var statuses: [String: GitStatus] = [:]
     var heads: [UUID: String] = [:]
     var worktrees: [UUID: [GitWorktree]] = [:]
@@ -427,7 +439,7 @@ private struct GitScan: Sendable {
 
     private enum Outcome: Sendable {
         case status(String, GitStatus?, exists: Bool)
-        case head(UUID, String, [GitWorktree]?)
+        case head(UUID, String, RepositoryBranches?)
     }
 
     /// Corre git en paralelo, como mucho `width` llamadas a la vez (cada una ocupa un hilo mientras espera).
@@ -441,7 +453,8 @@ private struct GitScan: Sendable {
                     guard FileManager.default.fileExists(atPath: dir) else { return .status(dir, nil, exists: false) }
                     return .status(dir, git.status(dir), exists: true)
                 case .head(let id, let path):
-                    return .head(id, git.currentBranch(path) ?? "", worktrees ? git.worktrees(path) : nil)
+                    return .head(id, git.currentBranch(path) ?? "", worktrees
+                                 ? RepositoryBranches(local: git.localBranches(path), remote: git.remoteBranches(path), worktrees: git.worktrees(path)) : nil)
                 }
             }
             while next < min(width, jobs.count) {
@@ -455,9 +468,9 @@ private struct GitScan: Sendable {
                 case .status(let dir, let status, let exists):
                     scan.statuses[dir] = status
                     if !exists { scan.missing.insert(dir) }
-                case .head(let id, let head, let trees):
+                case .head(let id, let head, let branches):
                     scan.heads[id] = head
-                    if let trees { scan.worktrees[id] = trees }
+                    if let branches { scan.worktrees[id] = branches.worktrees; scan.branches[id] = branches }
                 }
                 if next < jobs.count {
                     let job = jobs[next]

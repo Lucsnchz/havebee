@@ -173,8 +173,9 @@ private struct HomeRow: View {
             }
             .padding(.horizontal, 8)
             .frame(height: 28)
-            .background(Color.primary.opacity(selected ? 0.1 : (hovering ? 0.05 : 0)),
-                        in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .background {
+                NavigationSelectionBackground(selected: selected, hovering: hovering, cornerRadius: 6)
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -194,20 +195,26 @@ private struct ProjectRow: View {
 
     var body: some View {
         let activity = store.activity(of: project)
+        let current = store.currentProjectId == project.id
         // Con el proyecto abierto, cada sesión ya muestra su estado: el globito sería repetirlo.
         let showsBadge = !store.isExpanded(project.id) && activity.waitingForYou > 0
         // Como en el riel: no se atenúa si estás adentro (el proyecto, una rama o una sesión suya).
-        let dimmed = DimmedProject.dims(isActive: isActive, isCurrent: store.currentProjectId == project.id, hovering: hovering)
+        let dimmed = DimmedProject.dims(isActive: isActive, isCurrent: current, hovering: hovering)
         HStack(spacing: 8) {
             HStack(spacing: 8) {
                 ProjectTile(project: project, size: 20, activity: activity)
                     .padding(2)
                 Text(project.name)
-                    .fontWeight(.semibold)
+                    .fontWeight(current ? .bold : .semibold)
                     .lineLimit(1)
             }
             .dimmedProject(dimmed)
             Spacer(minLength: 4)
+            if current {
+                Text("Actual")
+                    .font(.system(size: 9, weight: .semibold))
+                    .accessibilityHidden(true)
+            }
             if hovering && !project.isScratch {
                 Button {
                     store.newBranchTarget = NewBranchTarget(id: project.id)
@@ -222,7 +229,13 @@ private struct ProjectRow: View {
                 ActivityBadge(activity: activity)
             }
         }
-        .padding(.vertical, 1)
+        .padding(.vertical, 4)
+        .padding(.horizontal, 4)
+        .background {
+            // La fila elegida directamente usa la selección nativa del List; el proyecto padre
+            // sigue resaltado cuando estás dentro de una de sus ramas o conversaciones.
+            NavigationSelectionBackground(selected: current && store.selection != .project(project.id), cornerRadius: 6)
+        }
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .help(project.path.tildePath)
@@ -231,6 +244,7 @@ private struct ProjectRow: View {
         .accessibilityLabel(ActivityBadge.projectAccessibilityLabel("Proyecto \(project.name)", pinned: project.pinned,
                                                                     activity: activity, isActive: isActive))
         .accessibilityValue(ActivityBadge.projectAccessibilityValue(activity))
+        .accessibilityAddTraits(current ? .isSelected : [])
     }
 }
 

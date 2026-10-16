@@ -6,9 +6,16 @@ extension AppStore {
     // MARK: - Estado de los agentes
 
     func userInput(_ id: UUID, _ data: ArraySlice<UInt8>) {
-        guard let rt = runtimes[id], !rt.isSwitchingAgent else { return }
+        guard !isShuttingDown, let rt = runtimes[id], !rt.isSwitchingAgent, !rt.isStopping else { return }
         if rt.unseen { markSeen(rt) }
         guard rt.kind.isAgent else { return }
+        if data.elementsEqual([UInt8(3)]) {
+            // Ctrl+C también es una interrupción manual; no se continúa sola al volver a abrir.
+            rt.backgroundAgents = 0
+            rt.manuallyInterrupted = true
+            setStatus(rt, .waiting, quiet: true)
+            return
+        }
         if TerminalInput.isLoneEscape(data) {
             // Esc rechaza el pedido de permiso o interrumpe al agente: ya no trabaja ni espera que
             // le des permiso, te toca a vos. No hace falta avisarte: lo acabás de hacer vos.
@@ -18,26 +25,32 @@ extension AppStore {
                 if rt.status == .attention { setStatus(rt, .working) }
             } else if rt.status == .attention || rt.status == .working {
                 rt.workingSince = nil
+                rt.manuallyInterrupted = true
                 setStatus(rt, .waiting, quiet: true)
             }
             return
         }
         // Enter en un agente: mandaste un prompt o aprobaste algo, así que empieza a trabajar. No cuentan
         // el salto de línea (Shift+Enter, ⌥Enter) ni lo que llega dentro de un pegado.
-        guard TerminalInput.isSubmit(data), rt.status != .working else { return }
+        guard TerminalInput.isSubmit(data) else { return }
+        rt.manuallyInterrupted = false
+        guard rt.status != .working else { return }
         // Le escribiste: cuenta como usada hoy para el orden de los proyectos, también en un agente
         // que no avisa con hooks (Gemini), donde ningún evento lo anota.
         let now = environment.now()
         projects.updateSession(id) { $0.lastActivityAt = now }
         scheduleSave()
-        setStatus(rt, .working)
+        // En Claude/Grok los hooks confirman el envío real: Enter en un menú o /status no es trabajo.
+        // Codex no tiene hook de inicio; al recuperar se exige evidencia nueva en su rollout.
+        setStatus(rt, .working, recordWork: rt.kind == .codex)
     }
 
     /// Aplica los eventos de los agentes (los decide `AgentEventInterpreter`).
     func handle(_ events: [HiveEvent]) {
+        guard !isShuttingDown else { return }
         for event in events {
             guard let rt = runtimes[event.sessionId], rt.isRunning, let ctx = sessionContext(event.sessionId) else { continue }
-            guard !rt.isSwitchingAgent, event.source == ctx.session.kind.rawValue,
+            guard !rt.isSwitchingAgent, !rt.isStopping, event.source == ctx.session.kind.rawValue,
                   event.launchId.map({ $0 == rt.launchId }) ?? (ctx.session.handoffFrom == nil) else { continue }
             // El título automático no cuenta como actividad ni como un hook del agente principal.
             guard !CodexTitleGeneration.isCompletion(event) else { continue }
@@ -52,11 +65,14 @@ extension AppStore {
                 let place = ctx.project.isScratch ? ctx.project.name : "\(ctx.project.name) › \(ctx.branch.name)"
                 history.ensureMarkdown(session: ctx.session, place: place)
                 for entry in outcome.history {
-                    history.append(HistoryEntry(date: environment.now(), role: entry.role, text: entry.text, agent: ctx.session.kind),
+                    let role = entry.role == .user && InterruptedWork.isPrompt(entry.text) ? HistoryEntry.Role.system : entry.role
+                    history.append(HistoryEntry(date: environment.now(), role: role, text: entry.text, agent: ctx.session.kind),
                                    sessionId: ctx.session.id, agentName: ctx.session.kind.label)
                 }
                 historyVersions[ctx.session.id, default: 0] += 1
-                if let prompt = outcome.history.first(where: { $0.role == .user })?.text { autoName(ctx.session, prompt: prompt) }
+                if let prompt = outcome.history.first(where: { $0.role == .user && !InterruptedWork.isPrompt($0.text) })?.text {
+                    autoName(ctx.session, prompt: prompt)
+                }
             }
             keepTranscript(event, outcome: outcome, session: ctx.session)
             if outcome.agentSessionId != nil || outcome.reply != nil || outcome.touchesActivity {
@@ -107,7 +123,9 @@ extension AppStore {
 
     /// Cambia el estado de una sesión. Si pasa a esperarte y no la estás mirando, la marca como
     /// pendiente y avisa con `body`. `quiet`: el cambio lo hiciste vos, no hay nada que avisar.
-    func setStatus(_ rt: SessionRuntime, _ status: SessionStatus, notify body: String? = nil, quiet: Bool = false) {
+    func setStatus(_ rt: SessionRuntime, _ status: SessionStatus, notify body: String? = nil, quiet: Bool = false,
+                   recordWork: Bool = true) {
+        if recordWork { recordPendingWork(rt, status: status) }
         // El aviso de permiso se ve en la tarjeta mientras dure; un pedido nuevo lo reemplaza.
         if status == .attention, let body { rt.attentionNotice = body }
         guard rt.status != status else { return }
@@ -130,12 +148,15 @@ extension AppStore {
     /// Cada segundo, la regla del silencio para los agentes que figuran trabajando. Con subagentes o un
     /// workflow en segundo plano la terminal puede quedar quieta mucho rato: ahí vale `BackgroundRule`.
     func tick() {
+        guard !isShuttingDown else { return }
         let now = environment.now()
         for rt in runtimes.values where rt.kind.isAgent && rt.status == .working {
             if rt.backgroundAgents > 0 {
                 guard BackgroundRule.expired(now: now, lastEvent: rt.lastEventAt) else { continue }
                 rt.backgroundAgents = 0
-                setStatus(rt, .waiting, notify: BackgroundRule.expiredNotification)
+                // El timeout significa «sin señales», no «terminó». Conserva el pendiente confirmado
+                // por Stop; el próximo lanzamiento lo contrasta con el transcript y los hooks finales.
+                setStatus(rt, .waiting, notify: BackgroundRule.expiredNotification, recordWork: false)
                 continue
             }
             let verdict = SilenceRule.evaluate(now: now, workingSince: rt.workingSince, lastOutput: rt.lastOutput, hooksSeen: rt.hooksSeen)

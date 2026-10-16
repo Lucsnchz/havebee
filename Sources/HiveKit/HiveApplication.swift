@@ -82,7 +82,7 @@ final class HiveAppDelegate: NSObject, NSApplicationDelegate {
             Self.terminateReply(store: AppStore.shared) { message in
                 let alert = NSAlert()
                 alert.messageText = message
-                alert.informativeText = "Si salís se cortan. Las conversaciones se pueden reanudar al volver a abrir Hive."
+                alert.informativeText = "Si salís se cortan. Al volver a abrir cada conversación, Hive retoma automáticamente el trabajo que quedó pendiente en Claude, Codex o Grok. Si ya terminó o espera tu respuesta, no envía nada."
                 alert.addButton(withTitle: "Salir")
                 alert.addButton(withTitle: "Cancelar")
                 return alert.runModal() == .alertFirstButtonReturn

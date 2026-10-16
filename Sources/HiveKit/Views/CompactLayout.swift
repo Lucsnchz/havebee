@@ -45,7 +45,7 @@ private struct ProjectRail: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 10)
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 14) {
+                VStack(spacing: 8) {
                     ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                         if item.group != .scratch {
                             // Un divisor fino entre los fijados y el resto.
@@ -141,7 +141,7 @@ private struct HomeRailItem: View {
                     .interpolation(.high)
                     .frame(width: 22, height: 22)
                     .frame(width: 40, height: 40)
-                    .background(Color.primary.opacity(selected ? 0.12 : (hovering ? 0.08 : 0.05)),
+                    .background(Color.primary.opacity(0.05),
                                 in: RoundedRectangle(cornerRadius: 11, style: .continuous))
                     .overlay(alignment: .topTrailing) {
                         ActivityBadge(activity: activity, outlined: true)
@@ -149,28 +149,34 @@ private struct HomeRailItem: View {
                     }
                     .frame(maxWidth: .infinity)
             }
-            .frame(width: 72, height: 44)
+            .frame(width: 72, height: 56)
+            .background {
+                NavigationSelectionBackground(selected: selected, hovering: hovering)
+                    .padding(.horizontal, 6)
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .help("Inicio: lo que te espera en todos los proyectos (\(HiveCommands.Shortcut.home.description))")
         .accessibilityLabel(ActivityBadge.homeAccessibilityText(activity))
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
-/// Indicador del elemento activo del riel, como en Discord.
+/// Refuerzo lateral de la selección; el fondo completo también señala dónde estás.
 private struct RailIndicator: View {
     let selected: Bool
     let hovering: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Capsule()
-            .fill(Color.primary)
-            .frame(width: 4, height: selected ? 30 : (hovering ? 12 : 0))
-            .offset(x: -2)
-            .animation(.easeOut(duration: 0.15), value: selected)
-            .animation(.easeOut(duration: 0.15), value: hovering)
+            .fill(selected ? Theme.accent : Color.primary.opacity(0.5))
+            .frame(width: 4, height: selected ? 36 : (hovering ? 12 : 0))
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: selected)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: hovering)
+            .accessibilityHidden(true)
     }
 }
 
@@ -196,7 +202,11 @@ struct RailItem: View {
                     .scaleEffect(hovering && !selected ? 1.04 : 1)
                     .frame(maxWidth: .infinity)
             }
-            .frame(width: 72, height: 44)
+            .frame(width: 72, height: 56)
+            .background {
+                NavigationSelectionBackground(selected: selected, hovering: hovering)
+                    .padding(.horizontal, 6)
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -204,6 +214,7 @@ struct RailItem: View {
         .help(shortcut.map { "\(project.name) (\($0))" } ?? project.name)
         .accessibilityLabel(Self.accessibilityText(project: project, activity: activity, isActive: isActive))
         .accessibilityValue(ActivityBadge.projectAccessibilityValue(activity))
+        .accessibilityAddTraits(selected ? .isSelected : [])
         .contextMenu {
             if project.isScratch, let branch = project.branches.first {
                 ScratchMenu(project: project, branch: branch)
@@ -284,6 +295,20 @@ private struct ProjectTabBar: View {
     var body: some View {
         let (tabs, showBranch) = ProjectTabs.make(project)
         HStack(spacing: 0) {
+            HStack(spacing: 7) {
+                ProjectTile(project: project, size: 18)
+                    .accessibilityHidden(true)
+                Text(project.name)
+                    .font(.system(size: 12, weight: .bold))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .frame(maxWidth: 170, alignment: .leading)
+            .padding(.horizontal, 12)
+            .help(project.path.tildePath)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Proyecto actual: \(project.name)")
+            Divider().frame(height: 18)
             OverviewTab(project: project, namespace: underline)
             Divider().frame(height: 18)
             ScrollViewReader { proxy in

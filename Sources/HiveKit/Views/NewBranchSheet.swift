@@ -5,6 +5,7 @@ struct NewBranchSheet: View {
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     let projectId: UUID
+    var initialBranch: String? = nil
 
     /// Lo último que elegiste (contratos de UserDefaults: newBranchMode y newBranchFirstSession).
     @AppStorage("newBranchMode") private var storedMode = BranchMode.worktree.rawValue
@@ -47,6 +48,9 @@ struct NewBranchSheet: View {
     @State private var setupCommand = ""
     @State private var setupEdited = false
     @State private var setupOrigin: ProjectScripts.Origin?
+    @State private var isLaravel = false
+    @State private var setupDetails = false
+    @State private var setupURL: String?
 
     var body: some View {
         let project = store.project(projectId)
@@ -90,7 +94,7 @@ struct NewBranchSheet: View {
                 Spacer(minLength: 8)
                 Button("Cancelar", role: .cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)
-                Button(isNew ? "Crear rama" : "Agregar rama") { submit() }
+                Button(mode == .worktree && adoptedWorktree == nil ? "Crear worktree" : (isNew ? "Crear rama" : "Agregar rama")) { submit() }
                     .buttonStyle(.hiveProminent)
                     .keyboardShortcut(.defaultAction)
                     .disabled(!canSubmit || busy)
@@ -205,7 +209,7 @@ struct NewBranchSheet: View {
                 .pickerStyle(.radioGroup)
                 VStack(alignment: .leading, spacing: 3) {
                     // Sin nada para copiar, el interruptor se ve apagado y no se puede tocar.
-                    Toggle("Copiar .env, auth.json y permisos de Claude",
+                    Toggle("Copiar .env, MCP y configuración local",
                            isOn: Binding(get: { copyIgnored && !Self.nothingToCopy(includeFiles) }, set: { copyIgnored = $0 }))
                         .disabled(Self.nothingToCopy(includeFiles))
                     Text(includesCaption)
@@ -213,14 +217,26 @@ struct NewBranchSheet: View {
                         .foregroundStyle(Theme.secondaryText)
                 }
                 VStack(alignment: .leading, spacing: 5) {
-                    Toggle("Preparar al crear", isOn: $runSetup)
-                    TextField("Comando de preparación", text: Binding(get: { setupCommand }, set: { setupCommand = $0; setupEdited = true }),
+                    Toggle(isLaravel ? "Dejar Laravel listo para usar" : "Preparar al crear", isOn: $runSetup)
+                    if isLaravel && setupOrigin == .suggested && !setupEdited {
+                        Text(herd == nil ? "Composer, clave si falta, storage y assets. MCP heredados para esta rama."
+                             : "Sitio propio en Herd, mismo PHP, Composer, storage y assets. MCP para esta rama.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Text("Conserva la conexión del .env. No ejecuta migraciones; la IA espera a que termine.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        if runSetup, let setupURL {
+                            Label(setupURL, systemImage: "globe").font(.caption).foregroundStyle(Theme.info)
+                        }
+                    }
+                    DisclosureGroup("Comando de preparación", isExpanded: $setupDetails) {
+                        TextField("Comando", text: Binding(get: { setupCommand }, set: { setupCommand = $0; setupEdited = true }),
                               prompt: Text("ej. composer install && npm install"), axis: .vertical)
                         .labelsHidden()
-                        .lineLimit(1...3)
+                        .lineLimit(1...6)
                         .textFieldStyle(.roundedBorder)
                         .font(.system(.callout, design: .monospaced))
                         .disabled(!runSetup)
+                    }
                     if let setupOrigin, !setupEdited {
                         Text(setupOrigin.label)
                             .font(.caption)
@@ -233,7 +249,7 @@ struct NewBranchSheet: View {
 
     private var firstSessionChips: some View {
         let availability = AgentAvailability.shared(for: store)
-        return HStack(spacing: 8) {
+        return LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: 3), alignment: .leading, spacing: 8) {
             SessionChoiceChip(kind: nil, selected: firstSession == nil) { storedFirstSession = "" }
             ForEach(SessionKind.allCases) { kind in
                 SessionChoiceChip(kind: kind, selected: firstSession == kind, installed: availability.isInstalled(kind)) {
@@ -285,7 +301,7 @@ struct NewBranchSheet: View {
 
     /// Si elegiste una remota ("upstream/docs"), el nombre de la rama local ("docs").
     private var existingShortName: String {
-        guard remoteBranches.contains(existing), let slash = existing.firstIndex(of: "/") else { return existing }
+        guard !localBranches.contains(existing), remoteBranches.contains(existing), let slash = existing.firstIndex(of: "/") else { return existing }
         return String(existing[existing.index(after: slash)...])
     }
 
@@ -294,7 +310,9 @@ struct NewBranchSheet: View {
     }
 
     private var availableExisting: [String] {
-        localBranches.filter { !inHive.contains($0) }
+        localBranches.filter { name in
+            !inHive.contains(name) || (mode == .worktree && !worktrees.contains { $0.branch == name && !$0.isPrunable })
+        }
     }
 
     /// Ramas remotas sin copia local, con su remoto: con dos remotos se ven las dos y se usa la elegida.
@@ -308,12 +326,13 @@ struct NewBranchSheet: View {
     }
 
     private var adoptedWorktree: GitWorktree? {
-        guard !isNew, !existing.isEmpty, !remoteBranches.contains(existing) else { return nil }
+        guard !isNew, !existing.isEmpty, localBranches.contains(existing) else { return nil }
         return worktrees.first { $0.branch == existing && !$0.isPrunable }
     }
 
     private var canSubmit: Bool {
-        !noCommits && !branchName.isEmpty && !(isNew && base.isEmpty) && !(isNew && nameError != nil)
+        !loading && !noCommits && !branchName.isEmpty && !(isNew && base.isEmpty) && !(isNew && nameError != nil)
+            && (isNew || availableExisting.contains(existing) || availableRemote.contains(existing))
     }
 
     private var refreshKey: String {
@@ -332,6 +351,7 @@ struct NewBranchSheet: View {
 
     /// URL con la que Herd va a servir el worktree hermano. https solo si la preparación corre `herd secure`.
     private var siblingURL: String? {
+        if location == .sibling, runSetup, !setupEdited, let setupURL { return setupURL }
         guard herdServesParent, let herd, !siblingPath.isEmpty else { return nil }
         let host = herd.host(forFolder: (siblingPath as NSString).lastPathComponent)
         let secure = mainHasCert && runSetup && setupCommand.contains("herd secure")
@@ -343,7 +363,10 @@ struct NewBranchSheet: View {
         return "Junto al proyecto"
     }
 
-    private var includesCaption: String { Self.includesCaption(includeFiles, copy: copyIgnored) }
+    private var includesCaption: String {
+        if isLaravel, includeFiles?.isEmpty == true { return "Se creará .env desde .env.example si está disponible." }
+        return Self.includesCaption(includeFiles, copy: copyIgnored)
+    }
 
     /// Qué se copia al worktree nuevo, en palabras: «Se copian: .env, auth.json y 2 más».
     static func includesCaption(_ files: [String]?, copy: Bool) -> String {
@@ -378,7 +401,8 @@ struct NewBranchSheet: View {
             return (local: git.localBranches(path), remote: git.remoteBranches(path), trees: git.worktrees(path),
                     defaultRemote: git.defaultRemoteBranch(path), unborn: git.status(path)?.isUnborn == true, herd: herd,
                     servesParent: herd?.servesParent(of: path) == true,
-                    mainHasCert: herd?.url(for: path)?.hasPrefix("https://") == true)
+                    mainHasCert: herd?.url(for: path)?.hasPrefix("https://") == true,
+                    laravel: LaravelWorktreeSetup.detects(path))
         }.value
         localBranches = loaded.local
         remoteBranches = loaded.remote
@@ -388,9 +412,14 @@ struct NewBranchSheet: View {
         herd = loaded.herd
         herdServesParent = loaded.servesParent
         mainHasCert = loaded.mainHasCert
+        isLaravel = loaded.laravel
         if !locationTouched, loaded.servesParent { location = .sibling }
         base = defaultBase
-        existing = availableExisting.first ?? availableRemote.first ?? ""
+        if let initialBranch {
+            isNew = false
+            storedMode = BranchMode.worktree.rawValue
+            existing = initialBranch
+        } else { existing = availableExisting.first ?? availableRemote.first ?? "" }
         loading = false
         nameFocused = isNew
 
@@ -433,7 +462,8 @@ struct NewBranchSheet: View {
         let checkName = isNew && !candidate.isEmpty
         let currentLocation = location
         let hasCert = ProjectScripts.securesWorktree(location: currentLocation, herdServesParent: herdServesParent, mainHasCert: mainHasCert)
-        let derived = await Task.detached(priority: .userInitiated) { () -> (error: String?, sibling: String, nested: String, setup: ProjectScripts.Script?) in
+        let herd = herd
+        let derived = await Task.detached(priority: .userInitiated) { () -> (error: String?, sibling: String, nested: String, setup: ProjectScripts.Script?, url: String?) in
             var error: String?
             if checkName {
                 if hive.contains(candidate) {
@@ -448,8 +478,15 @@ struct NewBranchSheet: View {
             let sibling = GitParsing.worktreePath(for: forPath, projectPath: projectPath, style: .sibling)
             let nested = GitParsing.worktreePath(for: forPath, projectPath: projectPath, style: .nested)
             let folder = ((currentLocation == .sibling ? sibling : nested) as NSString).lastPathComponent
-            let setup = ProjectScripts.resolve(projectPath: projectPath, folder: folder, mainHasCert: hasCert).setup
-            return (error, sibling, nested, setup)
+            var setup = ProjectScripts.resolve(projectPath: projectPath, folder: folder, mainHasCert: hasCert).setup
+            var url: String?
+            if setup?.origin == .suggested, LaravelWorktreeSetup.detects(projectPath) {
+                let plan = LaravelWorktreeSetup.make(projectPath: projectPath,
+                              worktreePath: currentLocation == .sibling ? sibling : nested, herd: herd)
+                setup = .init(command: plan.command, origin: .suggested)
+                url = plan.url
+            }
+            return (error, sibling, nested, setup, url)
         }.value
         guard !Task.isCancelled else { return }
         nameError = derived.error
@@ -458,6 +495,7 @@ struct NewBranchSheet: View {
         if !setupEdited {
             setupCommand = derived.setup?.command ?? ""
             setupOrigin = derived.setup?.origin
+            setupURL = derived.url
         }
         derivedKey = key
     }
@@ -478,14 +516,16 @@ struct NewBranchSheet: View {
                     return
                 }
             }
-            let remoteRef = !isNew && remoteBranches.contains(existing) ? existing : nil
+            let remoteRef = !isNew && !localBranches.contains(existing) && remoteBranches.contains(existing) ? existing : nil
             let setup = setupCommand.trimmingCharacters(in: .whitespacesAndNewlines)
             let worktree = mode == .worktree && adoptedWorktree == nil
             let request = NewBranchRequest(
                 projectId: projectId, name: branchName, isNew: isNew, base: base, mode: mode, firstSession: firstSession,
                 remoteRef: remoteRef, location: location, copyIgnored: worktree && copyIgnored,
                 envAppURL: worktree && location == .sibling ? siblingURL : nil,
-                setupCommand: worktree && runSetup && !setup.isEmpty ? setup : nil)
+                setupCommand: worktree && runSetup && !setup.isEmpty ? setup : nil,
+                automaticLaravelSetup: worktree && runSetup && isLaravel && setupOrigin == .suggested && !setupEdited,
+                herd: herd)
             let failure = await store.createBranch(request)
             busy = false
             if let failure { error = failure } else { dismiss() }

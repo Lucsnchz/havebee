@@ -26,7 +26,7 @@ struct OpenSiteButton: View {
 
     var body: some View {
         content
-            .task(id: project.directory(for: branch)) {
+            .task(id: "\(project.directory(for: branch))|\(branch.setupCommand == nil)") {
                 guard known == nil else { return }
                 url = await Self.loadURL(project: project, branch: branch, home: store.environment.home)
             }

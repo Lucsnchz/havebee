@@ -45,8 +45,8 @@ extension AppStore {
             let worktree = ctx.branch.mode == .worktree
             let stopping = Self.stoppingSummary(commands: commandRuns.filter { $0.branchId == id && $0.running }.count,
                                                 sessions: ctx.branch.sessions.filter { runtimes[$0.id]?.isRunning == true }.count)
-            let message = [stopping, remoteSummary([id]), "La rama de git no se borra.",
-                           worktree ? "Podés conservar el worktree en \(ctx.branch.worktreePath ?? "") o borrarlo." : nil]
+            let message = [stopping, remoteSummary([id]), worktree ? nil : "La rama de git no se borra.",
+                           worktree ? "Podés quitarlo de Hive conservando la carpeta, o borrar el worktree del disco." : nil]
                 .compactMap { $0 }.joined(separator: " ")
             pendingRemoval = PendingRemoval(item: item, title: "¿Quitar la rama «\(ctx.branch.name)»?", message: message, isWorktree: worktree)
         case .session(let id):
@@ -76,9 +76,10 @@ extension AppStore {
         Task { await performRemove(item, deleteWorktree: deleteWorktree, force: force) }
     }
 
-    /// Quita un elemento. Si hay que borrar un worktree y falla, ofrece forzarlo. Devuelve si se quitó.
+    /// Quita un elemento. Un borrado forzado o de rama necesita la revisión y el nombre escrito.
     @discardableResult
-    func performRemove(_ item: SidebarItem, deleteWorktree: Bool = false, force: Bool = false) async -> Bool {
+    func performRemove(_ item: SidebarItem, deleteWorktree: Bool = false, force: Bool = false,
+                       deleteBranch: Bool = false, review: WorktreeRemovalReview? = nil, confirmation: String = "") async -> Bool {
         switch item {
         case .session(let id):
             guard let ctx = sessionContext(id) else { return false }
@@ -90,7 +91,15 @@ extension AppStore {
             return true
         case .branch(let id):
             guard let ctx = branchContext(id) else { return false }
+            guard !removingBranches.contains(id) else { return false }
             if deleteWorktree, let path = ctx.branch.worktreePath {
+                if force || deleteBranch {
+                    guard let review, review.valid, confirmation == ctx.branch.name,
+                          !deleteBranch || review.canDeleteBranch else {
+                        alert = AppAlert(title: "Hace falta confirmar el borrado", message: "Revisá el worktree y escribí exactamente el nombre de la rama.")
+                        return false
+                    }
+                }
                 // Mientras se borra, sus sesiones no se pueden volver a abrir (arrancarían en esa carpeta).
                 removingBranches.insert(id)
                 defer { removingBranches.remove(id) }
@@ -103,18 +112,40 @@ extension AppStore {
                 stopRuns { $0.branchId == id }
                 await waitUntilStopped(terminals)
                 for task in remote { await task.value }
-                // La limpieza del proyecto (polyscope.json o conductor.json) va antes de borrar la carpeta.
-                // Al reintentar con «Borrar igual» ya corrió.
-                if !force { await runArchiveScript(project: ctx.project, branch: ctx.branch, worktreePath: path) }
                 let repo = ctx.project.path
                 let git = self.git
+                let name = ctx.branch.name
+                if let review {
+                    let fresh = await Task.detached { WorktreeRemovalReview.inspect(branch: name, path: path, repo: repo, git: git) }.value
+                    guard fresh.valid, fresh == review, fresh.operation == nil else {
+                        alert = AppAlert(title: "El worktree cambió", message: "No borré nada. Revisá de nuevo sus cambios, commits y rama antes de confirmar.")
+                        return false
+                    }
+                }
+                // La limpieza del proyecto (polyscope.json o conductor.json) va antes de borrar la carpeta.
+                // Al reintentar con «Borrar igual» ya corrió.
+                await runArchiveScript(project: ctx.project, branch: ctx.branch, worktreePath: path)
+                if let review {
+                    let fresh = await Task.detached { WorktreeRemovalReview.inspect(branch: name, path: path, repo: repo, git: git) }.value
+                    guard fresh.valid, fresh.tip == review.tip, fresh.baseTip == review.baseTip,
+                          fresh.operation == nil,
+                          Set(fresh.changes).isSubset(of: Set(review.changes)), !fresh.locked || review.locked else {
+                        alert = AppAlert(title: "La limpieza cambió el worktree", message: "Se conservó la carpeta. Revisá otra vez el estado antes de borrarla.")
+                        return false
+                    }
+                }
                 let r = await Task.detached { git.removeWorktree(path, force: force, in: repo) }.value
                 guard r.ok else {
                     alert = AppAlert(title: "No pude borrar el worktree",
-                                     message: "\(r.errorMessage)\n\n¿Borrarlo igual? Se pierden los cambios sin commitear.",
-                                     actionTitle: "Borrar igual", isDestructive: true,
-                                     action: { [weak self] in self?.remove(item, deleteWorktree: true, force: true) })
+                                     message: "\(r.errorMessage)\n\nVolvé a revisar el cierre. Si hay cambios sin guardar, se exige escribir el nombre de la rama.")
                     return false
+                }
+                await cleanHerdSite(ctx.branch, project: ctx.project, path: path)
+                if deleteBranch, let tip = review?.tip {
+                    let deletion = await Task.detached { git.deleteBranch(name, expectedTip: tip, force: true, in: repo) }.value
+                    if !deletion.ok {
+                        alert = AppAlert(title: "El worktree se borró; la rama se conservó", message: deletion.errorMessage)
+                    }
                 }
             } else if let path = ctx.branch.worktreePath, ctx.branch.mode == .worktree {
                 // El worktree queda en disco: que la detección automática no lo vuelva a sumar.
@@ -139,6 +170,33 @@ extension AppStore {
                 self?.restoreProject(p, at: index, select: selectionWasInside)
             }
             return true
+        }
+    }
+
+    func removalReview(branchId: UUID) async -> WorktreeRemovalReview? {
+        guard let ctx = branchContext(branchId), let path = ctx.branch.worktreePath else { return nil }
+        let git = self.git
+        return await Task.detached {
+            WorktreeRemovalReview.inspect(branch: ctx.branch.name, path: path, repo: ctx.project.path, git: git)
+        }.value
+    }
+
+    private func cleanHerdSite(_ branch: Branch, project: Project, path: String) async {
+        guard let site = branch.herdSite else { return }
+        let root = HerdSites.defaultRoot(home: environment.home)
+        let pathEnvironment = root.appendingPathComponent("bin").path + ":" + currentPATH
+        let result = await Task.detached { () -> CommandResult? in
+            guard let herd = HerdSites.parse(configRoot: root), let linked = herd.links[site], samePath(linked, path) else { return nil }
+            let executable = root.appendingPathComponent("bin/herd").path
+            let runner = ProcessCommandRunner()
+            if herd.isSecured(herd.host(forFolder: site)) {
+                let result = runner.run(executable, ["unsecure", site], cwd: project.path, environment: ["PATH": pathEnvironment], timeout: 60)
+                if !result.ok { return result }
+            }
+            return runner.run(executable, ["unlink", site], cwd: project.path, environment: ["PATH": pathEnvironment], timeout: 60)
+        }.value
+        if let result, !result.ok {
+            alert = AppAlert(title: "Quedó pendiente quitar el sitio de Herd", message: "El worktree se borró. Sitio: \(site).\n\(result.errorMessage)")
         }
     }
 
@@ -203,6 +261,7 @@ extension AppStore {
         guard let ctx = branchContext(id) else { return }
         terminate(ctx.branch.sessions.map(\.id))
         stopRuns { $0.branchId == id }
+        preparationRuns[id] = nil
         discardRemoteOperations { $0 == id }
         let selectionWasInside = selection == .branch(id) || ctx.branch.sessions.contains(where: { selection == .session($0.id) })
         projects.updateProject(ctx.project.id) { $0.branches.removeAll { $0.id == id } }
@@ -233,7 +292,9 @@ extension AppStore {
     /// que se estaba armando para lanzarse ya no arranca.
     func stopSessions(_ ids: [UUID]) {
         for id in ids {
+            clearPendingWork(id)
             guard let rt = runtimes[id] else { continue }
+            rt.isStopping = true
             rt.isLaunching = false
             tearDown(rt.terminal)
             rt.terminal = nil

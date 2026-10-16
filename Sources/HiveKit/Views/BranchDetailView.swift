@@ -28,6 +28,19 @@ struct BranchDetailView: View {
                         BranchHeader(project: ctx.project, branch: ctx.branch, status: status, directory: dir, situation: situation)
                     }
 
+                    if ctx.branch.setupCommand != nil {
+                        let run = store.preparationRuns[branchId].flatMap { id in store.commandRuns.first { $0.id == id } }
+                        Callout(icon: run?.running == true ? "gearshape.2.fill" : "exclamationmark.triangle.fill",
+                                color: run?.running == true ? Theme.info : Theme.danger,
+                                title: run?.running == true ? "Preparando el worktree…" : "Preparación pendiente",
+                                text: run?.running == true
+                                    ? "Instalando dependencias y configurando el entorno. La primera sesión se abre cuando termine."
+                                    : "La rama y sus archivos están guardados. Podés revisar la salida y volver a intentar.",
+                                action: (run?.running == true ? "Ver progreso" : "Reintentar", {
+                                    store.retryPreparation(branchId)
+                                }))
+                    }
+
                     if situation == .missing {
                         // Sin nada corriendo, la próxima revisión de git la saca sola: el aviso queda para
                         // las que todavía tienen una sesión o un comando andando.
@@ -64,7 +77,7 @@ struct BranchDetailView: View {
                     if sessions.isEmpty {
                         // Sin carpeta o con un rebase a medias, una sesión nueva no podría arrancar: el aviso
                         // de arriba dice qué hacer.
-                        if situation.canStartSessions {
+                        if situation.canStartSessions && ctx.branch.setupCommand == nil {
                             DetailSection("Nueva sesión") {
                                 HStack(spacing: 10) {
                                     ForEach(SessionKind.allCases) { kind in

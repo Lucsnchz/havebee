@@ -7,7 +7,12 @@ extension AppStore {
 
     /// Nueva sesión en una rama; si la rama está inactiva, primero pide el checkout.
     public func requestNewSession(branchId: UUID, kind: SessionKind) {
-        guard let ctx = branchContext(branchId) else { return }
+        guard let ctx = branchContext(branchId), !removingBranches.contains(branchId) else { return }
+        if ctx.branch.setupCommand != nil {
+            if let runId = preparationRuns[branchId] { showRun(runId) }
+            showNotice("La sesión estará disponible cuando termine la preparación")
+            return
+        }
         if !isActive(ctx.branch, in: ctx.project) {
             requestCheckout(branchId: branchId, then: .createSession(kind))
             return
@@ -16,7 +21,7 @@ extension AppStore {
     }
 
     func createSession(branchId: UUID, kind: SessionKind) {
-        guard let ctx = branchContext(branchId) else { return }
+        guard let ctx = branchContext(branchId), ctx.branch.setupCommand == nil, !removingBranches.contains(branchId) else { return }
         let session = Session(name: ctx.branch.nextSessionName(for: kind), kind: kind, createdAt: environment.now())
         projects.updateBranch(branchId) { $0.sessions.append(session) }
         runtimes[session.id] = SessionRuntime(sessionId: session.id, kind: kind)
@@ -36,8 +41,8 @@ extension AppStore {
     /// (historial, MCP, conversaciones anteriores) corren fuera del hilo principal; la terminal se
     /// crea al volver, si la sesión sigue ahí y nadie la lanzó mientras tanto.
     func launch(_ id: UUID) {
-        guard let ctx = sessionContext(id), !ctx.session.isArchived, let rt = runtimes[id], !rt.isRunning, !rt.isLaunching, !rt.isSwitchingAgent,
-              !removingBranches.contains(ctx.branch.id) else { return }
+        guard !isShuttingDown, let ctx = sessionContext(id), !ctx.session.isArchived, let rt = runtimes[id], !rt.isRunning, !rt.isLaunching, !rt.isSwitchingAgent,
+              !removingBranches.contains(ctx.branch.id), ctx.branch.setupCommand == nil else { return }
         let dir = ctx.project.directory(for: ctx.branch)
         guard folderExists(dir, project: ctx.project, branch: ctx.branch, warnKey: id) else { return }
         let builder = launchContextBuilder(for: ctx.session, project: ctx.project, branch: ctx.branch, directory: dir)
@@ -70,8 +75,21 @@ extension AppStore {
 
     /// Crea la terminal y arranca el proceso según el plan.
     private func startSession(_ id: UUID, plan: LaunchPlan, directory dir: String) {
-        guard let ctx = sessionContext(id), let rt = runtimes[id] else { return }
+        guard !isShuttingDown, let ctx = sessionContext(id), let rt = runtimes[id], ctx.branch.setupCommand == nil,
+              !removingBranches.contains(ctx.branch.id) else { return }
+        if plan.continuesInterruptedWork {
+            // También cubre ⌘R antes de la primera revisión de git y un checkout mientras se
+            // armaba el plan: nunca mandar a trabajar al agente en otra rama por un HEAD guardado.
+            guard headConfirmed(ctx.branch, in: ctx.project) else {
+                rt.status = .dormant
+                awaitingHead.insert(id)
+                return
+            }
+            guard isActive(ctx.branch, in: ctx.project) else { return }
+        }
         rt.launchId = UUID()
+        rt.isStopping = false
+        rt.manuallyInterrupted = false
         var plan = plan
         plan.environment["HIVE_LAUNCH_ID"] = rt.launchId.uuidString
         let terminal = HiveTerminalView(frame: NSRect(x: 0, y: 0, width: 900, height: 600))
@@ -107,15 +125,24 @@ extension AppStore {
         let now = environment.now()
         projects.updateSession(id) { session in
             session.agentSessionId = plan.agentSessionId ?? session.agentSessionId
-            session.lastLaunchedAt = now
+            if started {
+                session.lastLaunchedAt = now
+                session.pendingWork = plan.continuesInterruptedWork ? PendingAgentWork(launchId: rt.launchId, since: now) : nil
+            }
         }
-        scheduleSave()
+        saveNow()
         rt.terminal = terminal
         rt.events = events
         rt.hooksSeen = false
-        rt.workingSince = nil
+        rt.workingSince = started && plan.continuesInterruptedWork ? now : nil
         rt.backgroundAgents = 0
-        rt.status = started ? .idle : .exited(nil)
+        rt.status = started ? (plan.continuesInterruptedWork ? .working : .idle) : .exited(nil)
+        if started && plan.continuesInterruptedWork {
+            history.append(HistoryEntry(date: now, role: .marker, text: InterruptedWork.marker),
+                           sessionId: id, agentName: ctx.session.kind.label)
+            historyVersions[id, default: 0] += 1
+            showNotice("Retomando la tarea interrumpida")
+        }
     }
 
     var currentPATH: String {
@@ -133,9 +160,19 @@ extension AppStore {
         }
         relaunching.insert(id)
         Task { [weak self] in
-            await self?.waitForExit(old)
-            self?.relaunching.remove(id)
-            self?.replaceTerminal(id)
+            guard let self else { return }
+            defer { relaunching.remove(id) }
+            await waitForExit(old)
+            if old.isProcessRunning {
+                old.hangUp()
+                await waitForExit(old)
+            }
+            guard !isShuttingDown, runtimes[id] === rt, !rt.isStopping else { return }
+            guard !old.isProcessRunning else {
+                alert = AppAlert(title: "No pude reiniciar la sesión", message: "El proceso anterior sigue abierto. Detenelo y volvé a intentar.")
+                return
+            }
+            replaceTerminal(id)
         }
     }
 
@@ -149,8 +186,12 @@ extension AppStore {
     }
 
     public func stop(_ id: UUID) {
-        guard let rt = runtimes[id], let terminal = rt.terminal else { return }
+        guard let rt = runtimes[id] else { return }
+        clearPendingWork(id)
+        rt.isStopping = true
+        rt.isLaunching = false
         rt.isSwitchingAgent = false
+        guard let terminal = rt.terminal else { return }
         // Un agente termina con SIGTERM (y guarda su conversación); el shell interactivo de una sesión
         // de Terminal lo ignora, así que se corta como al cerrar una ventana.
         if rt.kind.isAgent { terminal.terminate() } else { terminal.hangUp() }
@@ -184,6 +225,7 @@ extension AppStore {
         resumeExitWaiters(ObjectIdentifier(terminal))
         // Ignoramos avisos de una terminal vieja que ya reemplazamos (o estamos reemplazando) al reiniciar.
         guard let rt = runtimes[id], rt.terminal === terminal, !relaunching.contains(id) else { return }
+        if !isShuttingDown && code == 0 { clearPendingWork(id) }
         rt.status = .exited(code)
         rt.unseen = false
         updateBadge()
@@ -258,6 +300,7 @@ extension AppStore {
                 $0.handoffFrom = ctx.session.kind
                 $0.autoNamed = false
                 $0.lastActivityAt = now
+                $0.pendingWork = nil
             }
             runtimes[id] = SessionRuntime(sessionId: id, kind: kind)
             updateBadge()
@@ -322,7 +365,10 @@ extension AppStore {
     public func archive(_ id: UUID) {
         // Una ya archivada no se vuelve a archivar (le cambiaría la fecha y el deshacer la restauraría).
         guard let ctx = sessionContext(id), !ctx.session.isArchived else { return }
+        clearPendingWork(id)
         if let rt = runtimes[id] {
+            rt.isStopping = true
+            rt.isLaunching = false
             rt.isSwitchingAgent = false
             tearDown(rt.terminal)
             rt.terminal = nil

@@ -41,6 +41,7 @@ extension AppStore {
         for p in projects {
             for s in p.allSessions { runtimes[s.id] = SessionRuntime(sessionId: s.id, kind: s.kind) }
         }
+        reconcileInterruptedWork()
     }
 
     func scheduleSave() {
@@ -74,6 +75,8 @@ extension AppStore {
     }
 
     public func shutdown() {
+        guard !isShuttingDown else { return }
+        isShuttingDown = true
         saveNow()
         for rt in runtimes.values {
             rt.isSwitchingAgent = false

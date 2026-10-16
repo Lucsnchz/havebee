@@ -123,18 +123,23 @@ public final class EventWatcher: @unchecked Sendable {
     private let queue: DispatchQueue
     private let fallbackInterval: TimeInterval
     private let handler: @Sendable ([HiveEvent]) -> Void
-    /// Protege `source` y `timer`: start/stop corren en el hilo de quien llama y el respaldo en `queue`.
+    private let requiresAcknowledgement: Bool
+    /// Protege `source`, `timer` y `inFlight`: el store confirma entregas desde el actor principal,
+    /// mientras los archivos se leen en `queue`. Un evento se conserva hasta que el estado se guardó.
     private let lock = NSLock()
     private var source: DispatchSourceFileSystemObject?
     private var timer: DispatchSourceTimer?
+    private var inFlight: [URL: HiveEvent] = [:]
 
     /// - Parameter fallbackInterval: cada cuánto se revisa la carpeta por si se perdió un aviso del sistema de archivos.
     public init(directory: URL, queue: DispatchQueue = .main, fallbackInterval: TimeInterval = 2,
+                requiresAcknowledgement: Bool = false,
                 handler: @escaping @Sendable ([HiveEvent]) -> Void) {
         self.directory = directory
         self.queue = queue
         self.fallbackInterval = fallbackInterval
         self.handler = handler
+        self.requiresAcknowledgement = requiresAcknowledgement
     }
 
     deinit { stop() }
@@ -198,13 +203,44 @@ public final class EventWatcher: @unchecked Sendable {
         drain()
     }
 
-    /// Los eventos de una ejecución anterior ya no significan nada.
+    /// Se llama después de reconciliar el pendiente de la ejecución anterior.
     public func purge() {
+        lock.lock()
+        defer { lock.unlock() }
         let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
         for file in files { try? FileManager.default.removeItem(at: file) }
+        inFlight.removeAll()
     }
 
-    /// Lee y borra los `.evt` pendientes. Devuelve los eventos entregados (útil para los tests).
+    /// Confirma solo este lote, nunca otro que ya esté encolado para el actor principal.
+    public func acknowledge(_ events: [HiveEvent]) {
+        lock.lock()
+        defer { lock.unlock() }
+        let delivered = inFlight.filter { events.contains($0.value) }.map(\.key)
+        for file in delivered {
+            try? FileManager.default.removeItem(at: file)
+            inFlight[file] = nil
+        }
+    }
+
+    /// Antes de purgar al arrancar, permite reconciliar el trabajo pendiente con los últimos hooks.
+    /// No consume los archivos ni entrega avisos de una ejecución vieja a terminales nuevas.
+    public static func pendingEvents(in directory: URL) -> [HiveEvent] {
+        let files = (try? FileManager.default.contentsOfDirectory(at: directory,
+                         includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+        func modified(_ url: URL) -> Date {
+            (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+        }
+        return files.filter { $0.pathExtension == "evt" }
+            .sorted { (modified($0), $0.lastPathComponent) < (modified($1), $1.lastPathComponent) }
+            .compactMap { file in
+                guard let data = try? Data(contentsOf: file) else { return nil }
+                return HiveEvent.parse(String(decoding: data, as: UTF8.self))
+            }
+    }
+
+    /// Lee los `.evt` pendientes. Con confirmación explícita, los conserva hasta `acknowledge`;
+    /// de lo contrario los borra al entregar. Devuelve el lote (útil para los tests).
     @discardableResult
     public func drain() -> [HiveEvent] {
         let fm = FileManager.default
@@ -217,8 +253,13 @@ public final class EventWatcher: @unchecked Sendable {
         guard !files.isEmpty else { return [] }
         var events: [HiveEvent] = []
         for file in files {
-            defer { try? fm.removeItem(at: file) }
-            guard let data = try? Data(contentsOf: file), let event = HiveEvent.parse(String(decoding: data, as: UTF8.self)) else { continue }
+            if requiresAcknowledgement, lock.withLock({ inFlight[file] != nil }) { continue }
+            guard let data = try? Data(contentsOf: file), let event = HiveEvent.parse(String(decoding: data, as: UTF8.self)) else {
+                try? fm.removeItem(at: file)
+                continue
+            }
+            if requiresAcknowledgement { lock.withLock { inFlight[file] = event } }
+            else { try? fm.removeItem(at: file) }
             events.append(event)
         }
         if !events.isEmpty { handler(events) }

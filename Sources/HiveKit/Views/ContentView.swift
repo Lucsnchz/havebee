@@ -103,7 +103,7 @@ private struct StoreDialogs: ViewModifier {
         @Bindable var store = store
         content
             .sheet(item: $store.newBranchTarget) { target in
-                NewBranchSheet(projectId: target.id)
+                NewBranchSheet(projectId: target.id, initialBranch: target.initialBranch)
             }
             .sheet(item: $store.customizeTarget) { target in
                 CustomizeProjectSheet(projectId: target.id)
@@ -116,6 +116,10 @@ private struct StoreDialogs: ViewModifier {
             }
             .sheet(item: $store.diffTarget) { target in
                 DiffSheet(target: target)
+            }
+            .sheet(item: Binding(get: { store.pendingRemoval?.isWorktree == true ? store.pendingRemoval : nil },
+                                 set: { store.pendingRemoval = $0 })) { removal in
+                WorktreeRemovalSheet(removal: removal)
             }
             .sheet(isPresented: $store.showSwitcher, onDismiss: { store.switcherQuery = "" }) {
                 QuickSwitcher(query: store.switcherQuery)
@@ -139,14 +143,13 @@ private struct StoreDialogs: ViewModifier {
             } message: { pending in
                 Text(pending.message)
             }
-            .confirmationDialog(store.pendingRemoval?.title ?? "", isPresented: presence(\.pendingRemoval),
+            .confirmationDialog(store.pendingRemoval?.title ?? "", isPresented: Binding(
+                get: { store.pendingRemoval != nil && store.pendingRemoval?.isWorktree != true },
+                set: { if !$0 && store.pendingRemoval?.isWorktree != true { store.pendingRemoval = nil } }),
                                 titleVisibility: .visible, presenting: store.pendingRemoval) { removal in
                 switch removal.item {
                 case .branch:
                     Button("Quitar de Hive") { store.remove(removal.item) }
-                    if removal.isWorktree {
-                        Button("Quitar y borrar el worktree", role: .destructive) { store.remove(removal.item, deleteWorktree: true) }
-                    }
                 case .session(let id):
                     if removal.offersArchive {
                         Button("Archivarla") { store.archive(id) }

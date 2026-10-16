@@ -33,6 +33,8 @@ public final class AppStore {
     var mcpVersion = 0
     /// Comandos del proyecto corriendo (en la esquina de la ventana).
     public internal(set) var commandRuns: [CommandRun] = []
+    var preparationRuns: [UUID: UUID] = [:]
+    var repositoryBranches: [UUID: RepositoryBranches] = [:]
     /// Publicar o traer en curso, por rama (ver `runRemoteOperation`).
     public internal(set) var remoteOperations: [UUID: RemoteOperation] = [:]
     /// Sube cuando cambia el día: lo de ayer deja de contar como «usado hoy» y el orden de los
@@ -111,6 +113,7 @@ public final class AppStore {
     @ObservationIgnored var persistenceBlocked = false
     /// El último guardado falló (y ya se avisó).
     @ObservationIgnored var saveFailed = false
+    @ObservationIgnored var isShuttingDown = false
     /// Quienes esperan que termine el proceso de una terminal (ver `waitForExit`).
     @ObservationIgnored var exitWaiters: [ObjectIdentifier: [CheckedContinuation<Void, Never>]] = [:]
     /// Cuánto se espera el script de cierre de un worktree antes de borrarlo igual.
@@ -149,8 +152,16 @@ public final class AppStore {
         Task.detached(priority: .background) { history.purge() }
         // Los archivos de eventos se leen y se borran en una cola propia; al hilo principal solo se
         // salta para procesarlos, en el mismo orden en que llegaron.
-        watcher = EventWatcher(directory: environment.paths.eventsDir, queue: Self.eventsQueue) { [weak self] events in
-            DispatchQueue.main.async { MainActor.assumeIsolated { self?.handle(events) } }
+        watcher = EventWatcher(directory: environment.paths.eventsDir, queue: Self.eventsQueue,
+                               requiresAcknowledgement: true) { [weak self] events in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self, !self.isShuttingDown else { return }
+                    self.handle(events)
+                    // Si falló el guardado, el hook de fin/permiso sigue en disco para el próximo arranque.
+                    if !self.saveFailed && !self.persistenceBlocked { self.watcher?.acknowledge(events) }
+                }
+            }
         }
         watcher?.start()
         environment.notifier.onOpen = { [weak self] id in self?.openFromNotification(id) }

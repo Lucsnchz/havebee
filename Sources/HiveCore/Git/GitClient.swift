@@ -19,6 +19,9 @@ public protocol GitClient: Sendable {
     func addWorktree(at path: String, branch: String, newBranch: Bool, base: String?, in dir: String) -> CommandResult
     func removeWorktree(_ path: String, force: Bool, in dir: String) -> CommandResult
     func checkout(_ branch: String, in dir: String) -> CommandResult
+    func revision(_ ref: String, in dir: String) -> String?
+    func commitsNotMerged(branch: String, into base: String, in dir: String) -> Int?
+    func deleteBranch(_ name: String, expectedTip: String, force: Bool, in dir: String) -> CommandResult
 
     // Requisitos nuevos: tienen una implementación por defecto (abajo) para que los clientes
     // falsos de los tests sigan compilando.
@@ -50,6 +53,9 @@ public protocol GitClient: Sendable {
 
 extension GitClient {
     private var unavailable: CommandResult { CommandResult(status: -1, stderr: "Esta operación de git no está disponible.") }
+    public func revision(_ ref: String, in dir: String) -> String? { nil }
+    public func commitsNotMerged(branch: String, into base: String, in dir: String) -> Int? { nil }
+    public func deleteBranch(_ name: String, expectedTip: String, force: Bool, in dir: String) -> CommandResult { unavailable }
 
     public func fetch(_ dir: String, timeout: TimeInterval?) -> CommandResult { unavailable }
     public func fetch(_ dir: String) -> CommandResult { fetch(dir, timeout: nil) }
@@ -205,6 +211,25 @@ public struct GitCLI: GitClient {
 
     public func isValidBranchName(_ name: String, in dir: String) -> Bool {
         run(["check-ref-format", "--branch", name], in: dir).ok
+    }
+
+    public func revision(_ ref: String, in dir: String) -> String? {
+        let result = run(["rev-parse", "--verify", "--end-of-options", ref + "^{commit}"], in: dir)
+        return result.ok && !result.output.isEmpty ? result.output : nil
+    }
+
+    public func commitsNotMerged(branch: String, into base: String, in dir: String) -> Int? {
+        guard let tip = revision("refs/heads/" + branch, in: dir), let baseTip = revision(base, in: dir) else { return nil }
+        let result = run(["rev-list", "--count", baseTip + ".." + tip, "--"], in: dir)
+        return result.ok ? Int(result.output) : nil
+    }
+
+    public func deleteBranch(_ name: String, expectedTip: String, force: Bool, in dir: String) -> CommandResult {
+        guard revision("refs/heads/" + name, in: dir) == expectedTip else {
+            return CommandResult(status: -1, stderr: "La rama cambió desde la confirmación. No se borró; revisala nuevamente.")
+        }
+        // Git también protege ramas usadas por cualquier otro worktree.
+        return run(["branch", force ? "-D" : "-d", "--", name], in: dir)
     }
 
     public func initRepository(_ dir: String) -> CommandResult {

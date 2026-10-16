@@ -141,6 +141,20 @@ public enum EnvFile {
         return result
     }
 
+    /// Una ruta SQLite relativa cambia de base al copiar .env. Conserva la conexión existente,
+    /// igual que con MySQL/Postgres, sin copiar la base ni ejecutar consultas.
+    public static func preserveSQLiteConnection(in text: String, root: String,
+                                                exists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }) -> String {
+        guard value("DB_CONNECTION", in: text)?.lowercased() == "sqlite",
+              value("DB_URL", in: text)?.isEmpty != false else { return text }
+        let database = value("DB_DATABASE", in: text) ?? "database/database.sqlite"
+        guard !database.isEmpty, database != ":memory:", !database.hasPrefix("/"),
+              !database.contains("$") else { return text }
+        let absolute = (root as NSString).appendingPathComponent(database)
+        guard exists(absolute) else { return text }
+        return set("DB_DATABASE", value: absolute, in: text)
+    }
+
     private static func needsQuotes(_ value: String) -> Bool {
         value.contains(" ") || value.contains("#") || value.contains("\t")
     }

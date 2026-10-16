@@ -168,6 +168,35 @@ extension AppStore {
         guard let run = commandRuns.first(where: { $0.id == runId }), run.terminal === terminal else { return }
         run.running = false
         run.exitCode = code
+        if let branchId = preparationRuns.first(where: { $0.value == runId })?.key,
+           let ctx = branchContext(branchId), !removingBranches.contains(branchId) {
+            if code == 0 {
+                let firstSession = ctx.branch.setupFirstSession
+                projects.updateBranch(branchId) { $0.setupCommand = nil; $0.setupFirstSession = nil }
+                preparationRuns[branchId] = nil
+                scheduleSave()
+                showNotice("«\(ctx.branch.name)» está listo para usar")
+                if let firstSession { requestNewSession(branchId: branchId, kind: firstSession) }
+            } else {
+                alert = AppAlert(title: "La preparación de «\(ctx.branch.name)» no terminó",
+                                 message: "El worktree y la rama están guardados. Revisá la salida del comando y reintentá desde la rama; la primera sesión espera a que termine.",
+                                 actionTitle: "Ver salida", action: { [weak self] in self?.showRun(runId) })
+            }
+        }
+    }
+
+    func retryPreparation(_ branchId: UUID) {
+        guard let ctx = branchContext(branchId), let command = ctx.branch.setupCommand,
+              let path = ctx.branch.worktreePath, !removingBranches.contains(branchId) else { return }
+        if let runId = preparationRuns[branchId], let run = commandRuns.first(where: { $0.id == runId }) {
+            if !run.running { restartRun(runId) }
+            showRun(runId)
+            return
+        }
+        if let runId = runScript(name: "Preparar \(ctx.branch.name)", command: command, projectId: ctx.project.id, branchId: branchId,
+                                 environment: ProjectScripts.environment(rootPath: ctx.project.path, worktreePath: path, branch: ctx.branch.name)) {
+            preparationRuns[branchId] = runId
+        }
     }
 
     public func commandSuggestions(for project: Project) -> [CommandSuggestions.Suggestion] {

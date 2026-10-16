@@ -21,6 +21,10 @@ public final class SessionRuntime {
     public internal(set) var isLaunching = false
     public internal(set) var isSwitchingAgent = false
     @ObservationIgnored var launchId = UUID()
+    /// Un Stop explícito no puede ser deshecho por hooks que llegan mientras termina el proceso.
+    @ObservationIgnored var isStopping = false
+    /// Esc/Ctrl+C cancelan la continuación hasta un nuevo envío explícito; pueden llegar hooks tardíos.
+    @ObservationIgnored var manuallyInterrupted = false
 
     @ObservationIgnored var events: TerminalEvents?
     /// Último momento en que la terminal recibió salida (para la regla del silencio).

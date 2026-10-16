@@ -47,8 +47,14 @@ public struct LaunchContextBuilder: Sendable {
             // El archivo existe desde el arranque, para que la IA lo encuentre.
             HistoryStore(directory: paths.historyDir).ensureMarkdown(session: session, place: place)
         }
-        let mcpFile = MCPConfig.effectiveFile(directory: directory, projectPath: project.path)
-        let mcpServers = mcpFile.map(MCPConfig.load) ?? []
+        let mcp = MCPConfig.forWorktree(file: MCPConfig.effectiveFile(directory: directory, projectPath: project.path),
+                                      root: project.path, directory: directory,
+                                      output: paths.root.appendingPathComponent("mcp/\(session.id.uuidString).json"),
+                                      herdExecutable: branch.herdSite == nil ? nil : HerdSites.defaultRoot(
+                                        home: URL(fileURLWithPath: inheritedEnvironment["HOME"] ?? NSHomeDirectory()))
+                                        .appendingPathComponent("bin/herd").path)
+        let mcpFile = mcp.file
+        let mcpServers = mcp.servers
         var discovered: String?
         // Solo si ya se lanzó antes y no sabemos su conversación: la buscamos entre las que se crearon después.
         if let since = session.lastLaunchedAt, session.agentSessionId == nil {
@@ -83,6 +89,20 @@ public struct LaunchContextBuilder: Sendable {
             discoveredAgentId: discovered, mcpFile: mcpFile, mcpServers: mcpServers, geminiSettingsPath: geminiSettings,
             codexExistingNotify: session.kind == .codex ? agents.codexExistingNotify() : nil,
             claudeUsage: claudeUsage, claudeUserStatusLine: userStatusLine, handoffContext: handoffContext,
-            historyEntries: entries)
+            historyEntries: entries, resumeInterruptedWork: canContinueInterruptedWork(agentId: session.agentSessionId ?? discovered))
+    }
+
+    private func canContinueInterruptedWork(agentId: String?) -> Bool {
+        guard !session.isArchived, let pending = session.pendingWork, let agentId else { return false }
+        let transcript: URL?
+        switch session.kind {
+        case .claude: transcript = agents.claudeTranscriptURL(agentId)
+        case .codex: transcript = agents.codexRolloutURL(agentId)
+        case .grok: return agents.grokSessionExists(agentId)
+        // Sin hooks de fin o permiso, la actividad de la terminal sola no alcanza para continuar sola.
+        case .gemini, .shell: return false
+        }
+        guard let transcript else { return false }
+        return InterruptedWork.allowsContinuation(transcript: transcript, agent: session.kind, pending: pending)
     }
 }

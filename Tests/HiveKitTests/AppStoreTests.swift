@@ -252,7 +252,7 @@ struct AppStoreProjectTests {
         #expect(store.selection == .project(project.id))
     }
 
-    @Test("Quitar una rama borrando su worktree; si tiene cambios pide forzar")
+    @Test("Quitar una rama borrando su worktree; forzar exige revisión y nombre escrito")
     func removeBranchDeletingWorktree() async throws {
         let world = TestWorld()
         let repo = GitRepo()
@@ -269,14 +269,15 @@ struct AppStoreProjectTests {
         #expect(store.runtimes[session.id]?.isRunning == true)
 
         #expect(!(await store.performRemove(.branch(branch.id), deleteWorktree: true)))
-        #expect(store.alert?.actionTitle == "Borrar igual")
-        #expect(store.alert?.isDestructive == true)
+        #expect(store.alert?.actionTitle == nil)
+        #expect(store.alert?.message.contains("escribir el nombre de la rama") == true)
         #expect(store.project(project.id)?.branches.count == 2)
         // Las sesiones se cortaron antes de intentar borrar, pero siguen en Hive (dormidas).
         #expect(store.runtimes[session.id]?.status == .dormant)
         #expect(store.runtimes[session.id]?.isRunning == false)
 
-        #expect(await store.performRemove(.branch(branch.id), deleteWorktree: true, force: true))
+        let review = try #require(await store.removalReview(branchId: branch.id))
+        #expect(await store.performRemove(.branch(branch.id), deleteWorktree: true, force: true, review: review, confirmation: "sucia"))
         #expect(!FileManager.default.fileExists(atPath: path))
         #expect(store.project(project.id)?.branches.count == 1)
         #expect(store.runtimes[session.id] == nil)
@@ -310,10 +311,10 @@ struct AppStoreProjectTests {
         let project = try #require(store.repoProjects.first)
         _ = await store.createBranch(NewBranchRequest(projectId: project.id, name: "wt", isNew: true, mode: .worktree))
         let worktree = try #require(store.project(project.id)?.branches.last)
-        let path = try #require(worktree.worktreePath)
+        #expect(worktree.worktreePath != nil)
         store.requestRemoval(.branch(worktree.id))
         #expect(store.pendingRemoval?.isWorktree == true)
-        #expect(store.pendingRemoval?.message == "La rama de git no se borra. Podés conservar el worktree en \(path) o borrarlo.")
+        #expect(store.pendingRemoval?.message == "Podés quitarlo de Hive conservando la carpeta, o borrar el worktree del disco.")
         store.requestRemoval(.branch(project.branches[0].id))
         #expect(store.pendingRemoval?.isWorktree == false)
         #expect(store.pendingRemoval?.message == "La rama de git no se borra.")
@@ -329,7 +330,7 @@ struct AppStoreProjectTests {
         store.saveCommand(projectId: project.id, commandId: nil, name: "Cola", command: "php artisan queue:work")
         for command in try #require(store.project(project.id)?.commands) { store.run(command.id, projectId: project.id, branchId: worktree.id) }
         store.requestRemoval(.branch(worktree.id))
-        #expect(store.pendingRemoval?.message == "Se detienen 2 comandos y 1 sesión. La rama de git no se borra. Podés conservar el worktree en \(path) o borrarlo.")
+        #expect(store.pendingRemoval?.message == "Se detienen 2 comandos y 1 sesión. Podés quitarlo de Hive conservando la carpeta, o borrar el worktree del disco.")
         store.requestRemoval(.project(project.id))
         #expect(store.pendingRemoval?.message == "Se detienen 2 comandos y 1 sesión. Sus ramas, sesiones y comandos se quitan de Hive. No se borra nada del disco: la carpeta y el repo quedan como están.")
         #expect(AppStore.stoppingSummary(commands: 1, sessions: 0) == "Se detiene 1 comando.")

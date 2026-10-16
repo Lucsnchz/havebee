@@ -20,7 +20,13 @@ Sin `--install` solo deja la app en `build/Hive.app`. Para instalar una versión
   - **Carpeta principal**: usa la carpeta del repo con `git switch`. Solo una rama activa a la vez; si abrís otra, Hive te pide confirmar y te avisa si hay cambios sin commitear o sesiones abiertas.
 - **Sesión**: Claude Code, Codex, Gemini, Grok o Terminal, en la carpeta de su rama (⌘T, o clic derecho en una rama → «Nueva sesión…»). Si el agente no está instalado, Hive te dice cómo instalarlo en lugar de abrir una sesión que no arranca. Las de Claude y Codex se nombran solas con tu primer pedido.
 
-Un worktree nuevo arranca listo: Hive copia los archivos que git ignora y hacen falta para correr (`.env` con su `APP_URL` reescrito, `auth.json`, los permisos de Claude, `local.properties`, keystores, o lo que diga `.worktreeinclude`) y, si dejás tildado «Preparar al crear», corre la instalación (la de `polyscope.json` o `conductor.json`, o una sugerida como `composer install && npm install && npm run build`, con `herd secure` si hace falta). Al borrar el worktree corre antes el script de cierre, si hay.
+El resumen muestra primero la carpeta principal y los worktrees, y después las ramas locales sin worktree y las remotas sin copia local. «Crear worktree…» abre la preparación con esa rama seleccionada y conserva sus commits y sesiones de Hive.
+
+Un worktree nuevo copia los archivos locales ignorados (`.env`, `.mcp.json`, `auth.json`, permisos de Claude, `local.properties`, keystores, o lo que indique `.worktreeinclude`). En Laravel, «Dejar Laravel listo para usar» prepara las carpetas de storage, instala Composer, genera APP_KEY solo si falta, crea el enlace de storage e instala y compila los assets. Usa `.env.example` cuando no tiene `.env`. Conserva la conexión de base de datos y no ejecuta migraciones automáticamente.
+
+Con Herd instalado registra un sitio propio, conserva la versión PHP y HTTPS del principal y ajusta APP_URL y los dominios de sesión. Los MCP del proyecto reciben rutas del worktree; los de PHP usan su versión de Herd. La primera sesión espera a que la preparación termine bien. Si falla, se conservan la rama y los archivos, con salida visible y «Reintentar», incluso después de reabrir Hive. Los scripts de `polyscope.json` o `conductor.json` tienen prioridad y se pueden revisar o editar antes de crear.
+
+Al cerrar un worktree elegís conservar su carpeta o borrarla y, por separado, eliminar también la rama local. Hive muestra los commits pendientes de integrar en main y los archivos sin commit. Para borrar una rama o descartar cambios hay que escribir exactamente su nombre; main, master y la rama por defecto están protegidas. El estado se vuelve a comprobar antes del borrado. Las ramas remotas se conservan. Antes de borrar se ejecuta el script de cierre del proyecto, si hay; después se retira el alias de Herd creado por Hive si todavía apunta a ese worktree.
 
 Los worktrees que ya existían (creados por Warp, Claude, a mano…) se detectan solos. Si quitás uno de Hive sin borrarlo, no vuelve a aparecer. Si borrás uno por fuera, desaparece solo de Hive, salvo que tenga algo corriendo: ahí avisa y se va cuando termina.
 
@@ -122,6 +128,10 @@ En el Resumen de cada proyecto, la sección **MCP** muestra los servidores del `
 - Claro u oscuro: en Ajustes → General elegís la apariencia de toda la aplicación, incluidas las barras, paneles y ventanas. En Ajustes → Terminal elegís si la terminal acompaña a la app o usa su propio tema.
 
 Las sesiones siguen corriendo aunque cambies de sesión o cierres la ventana. Al salir de Hive se cortan, pero al volver a abrir cada sesión de agente **retoma su conversación** (`claude --resume` / `codex resume`) cuando la seleccionás.
+
+Si Claude, Codex o Grok estaban trabajando, Hive guarda ese pendiente también durante la ejecución (para cubrir una caída). Al reabrir esa conversación, le pasa un único mensaje de continuación al proceso que la reanuda. Incluye los workflows y subagentes que seguían pendientes al terminar el turno principal; el mensaje pide revisar sus resultados y procesos antes de retomarlos. No abre todos los chats ni relanza comandos del proyecto.
+
+Un turno terminado, un pedido de permiso/respuesta, Esc sin trabajo en segundo plano, Ctrl+C, Detener o Archivar cancelan la continuación automática. Antes de retomarla, Hive revisa los hooks que quedaron sin procesar y el final del transcript de Claude/Codex, para no repetir una tarea que terminó justo al cerrar. Hace falta recuperar la conversación nativa: sin ella no envía el mensaje. La reanudación queda marcada en el historial y respeta los permisos del agente. Las sesiones guardadas por versiones anteriores, sin un pendiente registrado, no se reactivan por el solo hecho de tener historial. Gemini sigue recuperando el chat sin enviar un prompt automático: Hive todavía no tiene señales confiables de fin y permisos para ese proveedor.
 
 ## Estados en el sidebar
 

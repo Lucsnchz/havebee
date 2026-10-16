@@ -28,12 +28,25 @@ struct ProjectDetailView: View {
                                 }))
                     }
 
-                    DetailSection("Ramas") {
+                    DetailSection("Carpeta principal y worktrees") {
                         LazyVGrid(columns: HiveCard.gridColumns, alignment: .leading, spacing: 12) {
-                            ForEach(project.branches) { branch in
+                            ForEach(project.branches.filter { $0.mode == .worktree || $0.name == head }) { branch in
                                 BranchCard(project: project, branch: branch)
                             }
                             NewBranchCard { store.newBranchTarget = NewBranchTarget(id: project.id) }
+                        }
+                    }
+
+                    if let catalog = store.repositoryBranches[project.id] {
+                        if !catalog.withoutWorktree.isEmpty {
+                            DetailSection("Ramas sin worktree") {
+                                branchList(catalog.withoutWorktree, project: project, remote: false)
+                            }
+                        }
+                        if !catalog.remoteOnly.isEmpty {
+                            DetailSection("Ramas remotas") {
+                                branchList(catalog.remoteOnly, project: project, remote: true)
+                            }
                         }
                     }
 
@@ -59,6 +72,7 @@ struct ProjectDetailView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .navigationTitle(project.name)
+            .task { store.refreshGit() }
             .navigationSubtitle(head.isEmpty ? "HEAD desacoplado" : "en \(head)")
             .toolbar {
                 ToolbarItemGroup {
@@ -78,6 +92,26 @@ struct ProjectDetailView: View {
                 }
             }
         }
+    }
+
+    private func branchList(_ refs: [String], project: Project, remote: Bool) -> some View {
+        VStack(spacing: 0) {
+            ForEach(refs, id: \.self) { ref in
+                HStack(spacing: 12) {
+                    Image(systemName: remote ? "cloud" : "arrow.triangle.branch").foregroundStyle(.secondary)
+                    Text(ref).font(HiveFont.secondary).textSelection(.enabled)
+                    Spacer(minLength: 12)
+                    if !remote, let branch = project.branches.first(where: { $0.name == ref }), !branch.sessions.isEmpty {
+                        Button("Sesiones") { store.select(.branch(branch.id)) }.buttonStyle(.borderless)
+                    }
+                    Button("Crear worktree…") { store.newBranchTarget = NewBranchTarget(id: project.id, initialBranch: ref) }
+                        .controlSize(.small)
+                }
+                .padding(12)
+                if ref != refs.last { Divider() }
+            }
+        }
+        .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 10))
     }
 }
 
