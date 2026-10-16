@@ -46,6 +46,8 @@ extension AppStore {
         rt.isLaunching = true
         Task { [weak self] in
             let context = await Task.detached(priority: .userInitiated) { builder.build() }.value
+            // Se canceló mientras se armaba (se cortaron sus sesiones para borrar la carpeta).
+            guard rt.isLaunching else { return }
             rt.isLaunching = false
             // Mientras tanto se pudo borrar, archivar o lanzar por otro lado.
             guard let self, self.runtimes[id] === rt, !rt.isRunning,

@@ -136,10 +136,12 @@ extension AppStore {
         return "\(commands + sessions == 1 ? "Se detiene" : "Se detienen") \(parts.joined(separator: " y "))."
     }
 
-    /// Corta las sesiones pero las deja en Hive, dormidas (por si después no se pueden quitar).
+    /// Corta las sesiones pero las deja en Hive, dormidas (por si después no se pueden quitar). Una
+    /// que se estaba armando para lanzarse ya no arranca.
     func stopSessions(_ ids: [UUID]) {
         for id in ids {
             guard let rt = runtimes[id] else { continue }
+            rt.isLaunching = false
             tearDown(rt.terminal)
             rt.terminal = nil
             rt.events = nil

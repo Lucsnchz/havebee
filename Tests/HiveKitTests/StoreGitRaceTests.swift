@@ -112,6 +112,30 @@ struct StoreGitRaceTests {
         #expect(await s.settle())
     }
 
+    @Test("Quitar una rama borrando el worktree no deja arrancar una sesión que se estaba armando")
+    func removeWhileLaunching() async throws {
+        let s = await RaceSetup()
+        #expect(await s.store.createBranch(NewBranchRequest(projectId: s.project.id, name: "wt", isNew: true, mode: .worktree)) == nil)
+        #expect(await s.settle())
+        let branch = try #require(s.store.project(s.project.id)?.branches.last)
+        s.store.requestNewSession(branchId: branch.id, kind: .shell)
+        let session = try #require(s.store.branchContext(branch.id)?.branch.sessions.last)
+        // Con el lanzamiento en segundo plano, como en la app.
+        var environment = s.world.environment
+        environment.launchesInBackground = true
+        let store = AppStore(environment: environment)
+        let rt = try #require(store.runtimes[session.id])
+        await store.refreshGitNow()
+        s.git.setDelay(.removeWorktree, 0.5) // git tarda en borrar: el armado del lanzamiento termina antes
+        store.activate(session.id)
+        #expect(rt.isLaunching)
+        let removed = Task { await store.performRemove(.branch(branch.id), deleteWorktree: true) }
+        #expect(await waitUntil { !rt.isLaunching })
+        #expect(!rt.isRunning) // se cortó para borrar la carpeta: no arranca ahí
+        #expect(await removed.value)
+        #expect(s.world.processes.launches.isEmpty)
+    }
+
     @Test("Un pedido durante una revisión dispara otra pasada al terminar")
     func requestDuringRefresh() async throws {
         let s = await RaceSetup()
