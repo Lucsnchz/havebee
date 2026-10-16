@@ -53,7 +53,7 @@ struct ProjectOrderingTests {
         #expect(items.map(\.isActive) == [true, true, false])
     }
 
-    @Test("Una sesión corriendo cuenta como activa aunque su último uso sea viejo")
+    @Test("Una sesión prendida (trabajando o esperándote) cuenta como activa aunque su último uso sea viejo")
     func oldRunningSessionIsActive() throws {
         let running = rielProject("corriendo", used: lastWeek)
         let quiet = rielProject("quieto", used: lastWeek)
@@ -62,6 +62,26 @@ struct ProjectOrderingTests {
         #expect(items.map(\.project.name) == ["corriendo", "quieto"])
         #expect(items.first?.group == .active)
         #expect(items.last?.group == .idle)
+    }
+
+    @Test("Abrirla no es usarla: un lanzamiento de hoy no la cuenta, escribirle o crearla hoy sí")
+    func launchingIsNotUsing() {
+        let opened = Project(name: "abierto", path: "/abierto", branches: [Branch(name: "main", mode: .main, sessions: [
+            Session(name: "Claude 1", kind: .claude, createdAt: lastWeek, lastLaunchedAt: today, lastActivityAt: lastWeek),
+            Session(name: "Gemini 1", kind: .gemini, createdAt: lastWeek, lastLaunchedAt: today),
+        ])])
+        let written = Project(name: "escrito", path: "/escrito", branches: [Branch(name: "main", mode: .main, sessions: [
+            Session(name: "Codex 1", kind: .codex, createdAt: lastWeek, lastLaunchedAt: lastWeek, lastActivityAt: today),
+        ])])
+        let created = rielProject("creado", used: today)
+        let order = ordering()
+        #expect(!order.isActive(opened))
+        #expect(order.isActive(written))
+        #expect(order.isActive(created))
+        #expect(order.arrange([opened, written, created]).map(\.project.name) == ["escrito", "creado", "abierto"])
+        // El orden de las sesiones por uso reciente (pestañas, ⌘K) sí sigue contando el lanzamiento.
+        #expect(opened.activeSessions[1].recency == today)
+        #expect(opened.activeSessions[1].lastUsedAt == lastWeek)
     }
 
     @Test("Un comando corriendo también prende el proyecto")

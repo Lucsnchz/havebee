@@ -87,6 +87,10 @@ public struct Session: Identifiable, Codable, Hashable, Sendable {
 
     /// Para ordenar por uso reciente.
     public var recency: Date { lastActivityAt ?? lastLaunchedAt ?? createdAt }
+
+    /// La última vez que la usaste: que le escribiste (o que el agente terminó algo), o que la
+    /// creaste. Que se lance no cuenta: abrir una sesión dormida la lanza, y mirarla no es usarla.
+    public var lastUsedAt: Date { lastActivityAt ?? createdAt }
 }
 
 /// Un comando guardado del proyecto (ej. `npm run dev`).

@@ -3,8 +3,9 @@ import Foundation
 /// El orden de los proyectos, el mismo en el riel de la vista compacta, en el árbol y en ⌃⌘1…⌃⌘9:
 ///
 /// 1. Los fijados (clic derecho › «Fijar arriba»), estén activos o no.
-/// 2. Los activos: con algo prendido (una sesión corriendo o esperándote, un comando corriendo) o
-///    con alguna sesión usada hoy.
+/// 2. Los activos: con algo prendido (una sesión trabajando o esperándote, una Terminal con un
+///    proceso, un comando corriendo) o con alguna sesión usada hoy. Abrir un proyecto no lo prende:
+///    mirar una sesión la lanza, y si eso contara, el proyecto saltaría de grupo con el clic.
 /// 3. Los apagados: sin nada prendido ni usado en el día.
 /// 4. «Terminales», siempre al final.
 ///
@@ -38,7 +39,8 @@ public struct ProjectOrdering: Sendable {
     public var now: Date
     /// El calendario (con su zona horaria) que dice dónde empieza y termina el día.
     public var calendar: Calendar
-    /// Sesiones prendidas: corriendo o con algo que mostrarte (permiso, turno sin ver).
+    /// Sesiones prendidas: con algo que mostrarte (trabajando, permiso, turno sin ver) o una Terminal
+    /// con un proceso en primer plano. Un agente abierto y quieto no cuenta.
     public var liveSessions: Set<UUID>
     /// Proyectos con un comando corriendo (ej. `npm run dev`).
     public var busyProjects: Set<UUID>
@@ -53,11 +55,12 @@ public struct ProjectOrdering: Sendable {
     // MARK: Grupos
 
     /// Si el proyecto tiene algo prendido o alguna sesión (no archivada) usada en el día de hoy.
-    /// Una sesión corriendo cuenta aunque se haya usado por última vez hace días.
+    /// Una sesión prendida cuenta aunque se haya usado por última vez hace días. «Usada» es que le
+    /// escribiste o que la creaste (`lastUsedAt`): que se haya lanzado hoy no alcanza.
     public func isActive(_ project: Project) -> Bool {
         if busyProjects.contains(project.id) { return true }
         return project.activeSessions.contains { session in
-            liveSessions.contains(session.id) || calendar.isDate(session.recency, inSameDayAs: now)
+            liveSessions.contains(session.id) || calendar.isDate(session.lastUsedAt, inSameDayAs: now)
         }
     }
 

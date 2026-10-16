@@ -34,6 +34,48 @@ private final class RielFlag: @unchecked Sendable {
     var value = false
 }
 
+/// Tres repos con git en orden manual [b, a, c]: «a» y «c» con un Claude creado hoy, «b» con uno
+/// creado la semana pasada. Nada corre: como al abrir Hive a la mañana.
+@MainActor
+private final class ThreeRepos {
+    let world = TestWorld()
+    let repos = [GitRepo(name: "b"), GitRepo(name: "a"), GitRepo(name: "c")]
+    let store: AppStore
+    var a: Project!
+    var b: Project!
+    var c: Project!
+    var lastWeek: Date { world.now.addingTimeInterval(-7 * 86_400) }
+
+    init() async throws {
+        store = world.makeStore()
+        for repo in repos { await store.addProject(at: repo.path) }
+        b = try #require(store.repoProjects.first { $0.name == "b" })
+        a = try #require(store.repoProjects.first { $0.name == "a" })
+        c = try #require(store.repoProjects.first { $0.name == "c" })
+        try newSession(in: b, .claude, at: lastWeek)
+        try newSession(in: a, .claude)
+        try newSession(in: c, .claude)
+        store.select(nil)
+    }
+
+    /// Crea una sesión (en `date`, o ahora) y devuelve su id.
+    @discardableResult
+    func newSession(in project: Project, _ kind: SessionKind, at date: Date? = nil) throws -> UUID {
+        let today = world.now
+        if let date { world.now = date }
+        defer { world.now = today }
+        store.requestNewSession(branchId: project.branches[0].id, kind: kind)
+        return try #require(store.project(project.id)?.activeSessions.last?.id)
+    }
+
+    func session(of project: Project) throws -> UUID {
+        try #require(store.project(project.id)?.activeSessions.first?.id)
+    }
+
+    var names: [String] { store.visibleProjects.map(\.project.name) }
+    func group(_ project: Project) -> ProjectOrdering.Group? { store.visibleProjects.first { $0.id == project.id }?.group }
+}
+
 @MainActor
 @Suite("Orden de los proyectos en el store")
 struct StoreProjectOrderTests {
@@ -67,6 +109,79 @@ struct StoreProjectOrderTests {
         for item in store.visibleProjects where !item.isActive {
             #expect(store.activity(of: item.project).ring == .none)
         }
+    }
+
+    @Test("Abrir un proyecto apagado (riel, ⌃⌘N, ⌘K) no lo cambia de lugar: ⌃⌘N le sigue apuntando")
+    func openingIdleProjectStaysPut() async throws {
+        let w = try await ThreeRepos()
+        let store = w.store
+        #expect(w.names == ["a", "c", "b", "Terminales"])
+        #expect(w.group(w.b) == .idle)
+
+        // ⌃⌘3 abre «b» y su vista lanza la sesión (SessionDetailView → activate), como un clic en el riel.
+        HiveNavigator.goToProject(store, index: 2)
+        #expect(store.currentProjectId == w.b.id)
+        let session = try w.session(of: w.b)
+        store.activate(session)
+        #expect(store.runtimes[session]?.isRunning == true)
+        // Corre, pero nadie la usó: sigue entre los apagados y en su lugar (sin atenuar, porque está abierto).
+        #expect(w.names == ["a", "c", "b", "Terminales"])
+        #expect(w.group(w.b) == .idle)
+        HiveNavigator.goToProject(store, index: 2)
+        #expect(store.currentProjectId == w.b.id)
+        store.openProject(w.a.id)
+        store.openProject(w.b.id)
+        #expect(w.names == ["a", "c", "b", "Terminales"])
+
+        // Le escribís al agente: eso sí es usarlo, y sube a los activos (a su lugar del orden manual).
+        store.userInput(session, [13][...])
+        #expect(store.runtimes[session]?.status == .working)
+        #expect(w.names == ["b", "a", "c", "Terminales"])
+    }
+
+    @Test("Un agente o una Terminal que quedaron abiertos días sin hacer nada no prenden el proyecto")
+    func openForDaysIsIdle() async throws {
+        let w = try await ThreeRepos()
+        let store = w.store
+        let claude = try w.session(of: w.b)
+        let shell = try w.newSession(in: w.b, .shell, at: w.lastWeek)
+        for id in [claude, shell] {
+            store.activate(id)
+            #expect(store.runtimes[id]?.isRunning == true)
+        }
+        store.select(nil)
+        #expect(w.group(w.b) == .idle)
+        #expect(store.visibleProjects.first { $0.id == w.b.id }?.isActive == false)
+        #expect(store.activity(of: try #require(store.project(w.b.id))).ring == .none)
+
+        // Tres días después, con Hive abierto todo el tiempo: «a» y «c» también se apagan.
+        for project in [w.a!, w.c!] { store.activate(try w.session(of: project)) }
+        store.select(nil)
+        w.world.advance(3 * 86_400)
+        store.dayChanged()
+        #expect(store.visibleProjects.map(\.group) == [.idle, .idle, .idle, .scratch])
+        #expect(w.names == ["b", "a", "c", "Terminales"])
+    }
+
+    @Test("Escribirle a un agente lo cuenta como usado hoy, también sin hooks (Gemini): no se apaga al terminar")
+    func typingCountsAsUse() async throws {
+        let w = try await ThreeRepos()
+        let store = w.store
+        let gemini = try w.newSession(in: w.b, .gemini, at: w.lastWeek)
+        store.activate(gemini)
+        let rt = try #require(store.runtimes[gemini])
+        #expect(w.group(w.b) == .idle)
+        store.userInput(gemini, [13][...])
+        #expect(store.sessionContext(gemini)?.session.lastActivityAt == w.world.now)
+        // Terminó (Esc, o la regla del silencio) y la estabas mirando: sin aro, pero se usó hoy.
+        store.userInput(gemini, [0x1B][...])
+        #expect(rt.status == .waiting && !rt.unseen)
+        #expect(w.group(w.b) == .active)
+        // Las teclas sueltas no cuentan: solo mandar algo (Enter).
+        let before = store.sessionContext(gemini)?.session.lastActivityAt
+        w.world.advance(60)
+        store.userInput(gemini, Array("hola".utf8)[...])
+        #expect(store.sessionContext(gemini)?.session.lastActivityAt == before)
     }
 
     @Test("Al cambiar el día, lo de ayer pasa a los apagados")

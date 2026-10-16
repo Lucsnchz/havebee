@@ -21,6 +21,11 @@ extension AppStore {
         // Enter en un agente: mandaste un prompt o aprobaste algo, así que empieza a trabajar. No cuentan
         // el salto de línea (Shift+Enter, ⌥Enter) ni lo que llega dentro de un pegado.
         guard TerminalInput.isSubmit(data), rt.status != .working else { return }
+        // Le escribiste: cuenta como usada hoy para el orden de los proyectos, también en un agente
+        // que no avisa con hooks (Gemini), donde ningún evento lo anota.
+        let now = environment.now()
+        projects.updateSession(id) { $0.lastActivityAt = now }
+        scheduleSave()
         setStatus(rt, .working)
     }
 

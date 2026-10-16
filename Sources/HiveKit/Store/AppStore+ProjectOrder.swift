@@ -8,10 +8,13 @@ extension AppStore {
     var projectOrdering: ProjectOrdering {
         // Se lee para que las vistas se vuelvan a dibujar cuando cambia el día.
         _ = dayStamp
-        // Prendida: corriendo, o con algo que mostrarte (un aro) aunque el proceso ya haya terminado.
-        // Así un proyecto apagado nunca tiene aro.
+        // Prendida: con algo que mostrarte (un aro), aunque el proceso ya haya terminado, así un
+        // proyecto apagado nunca tiene aro; o una Terminal con un proceso en primer plano (un
+        // `npm run dev`). Un agente abierto y quieto no alcanza: mirar una sesión la lanza, y el
+        // proyecto que abrís saltaría de grupo (y de lugar en el riel y en ⌃⌘N) con el clic.
         let live = runtimes.values.filter { rt in
-            rt.isRunning || rt.unseen || rt.status == .attention || rt.status == .working
+            rt.unseen || rt.status == .attention || rt.status == .working
+                || (!rt.kind.isAgent && rt.terminal?.foregroundJob != nil)
         }.map(\.sessionId)
         return ProjectOrdering(now: environment.now(), calendar: environment.calendar, liveSessions: Set(live),
                                busyProjects: Set(commandRuns.filter(\.running).map(\.projectId)))
