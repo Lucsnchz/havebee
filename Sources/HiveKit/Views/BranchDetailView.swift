@@ -145,7 +145,7 @@ private struct GitSections: View {
                 } else {
                     Text(active ? "Sin información de git para esta rama." : "Sin checkout: los cambios se ven al abrirla.")
                         .font(HiveFont.secondary)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.secondaryText)
                         .padding(14)
                 }
             }

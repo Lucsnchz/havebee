@@ -342,7 +342,7 @@ private struct CommandRow: View {
                     .font(.system(size: 13, weight: .medium))
                 Text(command.command)
                     .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.secondaryText)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }

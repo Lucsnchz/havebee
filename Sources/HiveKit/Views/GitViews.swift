@@ -37,7 +37,7 @@ struct ChangesList: View {
                 if unstaged.isEmpty {
                     Text(staged.isEmpty ? "No hay cambios en esta rama." : "No hay cambios sin preparar.")
                         .font(HiveFont.secondary)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.secondaryText)
                         .padding(.horizontal, showsHeader ? 28 : 14)
                         .padding(.vertical, 6)
                 } else {
@@ -91,7 +91,7 @@ private struct ChangeRow: View {
                         .strikethrough(badge == "D")
                      + Text(change.folder.isEmpty ? "" : "  \(change.folder)")
                         .font(.system(size: 11.5))
-                        .foregroundColor(.secondary))
+                        .foregroundColor(Theme.secondaryText))
                         .lineLimit(1)
                         .truncationMode(.tail)
                     Spacer(minLength: 4)
@@ -317,7 +317,7 @@ struct RecentCommits: View {
             if commits.isEmpty {
                 Text(loaded ? "Todavía no hay commits." : "Cargando…")
                     .font(HiveFont.secondary)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.secondaryText)
                     .padding(14)
             }
             ForEach(Array(commits.enumerated()), id: \.element.id) { index, commit in
@@ -325,7 +325,7 @@ struct RecentCommits: View {
                 HStack(spacing: 10) {
                     Text(commit.hash)
                         .font(HiveFont.meta.monospaced())
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.secondaryText)
                         .frame(width: 62, alignment: .leading)
                     Text(commit.subject)
                         .font(HiveFont.secondary)
@@ -339,7 +339,7 @@ struct RecentCommits: View {
                         .lineLimit(1)
                     Text(RelativeTime.string(commit.date, relativeTo: now))
                         .font(HiveFont.meta)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.secondaryText)
                         .frame(minWidth: 70, alignment: .trailing)
                 }
                 .padding(.horizontal, 14)
