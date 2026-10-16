@@ -48,6 +48,82 @@ struct StoreRemoteOperationTests {
         #expect(!ranSecond)
     }
 
+    @Test("Quitar la rama y borrar su worktree corta el «Publicar» en curso antes de borrar, sin avisar de una rama que ya no está")
+    func removingBranchCancelsPush() async throws {
+        let world = TestWorld()
+        let repo = GitRepo(name: "tienda")
+        let marks = TempDir("hive-push")
+        let store = world.makeStore()
+        await store.addProject(at: repo.path)
+        let project = try #require(store.repoProjects.first)
+        #expect(await store.createBranch(NewBranchRequest(projectId: project.id, name: "feat", isNew: true, mode: .worktree,
+                                                          copyIgnored: false, setupCommand: nil)) == nil)
+        let branch = try #require(store.project(project.id)?.branches.first { $0.name == "feat" })
+        let dir = try #require(branch.worktreePath)
+        let started = marks.path + "/empezo"
+        let finished = marks.path + "/termino"
+        // Un pre-push que tarda y al terminar escribe en la carpeta del worktree.
+        let push: @Sendable (GitClient, String, String) -> CommandResult = { _, dir, _ in
+            ProcessCommandRunner().run("/bin/sh", ["-c", "touch \(shellQuote(started)); sleep 30; touch \(shellQuote(finished)); echo x > hook.log"],
+                                       cwd: dir, environment: [:], timeout: 60)
+        }
+        var pushed = false
+        let task = try #require(store.runRemoteOperation(branchId: branch.id, directory: dir, branchName: "feat", label: "Publicando…",
+                                                         failureTitle: "No pude publicar la rama",
+                                                         cancelledNotice: "Cancelaste la publicación de «feat»", push,
+                                                         then: { pushed = true }))
+        #expect(await waitUntil { FileManager.default.fileExists(atPath: started) })
+        // La confirmación dice que se corta.
+        store.requestRemoval(.branch(branch.id))
+        #expect(store.pendingRemoval?.message.contains("Se cancela «Publicando…».") == true)
+        store.pendingRemoval = nil
+
+        let removedAt = Date()
+        #expect(await store.performRemove(.branch(branch.id), deleteWorktree: true))
+        // Cuando vuelve, el push ya terminó (cortado) y la carpeta no está.
+        #expect(Date().timeIntervalSince(removedAt) < 20)
+        #expect(store.remoteOperations[branch.id] == nil)
+        #expect(!FileManager.default.fileExists(atPath: dir))
+        await task.value
+        #expect(!FileManager.default.fileExists(atPath: finished))
+        // Ni alerta ni «Cancelaste…»: la rama ya no está en Hive.
+        #expect(store.alert == nil)
+        #expect(store.undoAction == nil)
+        #expect(!pushed)
+        withExtendedLifetime((world, repo, marks)) {}
+    }
+
+    @Test("Quitar un proyecto corta lo que sus ramas hacen con el remoto, y solo queda el «Deshacer»")
+    func removingProjectCancelsPull() async throws {
+        let world = TestWorld()
+        let repo = GitRepo(name: "tienda")
+        let marks = TempDir("hive-pull")
+        let store = world.makeStore()
+        await store.addProject(at: repo.path)
+        let project = try #require(store.repoProjects.first)
+        let branch = project.branches[0]
+        let started = marks.path + "/empezo"
+        let slow: @Sendable (GitClient, String, String) -> CommandResult = { _, _, _ in
+            ProcessCommandRunner().run("/bin/sh", ["-c", "touch \(shellQuote(started)); sleep 30"], cwd: nil, environment: [:], timeout: 60)
+        }
+        let task = try #require(store.runRemoteOperation(branchId: branch.id, directory: repo.path, branchName: "main",
+                                                         label: "Trayendo cambios…", failureTitle: "No pude traer los cambios",
+                                                         cancelledNotice: "Cancelaste la actualización", slow))
+        #expect(await waitUntil { FileManager.default.fileExists(atPath: started) })
+        store.requestRemoval(.project(project.id))
+        #expect(store.pendingRemoval?.message.contains("Se cancela «Trayendo cambios…».") == true)
+        store.pendingRemoval = nil
+
+        #expect(await store.performRemove(.project(project.id)))
+        #expect(store.remoteOperations.isEmpty)
+        let cancelledAt = Date()
+        await task.value
+        #expect(Date().timeIntervalSince(cancelledAt) < 15)
+        #expect(store.alert == nil)
+        #expect(store.undoAction?.message == "Quitaste «tienda» de Hive")
+        withExtendedLifetime((world, repo, marks)) {}
+    }
+
     @Test("Si falla avisa con una alerta; si sale bien, sigue con lo que se pidió (abrir el MR)")
     func failureAndSuccess() async throws {
         let world = TestWorld()

@@ -36,7 +36,8 @@ extension AppStore {
             let stopping = Self.stoppingSummary(commands: commandRuns.filter { $0.projectId == id && $0.running }.count,
                                                 sessions: p.allSessions.filter { runtimes[$0.id]?.isRunning == true }.count)
             // Qué pasa y qué no: lo de Hive se va (se puede deshacer unos segundos), el disco no se toca.
-            let message = [stopping, "Sus ramas, sesiones y comandos se quitan de Hive. No se borra nada del disco: la carpeta y el repo quedan como están."]
+            let message = [stopping, remoteSummary(Set(p.branches.map(\.id))),
+                           "Sus ramas, sesiones y comandos se quitan de Hive. No se borra nada del disco: la carpeta y el repo quedan como están."]
             pendingRemoval = PendingRemoval(item: item, title: "¿Quitar «\(p.name)» de Hive?",
                                             message: message.compactMap { $0 }.joined(separator: " "), isWorktree: false)
         case .branch(let id):
@@ -44,7 +45,7 @@ extension AppStore {
             let worktree = ctx.branch.mode == .worktree
             let stopping = Self.stoppingSummary(commands: commandRuns.filter { $0.branchId == id && $0.running }.count,
                                                 sessions: ctx.branch.sessions.filter { runtimes[$0.id]?.isRunning == true }.count)
-            let message = [stopping, "La rama de git no se borra.",
+            let message = [stopping, remoteSummary([id]), "La rama de git no se borra.",
                            worktree ? "Podés conservar el worktree en \(ctx.branch.worktreePath ?? "") o borrarlo." : nil]
                 .compactMap { $0 }.joined(separator: " ")
             pendingRemoval = PendingRemoval(item: item, title: "¿Quitar la rama «\(ctx.branch.name)»?", message: message, isWorktree: worktree)
@@ -93,12 +94,15 @@ extension AppStore {
                 // Mientras se borra, sus sesiones no se pueden volver a abrir (arrancarían en esa carpeta).
                 removingBranches.insert(id)
                 defer { removingBranches.remove(id) }
-                // Primero se corta lo que corre ahí, así nada escribe en la carpeta mientras git la borra.
+                // Primero se corta lo que corre ahí, así nada escribe en la carpeta mientras git la borra:
+                // sesiones, comandos y un «Publicar» o «Traer» en curso (con su hook pre-push).
                 let terminals = ctx.branch.sessions.compactMap { runtimes[$0.id]?.terminal }
                     + commandRuns.filter { $0.branchId == id }.compactMap(\.terminal)
+                let remote = discardRemoteOperations { $0 == id }
                 stopSessions(ctx.branch.sessions.map(\.id))
                 stopRuns { $0.branchId == id }
                 await waitUntilStopped(terminals)
+                for task in remote { await task.value }
                 // La limpieza del proyecto (polyscope.json o conductor.json) va antes de borrar la carpeta.
                 // Al reintentar con «Borrar igual» ya corrió.
                 if !force { await runArchiveScript(project: ctx.project, branch: ctx.branch, worktreePath: path) }
@@ -123,6 +127,8 @@ extension AppStore {
             let p = projects[index]
             terminate(p.allSessions.map(\.id))
             stopRuns { $0.projectId == id }
+            let branchIds = Set(p.branches.map(\.id))
+            discardRemoteOperations { branchIds.contains($0) }
             let selectionWasInside = projects.contains(selection, inProject: id)
             projects.removeAll { $0.id == id }
             if selectionWasInside { select(nil) }
@@ -197,12 +203,21 @@ extension AppStore {
         guard let ctx = branchContext(id) else { return }
         terminate(ctx.branch.sessions.map(\.id))
         stopRuns { $0.branchId == id }
+        discardRemoteOperations { $0 == id }
         let selectionWasInside = selection == .branch(id) || ctx.branch.sessions.contains(where: { selection == .session($0.id) })
         projects.updateProject(ctx.project.id) { $0.branches.removeAll { $0.id == id } }
         gitGeneration += 1
         scheduleSave()
         if selectionWasInside { select(.project(ctx.project.id)) }
         refreshGit()
+    }
+
+    /// «Se cancela «Publicando…».» si quitar corta un «Publicar» o «Traer» de esas ramas (nil si no
+    /// hay ninguno).
+    func remoteSummary(_ branchIds: Set<UUID>) -> String? {
+        let labels = remoteOperations.filter { branchIds.contains($0.key) }.map(\.value.label)
+        guard let first = labels.first else { return nil }
+        return labels.count == 1 ? "Se cancela «\(first)»." : "Se cancelan \(labels.count) operaciones con el remoto."
     }
 
     /// «Se detienen 2 comandos y 1 sesión.» (nil si no corre nada).

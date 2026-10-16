@@ -16,7 +16,8 @@ public struct RemoteOperation {
 extension AppStore {
     /// Corre `work` (con el git del store, la carpeta y el nombre de la rama). Hay una sola por rama:
     /// si ya corre otra, no arranca y devuelve nil. Si sale bien llama a `success`; si falla, avisa con
-    /// una alerta, y si la cancelaste (`cancelRemoteOperation`), con un aviso corto.
+    /// una alerta, y si la cancelaste (`cancelRemoteOperation`), con un aviso corto. Si se descartó
+    /// porque quitaste la rama o el proyecto (`discardRemoteOperations`), termina sin decir nada.
     @discardableResult
     func runRemoteOperation(branchId: UUID, directory: String, branchName: String, label: String,
                             failureTitle: String, cancelledNotice: String,
@@ -27,8 +28,9 @@ extension AppStore {
         let id = UUID()
         let task = Task { [weak self] in
             let result = await CancellableWork.run { work(git, directory, branchName) }
-            guard let self else { return }
-            if self.remoteOperations[branchId]?.id == id { self.remoteOperations[branchId] = nil }
+            // Ya no está anotada: se descartó al quitar la rama, y no hay de qué avisar.
+            guard let self, self.remoteOperations[branchId]?.id == id else { return }
+            self.remoteOperations[branchId] = nil
             if result.ok {
                 success?()
             } else if result.cancelled {
@@ -47,5 +49,17 @@ extension AppStore {
     /// La X junto al spinner: corta git y lo que lanzó (un hook pre-push, ssh).
     func cancelRemoteOperation(branchId: UUID) {
         remoteOperations[branchId]?.task?.cancel()
+    }
+
+    /// Al quitar una rama o un proyecto: corta lo que corre con el remoto en esas ramas y lo descarta,
+    /// sin alerta ni aviso (es de una rama que ya no está). Devuelve las tareas, para esperar a que git
+    /// y el hook suelten la carpeta antes de borrar el worktree.
+    @discardableResult
+    func discardRemoteOperations(where matches: (UUID) -> Bool) -> [Task<Void, Never>] {
+        let discarded = remoteOperations.filter { matches($0.key) }
+        for branchId in discarded.keys { remoteOperations[branchId] = nil }
+        let tasks = discarded.values.compactMap(\.task)
+        for task in tasks { task.cancel() }
+        return tasks
     }
 }
