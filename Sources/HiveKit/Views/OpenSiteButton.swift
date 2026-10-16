@@ -3,19 +3,37 @@ import HiveCore
 import SwiftUI
 
 /// «Abrir sitio»: la URL de la rama según polyscope.json o Herd. Si no hay ninguna, no se muestra.
+/// Con `url` ya calculada (la barra de la sesión la calcula antes de poner el botón, para no dejar
+/// una cápsula vacía en la barra), no lee nada.
 struct OpenSiteButton: View {
     @Environment(AppStore.self) private var store
     let project: Project
     let branch: Branch
+    private let known: String?
     @State private var url: String?
+
+    init(project: Project, branch: Branch) {
+        self.project = project
+        self.branch = branch
+        known = nil
+    }
+
+    init(project: Project, branch: Branch, url: String) {
+        self.project = project
+        self.branch = branch
+        known = url
+    }
 
     var body: some View {
         content
-            .task(id: project.directory(for: branch)) { await load() }
+            .task(id: project.directory(for: branch)) {
+                guard known == nil else { return }
+                url = await Self.loadURL(project: project, branch: branch, home: store.environment.home)
+            }
     }
 
     @ViewBuilder private var content: some View {
-        if let url {
+        if let url = known ?? url {
             Menu {
                 Button {
                     BrowserLink.open(url)
@@ -40,11 +58,10 @@ struct OpenSiteButton: View {
     }
 
     /// Lee polyscope.json y la configuración de Herd fuera del hilo principal.
-    private func load() async {
+    static func loadURL(project: Project, branch: Branch, home: URL) async -> String? {
         let dir = project.directory(for: branch)
         let projectPath = project.path
-        let home = store.environment.home
-        url = await Task.detached(priority: .utility) {
+        return await Task.detached(priority: .utility) {
             let herd = HerdSites.parse(configRoot: HerdSites.defaultRoot(home: home))
             return SiteURL.url(for: dir, projectPath: projectPath, herd: herd)
         }.value

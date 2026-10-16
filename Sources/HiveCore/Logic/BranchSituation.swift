@@ -35,7 +35,7 @@ public enum BranchSituation: Equatable, Sendable {
         }
     }
 
-    /// Se muestra en naranja: hay algo que resolver antes de trabajar en la rama.
+    /// Se muestra en rojo: hay algo que resolver antes de trabajar en la rama.
     public var isWarning: Bool { self == .missing }
 
     /// Tiene la rama en disco: los comandos, el sitio y los cambios son de esta rama.

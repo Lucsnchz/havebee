@@ -89,11 +89,11 @@ struct SettingsGeneralPane: View {
                 }
                 if let codexNotifyWarning {
                     Label {
-                        Text("No pude leer tu notify de Codex; no se va a llamar")
+                        Text("No entiendo el formato de tu notify de Codex: Hive no lo va a ejecutar")
                         Text(codexNotifyWarning)
                     } icon: {
                         Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(Theme.attention)
+                            .foregroundStyle(Theme.danger)
                     }
                 }
             }
@@ -282,8 +282,8 @@ struct SettingsNotificationsPane: View {
 
     private var statusColor: Color {
         switch status {
-        case .authorized, .provisional, .ephemeral: .green
-        case .denied: .red
+        case .authorized, .provisional, .ephemeral: Theme.info
+        case .denied: Theme.danger
         default: .secondary
         }
     }

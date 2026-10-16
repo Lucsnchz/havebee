@@ -12,8 +12,9 @@ struct HomeSessionGroups {
 
     struct Group: Identifiable {
         let title: String
-        let symbol: String
-        let tint: Color
+        /// El estado que junta al grupo, dibujado como en el sidebar y las tarjetas (`.none` en
+        /// «Recientes», que lleva un reloj).
+        let ring: Activity.Ring
         let items: [Item]
         var id: String { title }
     }
@@ -36,10 +37,10 @@ struct HomeSessionGroups {
         let shown = Set((attention + waiting + working).map(\.id))
         let recent = Array(all.filter { !shown.contains($0.id) }.prefix(recentLimit))
         return [
-            Group(title: "Necesitan permiso", symbol: "hand.raised.fill", tint: Theme.attention, items: attention),
-            Group(title: "Tu turno", symbol: "arrowshape.turn.up.left.fill", tint: Theme.pending, items: waiting),
-            Group(title: "Trabajando", symbol: "sparkles", tint: Theme.accent, items: working),
-            Group(title: "Recientes", symbol: "clock", tint: .secondary, items: recent),
+            Group(title: "Necesitan permiso", ring: .attention, items: attention),
+            Group(title: "Tu turno", ring: .pending, items: waiting),
+            Group(title: "Trabajando", ring: .working, items: working),
+            Group(title: "Recientes", ring: .none, items: recent),
         ].filter { !$0.items.isEmpty }
     }
 
@@ -112,8 +113,16 @@ private struct HomeGroupSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 7) {
-                Image(systemName: group.symbol)
-                    .foregroundStyle(group.tint)
+                Group {
+                    if group.ring == .none {
+                        Image(systemName: "clock")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        RingIndicator(ring: group.ring, size: 12)
+                    }
+                }
+                .frame(width: 18)
+                .accessibilityHidden(true)
                 Text(group.title)
                     .font(.headline)
                 Text("\(group.items.count)")
@@ -131,7 +140,7 @@ private struct HomeGroupSection: View {
                             ProjectTile(project: item.project, size: 16)
                             Text(item.project.isScratch ? item.project.name : "\(item.project.name) › \(item.branch.name)")
                                 .font(.caption.weight(.medium))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Theme.secondaryText)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                         }

@@ -19,7 +19,7 @@ struct StoreRemoteOperationTests {
                                        cwd: nil, environment: [:], timeout: 60)
         }
         let started1 = store.runRemoteOperation(branchId: branch, directory: dir.path, branchName: "feat",
-                                                label: "Publicando…", failureTitle: "No se pudo publicar la rama",
+                                                label: "Publicando…", failureTitle: "No pude publicar la rama",
                                                 cancelledNotice: "Cancelaste la publicación de «feat»", slow)
         let task = try #require(started1)
         // Está en el store: la barra que se arma de nuevo al volver a la sesión sigue mostrando el spinner.
@@ -57,10 +57,10 @@ struct StoreRemoteOperationTests {
             CommandResult(status: 1, stderr: "rechazado por el pre-push")
         }
         let started1 = store.runRemoteOperation(branchId: branch, directory: "/", branchName: "feat", label: "Publicando…",
-                                                failureTitle: "No se pudo publicar la rama", cancelledNotice: "x", rejected)
+                                                failureTitle: "No pude publicar la rama", cancelledNotice: "x", rejected)
         let failed = try #require(started1)
         await failed.value
-        #expect(store.alert?.title == "No se pudo publicar la rama")
+        #expect(store.alert?.title == "No pude publicar la rama")
         #expect(store.alert?.message == "rechazado por el pre-push")
         #expect(store.remoteOperations.isEmpty)
         store.alert = nil

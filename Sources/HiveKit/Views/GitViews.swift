@@ -29,13 +29,15 @@ struct ChangesList: View {
             }
             let showsHeader = showsHeaderWhenAlone || !staged.isEmpty
             if showsHeader {
-                ListHeader(title: "Cambios", count: unstaged.count, expanded: $showChanges)
+                // Con algo preparado, los dos grupos son «Preparados» y «Sin preparar»: «Cambios» adentro
+                // de la sección «Cambios» se leía como otra cosa.
+                ListHeader(title: Self.unstagedTitle(hasStaged: !staged.isEmpty), count: unstaged.count, expanded: $showChanges)
             }
             if showChanges || !showsHeader {
                 if unstaged.isEmpty {
                     Text(staged.isEmpty ? "No hay cambios en esta rama." : "No hay cambios sin preparar.")
                         .font(HiveFont.secondary)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.secondaryText)
                         .padding(.horizontal, showsHeader ? 28 : 14)
                         .padding(.vertical, 6)
                 } else {
@@ -48,6 +50,11 @@ struct ChangesList: View {
             }
         }
     }
+}
+
+extension ChangesList {
+    /// Título del grupo de lo que no está preparado: «Sin preparar» al lado de «Preparados», si no «Cambios».
+    static func unstagedTitle(hasStaged: Bool) -> String { hasStaged ? "Sin preparar" : "Cambios" }
 }
 
 private struct ListHeader: View {
@@ -84,7 +91,7 @@ private struct ChangeRow: View {
                         .strikethrough(badge == "D")
                      + Text(change.folder.isEmpty ? "" : "  \(change.folder)")
                         .font(.system(size: 11.5))
-                        .foregroundColor(.secondary))
+                        .foregroundColor(Theme.secondaryText))
                         .lineLimit(1)
                         .truncationMode(.tail)
                     Spacer(minLength: 4)
@@ -174,6 +181,9 @@ enum ChangeColors {
 
 /// Cantidad de archivos con cambios y commits por pushear / traer, en una cápsula chica.
 struct GitCounters: View {
+    /// El ícono de «Cambios» en toda la app (sidebar, tarjetas, barra de la sesión): ±.
+    static let changesSymbol = "plusminus"
+
     let status: GitStatus
 
     var body: some View {
@@ -181,7 +191,7 @@ struct GitCounters: View {
             HStack(spacing: 5) {
                 if !status.changes.isEmpty {
                     HStack(spacing: 2) {
-                        Image(systemName: "pencil")
+                        Image(systemName: Self.changesSymbol)
                             .font(.system(size: 8, weight: .bold))
                         Text("\(status.changes.count)")
                     }
@@ -228,7 +238,7 @@ struct UpstreamSummary: View {
                     .font(HiveFont.heading)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                Text(status?.upstream ?? "Sin upstream")
+                Text(status?.upstream ?? "Sin rama remota")
                     .font(HiveFont.meta)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -307,7 +317,7 @@ struct RecentCommits: View {
             if commits.isEmpty {
                 Text(loaded ? "Todavía no hay commits." : "Cargando…")
                     .font(HiveFont.secondary)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.secondaryText)
                     .padding(14)
             }
             ForEach(Array(commits.enumerated()), id: \.element.id) { index, commit in
@@ -315,7 +325,7 @@ struct RecentCommits: View {
                 HStack(spacing: 10) {
                     Text(commit.hash)
                         .font(HiveFont.meta.monospaced())
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.secondaryText)
                         .frame(width: 62, alignment: .leading)
                     Text(commit.subject)
                         .font(HiveFont.secondary)
@@ -325,11 +335,11 @@ struct RecentCommits: View {
                     Spacer(minLength: 8)
                     Text(commit.author)
                         .font(HiveFont.meta)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(Theme.secondaryText)
                         .lineLimit(1)
                     Text(RelativeTime.string(commit.date, relativeTo: now))
                         .font(HiveFont.meta)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.secondaryText)
                         .frame(minWidth: 70, alignment: .trailing)
                 }
                 .padding(.horizontal, 14)

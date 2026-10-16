@@ -154,7 +154,7 @@ struct QuickSwitcher: View {
                     Text("Buscá en lo que hablaste con Claude y Codex")
                     Text("Escribí al menos dos letras después de «?». También busca en las sesiones archivadas.")
                         .font(.callout)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(Theme.secondaryText)
                 } else if searchingHistory {
                     Text("Buscando en el historial…")
                 } else {
@@ -164,7 +164,7 @@ struct QuickSwitcher: View {
                 Text("Sin resultados para «\(query)»")
                 Text("Escribí «>» para ver acciones, como «>nueva claude», o «?» para buscar en el historial.")
                     .font(.callout)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Theme.secondaryText)
             }
         }
         .multilineTextAlignment(.center)
@@ -299,6 +299,7 @@ private struct SwitcherRow: View {
 
     var body: some View {
         let status = sessionStatus
+        let statusText = status.map { StatusStyle.of(status: $0.status, unseen: $0.unseen, kind: $0.kind).text }
         HStack(spacing: 10) {
             icon.frame(width: 24, height: 24)
             VStack(alignment: .leading, spacing: 1) {
@@ -313,18 +314,20 @@ private struct SwitcherRow: View {
                     .truncationMode(.middle)
             }
             Spacer(minLength: 8)
-            if let status {
+            if let status, let statusText {
+                // El mismo ícono que en el sidebar y las tarjetas.
                 HStack(spacing: 5) {
-                    Circle().fill(status.color).frame(width: 7, height: 7)
-                    Text(status.label)
+                    StatusIndicator(status: status.status, unseen: status.unseen, kind: status.kind)
+                        .accessibilityHidden(true)
+                    Text(statusText)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.secondaryText)
                 }
                 .fixedSize()
             } else if item.kind == .archived {
                 Text("Ver historial")
                     .font(.caption)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Theme.secondaryText)
             } else if item.kind == .history {
                 Image(systemName: "text.bubble")
                     .font(.caption)
@@ -333,10 +336,11 @@ private struct SwitcherRow: View {
         }
         .padding(.horizontal, 10)
         .frame(height: 40)
-        .background(selected ? Theme.accent.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(selected ? Theme.accentFill.opacity(0.22) : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel([item.title, item.subtitle, status?.label].compactMap { $0 }.joined(separator: ", "))
+        .accessibilityLabel([item.title, item.subtitle, status.map { StatusIndicator.accessibilityText(status: $0.status, unseen: $0.unseen, kind: $0.kind) }]
+            .compactMap { $0 }.joined(separator: ", "))
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
 
@@ -348,22 +352,15 @@ private struct SwitcherRow: View {
             let start = characters.index(characters.startIndex, offsetBy: range.lowerBound)
             let end = characters.index(characters.startIndex, offsetBy: range.upperBound)
             text[start..<end].font = .system(size: 13.5, weight: .bold)
-            text[start..<end].backgroundColor = Theme.accent.opacity(0.28)
+            text[start..<end].backgroundColor = Theme.accentFill.opacity(0.35)
         }
         return text
     }
 
-    /// Punto y etiqueta del estado de una sesión (las dormidas no muestran nada).
-    private var sessionStatus: (color: Color, label: String)? {
-        guard case .session(let id) = item.target, let rt = store.runtimes[id] else { return nil }
-        let label = rt.status.label(for: rt.kind)
-        switch rt.status {
-        case .dormant: return nil
-        case .attention: return (Theme.attention, label)
-        case .waiting: return (rt.unseen ? Theme.pending : Theme.pending.opacity(0.5), label)
-        case .working: return (Theme.accent, label)
-        case .idle, .exited: return (.secondary.opacity(0.6), label)
-        }
+    /// El estado de una sesión (las dormidas no muestran nada).
+    private var sessionStatus: (status: SessionStatus, unseen: Bool, kind: SessionKind)? {
+        guard case .session(let id) = item.target, let rt = store.runtimes[id], rt.status != .dormant else { return nil }
+        return (rt.status, rt.unseen, rt.kind)
     }
 
     @ViewBuilder private var icon: some View {
@@ -391,7 +388,7 @@ private struct SwitcherRow: View {
             }
         case .command:
             Image(systemName: "play.fill")
-                .foregroundStyle(Theme.pending)
+                .foregroundStyle(Theme.running)
         case .action(let action):
             switch action {
             case .newSession(_, let kind):

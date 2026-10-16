@@ -109,7 +109,7 @@ struct GitStatusV2Tests {
         #expect(detect(["/r/.git/CHERRY_PICK_HEAD"]) == .cherryPick)
         #expect(detect(["/r/.git/REVERT_HEAD"]) == .revert)
         #expect(detect(["/r/.git/BISECT_LOG"]) == .bisect)
-        #expect(GitOperation.rebase.label == "Rebase en curso")
+        #expect(GitOperation.rebase.label == "Rebase a medias")
         #expect(GitOperation.rebase.swapsOursAndTheirs && !GitOperation.merge.swapsOursAndTheirs)
     }
 

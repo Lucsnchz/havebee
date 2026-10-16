@@ -17,7 +17,7 @@ struct ProjectDetailView: View {
                     ProjectHeader(project: project, head: head)
 
                     if !head.isEmpty && !project.branches.contains(where: { $0.mode == .main && $0.name == head }) {
-                        Callout(icon: "info.circle.fill", color: .blue,
+                        Callout(icon: "info.circle.fill", color: Theme.info,
                                 title: "«\(head)» no está en Hive",
                                 text: "Es la rama que tiene ahora la carpeta principal.",
                                 action: ("Agregar", {
@@ -152,17 +152,17 @@ struct BranchCard: View {
                     Spacer(minLength: 6)
                     Text(modeLabel(active: active))
                         .font(HiveFont.meta.weight(.medium))
-                        .foregroundStyle(store.isMissing(branch) ? AnyShapeStyle(Theme.attention) : AnyShapeStyle(.secondary))
+                        .foregroundStyle(store.isMissing(branch) ? Theme.danger : Theme.secondaryText)
                 }
                 HStack(spacing: 8) {
                     if let status {
                         if status.isClean {
-                            Text("Sin cambios").font(HiveFont.meta).foregroundStyle(.tertiary)
+                            Text("Sin cambios").font(HiveFont.meta).foregroundStyle(Theme.secondaryText)
                         } else {
                             GitCounters(status: status)
                         }
                     } else {
-                        Text(active ? "—" : "Sin checkout").font(HiveFont.meta).foregroundStyle(.tertiary)
+                        Text(active ? "—" : "Sin checkout").font(HiveFont.meta).foregroundStyle(Theme.secondaryText)
                     }
                     Spacer(minLength: 6)
                     SessionFaces(branch: branch)
@@ -196,7 +196,8 @@ struct BranchCard: View {
     }
 }
 
-/// Los logos de las sesiones de una rama, con un puntito de color si algo se destaca.
+/// Los logos de las sesiones de una rama, con el ícono de su estado si algo se destaca (el mismo
+/// de la fila del sidebar: «!», el punto verde o el arco que gira).
 private struct SessionFaces: View {
     @Environment(AppStore.self) private var store
     let branch: Branch
@@ -208,11 +209,14 @@ private struct SessionFaces: View {
                     .padding(3)
                     .background(Color(nsColor: .windowBackgroundColor), in: Circle())
                     .overlay(alignment: .bottomTrailing) {
-                        if let rt = store.runtimes[session.id],
-                           let color = Activity.Ring.of(status: rt.status, unseen: rt.unseen).color {
-                            Circle()
-                                .fill(color)
-                                .frame(width: 7, height: 7)
+                        if let rt = store.runtimes[session.id] {
+                            let style = StatusStyle.of(status: rt.status, unseen: rt.unseen, kind: session.kind)
+                            if style.color != nil {
+                                StatusGlyphView(glyph: style.glyph, size: 7)
+                                    .frame(width: 10, height: 10)
+                                    .background(Color(nsColor: .windowBackgroundColor), in: Circle())
+                                    .offset(x: 2, y: 2)
+                            }
                         }
                     }
             }

@@ -106,7 +106,7 @@ extension AppStore {
                 let git = self.git
                 let r = await Task.detached { git.removeWorktree(path, force: force, in: repo) }.value
                 guard r.ok else {
-                    alert = AppAlert(title: "No se pudo borrar el worktree",
+                    alert = AppAlert(title: "No pude borrar el worktree",
                                      message: "\(r.errorMessage)\n\n¿Borrarlo igual? Se pierden los cambios sin commitear.",
                                      actionTitle: "Borrar igual", isDestructive: true,
                                      action: { [weak self] in self?.remove(item, deleteWorktree: true, force: true) })

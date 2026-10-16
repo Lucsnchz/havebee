@@ -422,7 +422,7 @@ public final class AppStore {
             try FileManager.default.copyItem(at: url, to: destination)
             return destination.path
         } catch {
-            alert = AppAlert(title: "No se pudo usar la imagen", message: error.localizedDescription)
+            alert = AppAlert(title: "No pude usar la imagen", message: error.localizedDescription)
             return nil
         }
     }

@@ -5,23 +5,13 @@ import SwiftUI
 import Testing
 @testable import HiveKit
 
-/// Dibuja una vista fuera de pantalla (en oscuro) y, con `HIVE_SNAPSHOTS`, guarda la captura.
+/// Dibuja una vista fuera de pantalla, en oscuro y en claro, y con `HIVE_SNAPSHOTS` guarda las dos
+/// capturas («nombre.png» y «nombre-claro.png»), como las demás vistas.
 @MainActor
 private enum MCPViewRender {
-    static func render<V: View>(_ view: V, size: CGSize, name: String) async -> NSBitmapImageRep? {
-        _ = NSApplication.shared
-        let host = NSHostingView(rootView: view.frame(width: size.width, height: size.height)
-            .background(Color(nsColor: .windowBackgroundColor))
-            .environment(\.colorScheme, .dark))
-        let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        window.contentView = host
-        window.appearance = NSAppearance(named: .darkAqua)
-        host.layoutSubtreeIfNeeded()
-        try? await Task.sleep(nanoseconds: 500_000_000) // deja correr las tareas de carga (.task)
-        let rep = capture(host, name: name)
-        window.close()
-        return rep
+    static func render<V: View>(_ view: V, size: CGSize, name: String, defaults: UserDefaults) async -> [NSBitmapImageRep] {
+        // 0,5 s la primera vez: deja correr las tareas de carga (.task).
+        await Snapshot.render(view, size: size, name: name, defaults: defaults, settle: 0.5)
     }
 
     /// La captura de una vista ya dibujada; con `HIVE_SNAPSHOTS` también la guarda en PNG.
@@ -34,6 +24,11 @@ private enum MCPViewRender {
             try? png.write(to: URL(fileURLWithPath: dir).appendingPathComponent("\(name).png"))
         }
         return rep
+    }
+
+    /// Las dos capturas (oscuro y claro) dibujan algo.
+    static func isDrawn(_ reps: [NSBitmapImageRep]) -> Bool {
+        reps.count == 2 && reps.allSatisfy { isDrawn($0) }
     }
 
     static func isDrawn(_ rep: NSBitmapImageRep?) -> Bool {
@@ -79,7 +74,8 @@ struct MCPSectionViewTests {
         let broken = #"{"mcpServers": {"a": {"command": "x"} "b": {"command": "y"}}}"#
         repo.write(".mcp.json", broken)
         let project = Project(name: "roto", path: repo.path)
-        let rep = await MCPViewRender.render(section(project, store: store), size: CGSize(width: 760, height: 260), name: "mcp-invalido")
+        let rep = await MCPViewRender.render(section(project, store: store), size: CGSize(width: 760, height: 260), name: "mcp-invalido",
+                                             defaults: storage.defaults)
         #expect(MCPViewRender.isDrawn(rep))
         #expect(repo.read(".mcp.json") == broken)
     }
@@ -93,7 +89,8 @@ struct MCPSectionViewTests {
         repo.write("package.json", #"{"dependencies": {"next": "15"}}"#)
         repo.write("gradlew")
         let project = Project(name: "nuevo", path: repo.path)
-        let rep = await MCPViewRender.render(section(project, store: store), size: CGSize(width: 520, height: 300), name: "mcp-sugeridos")
+        let rep = await MCPViewRender.render(section(project, store: store), size: CGSize(width: 520, height: 300), name: "mcp-sugeridos",
+                                             defaults: storage.defaults)
         #expect(MCPViewRender.isDrawn(rep))
     }
 
@@ -106,7 +103,7 @@ struct MCPSectionViewTests {
         try MCPConfig.upsert(MCPServer(name: "windows", config: ["command": "C:/php/php.exe", "args": ["x"]]), dir: repo.path)
         let project = Project(name: "con-mcp", path: repo.path)
         let rep = await MCPViewRender.render(section(project, store: store, showsAddButton: false),
-                                             size: CGSize(width: 760, height: 280), name: "mcp-lista")
+                                             size: CGSize(width: 760, height: 280), name: "mcp-lista", defaults: storage.defaults)
         #expect(MCPViewRender.isDrawn(rep))
     }
 
@@ -119,7 +116,7 @@ struct MCPSectionViewTests {
         let project = try #require(store.repoProjects.first)
         try MCPConfig.upsert(MCPServer(name: "docs", config: ["type": "sse", "url": "https://docs.ejemplo.com/sse"]), dir: project.path)
         let rep = await MCPViewRender.render(MCPEditorSheet(target: MCPEditorTarget(projectId: project.id, serverName: "docs")).environment(store),
-                                             size: CGSize(width: 480, height: 330), name: "mcp-editor-remoto")
+                                             size: CGSize(width: 480, height: 330), name: "mcp-editor-remoto", defaults: storage.defaults)
         #expect(MCPViewRender.isDrawn(rep))
         // Abrirlo no cambia nada: sigue siendo sse.
         #expect(MCPConfig.load(dir: project.path).first { $0.name == "docs" }?.config["type"] == "sse")
@@ -136,11 +133,14 @@ struct MCPSectionViewTests {
         try MCPConfig.upsert(MCPServer(name: "node", config: ["command": "node", "env": ["NODE_OPTIONS": "--max-old-space-size=4096"]]),
                              dir: project.path)
         _ = NSApplication.shared
-        let host = NSHostingView(rootView: MCPEditorSheet(target: MCPEditorTarget(projectId: project.id, serverName: "node"))
-            .environment(store)
-            .frame(width: 480, height: 360)
-            .background(Color(nsColor: .windowBackgroundColor))
-            .environment(\.colorScheme, .dark))
+        func sheet(_ scheme: ColorScheme) -> some View {
+            MCPEditorSheet(target: MCPEditorTarget(projectId: project.id, serverName: "node"))
+                .environment(store)
+                .frame(width: 480, height: 360)
+                .background(Color(nsColor: .windowBackgroundColor))
+                .environment(\.colorScheme, scheme)
+        }
+        let host = NSHostingView(rootView: AnyView(sheet(.dark)))
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 360), styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.appearance = NSAppearance(named: .darkAqua)
@@ -162,6 +162,12 @@ struct MCPSectionViewTests {
         #expect(!editor.isAutomaticTextReplacementEnabled)
         #expect(!editor.isRichText)
         #expect(MCPViewRender.isDrawn(MCPViewRender.capture(host, name: "mcp-editor-entorno")))
+        // Y en claro, como las demás capturas.
+        window.appearance = NSAppearance(named: .aqua)
+        host.appearance = NSAppearance(named: .aqua)
+        host.rootView = AnyView(sheet(.light))
+        try? await Task.sleep(nanoseconds: 150_000_000)
+        #expect(MCPViewRender.isDrawn(MCPViewRender.capture(host, name: "mcp-editor-entorno-claro")))
     }
 
     // MARK: - Lo que lee la sección (fuera del hilo principal)

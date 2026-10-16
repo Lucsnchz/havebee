@@ -97,7 +97,7 @@ public struct ProcessCommandRunner: CommandRunning {
               let errHandle = try? FileHandle(forWritingTo: errFile) else {
             try? FileManager.default.removeItem(at: outFile)
             try? FileManager.default.removeItem(at: errFile)
-            return CommandResult(status: -1, stderr: "No se pudo crear un archivo temporal.")
+            return CommandResult(status: -1, stderr: "No pude crear un archivo temporal.")
         }
         defer {
             try? FileManager.default.removeItem(at: outFile)

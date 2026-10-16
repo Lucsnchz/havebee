@@ -42,11 +42,11 @@ public enum GitOperation: String, Sendable, CaseIterable {
 
     public var label: String {
         switch self {
-        case .rebase: "Rebase en curso"
-        case .merge: "Merge en curso"
-        case .cherryPick: "Cherry-pick en curso"
-        case .revert: "Revert en curso"
-        case .bisect: "Bisect en curso"
+        case .rebase: "Rebase a medias"
+        case .merge: "Merge a medias"
+        case .cherryPick: "Cherry-pick a medias"
+        case .revert: "Revert a medias"
+        case .bisect: "Bisect a medias"
         }
     }
 

@@ -33,7 +33,7 @@ struct StoreUndoTests {
 
         store.select(.session(claude.id))
         store.archive(claude.id)
-        #expect(store.undoAction?.message == "Archivaste “Claude 1”")
+        #expect(store.undoAction?.message == "Archivaste «Claude 1»")
         #expect(store.selection == .session(codex.id))
         store.performUndo()
         #expect(store.sessionContext(claude.id)?.session.isArchived == false)
@@ -97,7 +97,7 @@ struct StoreUndoTests {
         }
 
         archive()
-        #expect(manager.undoActionName == "Archivaste “Claude 1”")
+        #expect(manager.undoActionName == "Archivaste «Claude 1»")
         manager.undo()
         #expect(store.sessionContext(session.id)?.session.isArchived == false)
         #expect(store.selection == .session(session.id))
@@ -120,7 +120,7 @@ struct StoreUndoTests {
         store.saveMCP(MCPServer(name: "otro", config: ["url": "https://example.com/mcp"]), replacing: nil, projectId: project.id)
         store.removeMCP("boost", projectId: project.id)
         #expect(MCPConfig.load(dir: repo.path).map(\.name) == ["otro"])
-        #expect(store.undoAction?.message == "Quitaste el MCP “boost”")
+        #expect(store.undoAction?.message == "Quitaste el MCP «boost»")
         let version = store.mcpVersion
         store.performUndo()
         #expect(MCPConfig.load(dir: repo.path).map(\.name) == ["boost", "otro"])
@@ -138,7 +138,7 @@ struct StoreUndoTests {
         let middle = try #require(store.project(project.id)?.commands[1])
         store.deleteCommand(projectId: project.id, commandId: middle.id)
         #expect(store.project(project.id)?.commands.map(\.name) == ["Dev", "Cola"])
-        #expect(store.undoAction?.message == "Borraste el comando “Test”")
+        #expect(store.undoAction?.message == "Borraste el comando «Test»")
         store.performUndo()
         #expect(store.project(project.id)?.commands.map(\.name) == ["Dev", "Test", "Cola"])
         #expect(store.project(project.id)?.commands[1] == middle)
@@ -155,7 +155,7 @@ struct StoreUndoTests {
         let commands = try #require(store.project(project.id)?.commands)
         store.deleteCommand(projectId: project.id, commandId: commands[0].id)
         store.deleteCommand(projectId: project.id, commandId: commands[1].id)
-        #expect(store.undoAction?.message == "Borraste el comando “B”")
+        #expect(store.undoAction?.message == "Borraste el comando «B»")
         let expires = try #require(store.undoAction?.expiresAt)
         #expect(abs(expires.timeIntervalSince(Date.reference) - AppStore.undoWindow) < 0.001)
         store.dismissUndo()

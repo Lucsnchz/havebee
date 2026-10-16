@@ -2,45 +2,24 @@ import AppKit
 import HiveCore
 import SwiftUI
 
-/// Indicador compacto del estado de una sesión.
+/// Indicador compacto del estado de una sesión (sidebar, pestañas, tarjetas, ⌘K). La forma y el
+/// color salen de `StatusStyle`.
 struct StatusIndicator: View {
     let status: SessionStatus
     let unseen: Bool
     let kind: SessionKind
+    var size: CGFloat = 10
 
     var body: some View {
+        let style = StatusStyle.of(status: status, unseen: unseen, kind: kind)
         ZStack {
-            switch status {
-            case .working:
-                WorkingGlyph()
-                    .transition(.scale.combined(with: .opacity))
-            case .attention:
-                AttentionSymbol()
-                    .transition(.scale.combined(with: .opacity))
-            case .waiting:
-                Group {
-                    if unseen {
-                        PendingDot()
-                    } else {
-                        Circle().strokeBorder(Theme.pending.opacity(0.7), lineWidth: 1.5).frame(width: 8, height: 8)
-                    }
-                }
+            StatusGlyphView(glyph: style.glyph, size: size)
+                .id(style.glyph)
                 .transition(.scale.combined(with: .opacity))
-            case .idle:
-                Circle().fill(.secondary.opacity(0.5)).frame(width: 6, height: 6)
-                    .transition(.opacity)
-            case .exited:
-                Image(systemName: status.symbol ?? "stop.circle")
-                    .foregroundStyle(.tertiary)
-                    .transition(.opacity)
-            case .dormant:
-                EmptyView()
-            }
         }
-        .frame(minWidth: 14)
-        .animation(.easeOut(duration: 0.18), value: status.styleKey)
-        .animation(.easeOut(duration: 0.18), value: unseen)
-        .help(status.label(for: kind))
+        .frame(minWidth: size * 1.4)
+        .animation(.easeOut(duration: 0.18), value: style.glyph)
+        .help(style.text)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Self.accessibilityText(status: status, unseen: unseen, kind: kind))
     }

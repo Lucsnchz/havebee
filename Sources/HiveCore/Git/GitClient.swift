@@ -190,7 +190,7 @@ public struct GitCLI: GitClient {
         // `--no-index` devuelve 1 cuando hay diferencias: no es un error.
         let r = run(args, in: dir)
         if !r.ok && r.stdout.isEmpty {
-            return FileDiff(message: r.errorMessage.isEmpty ? "No se pudo leer el diff." : r.errorMessage)
+            return FileDiff(message: r.errorMessage.isEmpty ? "No pude leer el diff." : r.errorMessage)
         }
         var diff = GitParsing.diff(r.stdout)
         if diff.lines.isEmpty && !diff.isBinary {

@@ -63,10 +63,11 @@ struct DiffSheet: View {
     private var fileList: some View {
         ScrollViewReader { proxy in
             ScrollView {
+                let hasStaged = target.files.contains(where: \.staged)
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(target.files.enumerated()), id: \.offset) { index, file in
                         if index == 0 || target.files[index - 1].staged != file.staged {
-                            Text(file.staged ? "PREPARADOS" : "CAMBIOS")
+                            Text(Self.sectionTitle(staged: file.staged, hasStaged: hasStaged))
                                 .font(.system(size: 10.5, weight: .semibold))
                                 .foregroundStyle(.secondary)
                                 .padding(.horizontal, 12)
@@ -95,7 +96,7 @@ struct DiffSheet: View {
                         }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 4)
-                        .background(index == selected ? Theme.accent.opacity(0.18) : .clear)
+                        .background(index == selected ? Theme.accentFill.opacity(0.22) : .clear)
                         .contentShape(Rectangle())
                         .onTapGesture { selected = index }
                         .id(index)
@@ -105,6 +106,12 @@ struct DiffSheet: View {
             }
             .onChange(of: selected) { _, value in proxy.scrollTo(value) }
         }
+    }
+
+    /// Título de cada grupo de la lista, con los mismos nombres que el panel de cambios: «PREPARADOS» y
+    /// «SIN PREPARAR», o «CAMBIOS» si no hay nada preparado.
+    static func sectionTitle(staged: Bool, hasStaged: Bool) -> String {
+        (staged ? "Preparados" : ChangesList.unstagedTitle(hasStaged: hasStaged)).uppercased()
     }
 
     private func header(_ file: DiffTarget.File) -> some View {
@@ -156,7 +163,7 @@ struct DiffSheet: View {
         let prompt = done == nil ? pendingChoice.flatMap { prompt(for: $0, file: file, operation: operation) } : nil
         return HStack(spacing: 8) {
             Image(systemName: done == nil ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
-                .foregroundStyle(done == nil ? Theme.attention : Theme.pending)
+                .foregroundStyle(done == nil ? Theme.danger : ChangeColors.color(for: "A"))
             if let prompt, let choice = pendingChoice {
                 Text(prompt.message)
                     .font(.system(size: 12, weight: .medium))
@@ -169,7 +176,7 @@ struct DiffSheet: View {
                     pendingChoice = nil
                     perform(choice, file: file, operation: operation)
                 }
-                .foregroundStyle(.red)
+                .foregroundStyle(Theme.danger)
             } else {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(done ?? "Archivo en conflicto" + (operation.map { " · \($0.label)" } ?? ""))
@@ -178,7 +185,7 @@ struct DiffSheet: View {
                     if done == nil, let resolveError {
                         Text(resolveError)
                             .font(.system(size: 11))
-                            .foregroundStyle(.red)
+                            .foregroundStyle(Theme.danger)
                             .lineLimit(2)
                             .textSelection(.enabled)
                             .help(resolveError)
@@ -200,7 +207,7 @@ struct DiffSheet: View {
         .disabled(resolving)
         .padding(.horizontal, 14)
         .padding(.vertical, 7)
-        .background(Theme.attention.opacity(done == nil ? 0.12 : 0.04))
+        .background(Theme.danger.opacity(done == nil ? 0.1 : 0.03))
     }
 
     private func prompt(for choice: ConflictChoice, file: DiffTarget.File, operation: GitOperation?) -> ConflictPrompt? {
@@ -315,7 +322,7 @@ struct DiffSheet: View {
                 resolved[path] = message
             } else {
                 let detail = r.errorMessage.isEmpty ? "git terminó con el código \(r.status)." : r.errorMessage
-                resolveError = "No se pudo resolver: \(detail)"
+                resolveError = "No pude resolverlo: \(detail)"
             }
             store.refreshGit()
             await load()
@@ -361,10 +368,10 @@ private struct DiffLineRow: View {
             HStack(alignment: .top, spacing: 0) {
                 Text(line.oldNumber.map(String.init) ?? "")
                     .frame(width: 46, alignment: .trailing)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Theme.secondaryText)
                 Text(line.newNumber.map(String.init) ?? "")
                     .frame(width: 46, alignment: .trailing)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Theme.secondaryText)
                 Text(prefix)
                     .frame(width: 22)
                     .foregroundStyle(prefixColor)
@@ -391,16 +398,24 @@ private struct DiffLineRow: View {
     private var prefixColor: Color {
         switch line.kind {
         case .added: ChangeColors.color(for: "A")
-        case .conflictMarker: .orange
+        case .conflictMarker: ChangeColors.color(for: "!")
         default: ChangeColors.color(for: "D")
         }
     }
 
-    private var background: Color {
-        switch line.kind {
+    private var background: Color { DiffLineColors.background(line.kind) }
+}
+
+/// Fondo de cada línea del diff: verde lo agregado, rojo lo borrado y una franja gris en las marcas de
+/// conflicto (<<<<<<<, =======, >>>>>>>), con su «!» rojo: en rojo se confundían con lo borrado.
+enum DiffLineColors {
+    static let markerNSColor = Theme.dynamicNSColor(light: NSColor(white: 0, alpha: 0.08), dark: NSColor(white: 1, alpha: 0.1))
+
+    static func background(_ kind: DiffLine.Kind) -> Color {
+        switch kind {
         case .added: Color(red: 0.25, green: 0.75, blue: 0.45).opacity(0.16)
         case .removed: Color(red: 0.90, green: 0.30, blue: 0.30).opacity(0.16)
-        case .conflictMarker: Color.orange.opacity(0.28)
+        case .conflictMarker: Color(nsColor: markerNSColor)
         default: .clear
         }
     }

@@ -69,6 +69,141 @@ struct ContrastTests {
         }
     }
 
+    @Test("Relleno del acento: miel también en claro (no marrón) y su texto se lee (≥ 4,5)")
+    func accentFill() {
+        for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+            let fill = HiveContrast.resolve(Theme.accentFillNSColor, in: appearance)
+            let text = HiveContrast.resolve(Theme.onAccentFillNSColor, in: appearance)
+            #expect(HiveContrast.ratio(text, on: fill) >= 4.5, "\(appearance.rawValue)")
+            // Miel: mucho rojo y verde, poco azul (el ámbar de texto en claro tiene rojo < 0,6).
+            #expect(fill.redComponent > 0.85 && fill.greenComponent > 0.6 && fill.blueComponent < 0.3, "\(appearance.rawValue)")
+        }
+        // En oscuro, el relleno y el acento son el mismo miel.
+        let fill = HiveContrast.resolve(Theme.accentFillNSColor, in: .darkAqua)
+        let accent = HiveContrast.resolve(Theme.accentNSColor, in: .darkAqua)
+        #expect(abs(fill.redComponent - accent.redComponent) < 0.01 && abs(fill.greenComponent - accent.greenComponent) < 0.01)
+    }
+
+    @Test("Texto secundario con datos, rojo, azul y «corriendo»: ≥ 4,5 sobre el fondo y sobre las tarjetas")
+    func readableTokens() {
+        let tokens: [(String, NSColor)] = [("secondaryText", Theme.secondaryTextNSColor), ("danger", Theme.dangerNSColor),
+                                           ("info", Theme.infoNSColor), ("running", Theme.runningNSColor)]
+        for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+            let base = contrastBackground(appearance)
+            // La tarjeta: el fondo con Color.primary al 4,5 % (7,5 % con el mouse encima).
+            let primary: NSColor = appearance == .aqua ? .black : .white
+            let backgrounds = [base] + [0.045, 0.075].map { HiveContrast.composite(primary.withAlphaComponent($0), over: base) }
+            for (name, token) in tokens {
+                for background in backgrounds {
+                    let ratio = HiveContrast.ratio(HiveContrast.resolve(token, in: appearance), on: background)
+                    #expect(ratio >= 4.5, "\(name) en \(appearance.rawValue): \(ratio)")
+                }
+            }
+        }
+        // El gris terciario del sistema no llega: por eso los datos usan secondaryText.
+        #expect(contrastRatio(.tertiaryLabelColor, .aqua) < 4.5)
+    }
+
+    @Test("El verde y el naranja quedan para las sesiones: comandos, errores y uso alto usan otros colores")
+    func reservedStatusColors() {
+        func same(_ a: NSColor, _ b: NSColor, _ appearance: NSAppearance.Name) -> Bool {
+            let x = HiveContrast.resolve(a, in: appearance), y = HiveContrast.resolve(b, in: appearance)
+            return abs(x.redComponent - y.redComponent) < 0.08 && abs(x.greenComponent - y.greenComponent) < 0.08
+                && abs(x.blueComponent - y.blueComponent) < 0.08
+        }
+        for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+            for other in [Theme.runningNSColor, Theme.dangerNSColor, Theme.infoNSColor] {
+                #expect(!same(other, Theme.pendingNSColor, appearance), "\(other) parece el verde de «te espera»")
+                #expect(!same(other, Theme.attentionNSColor, appearance), "\(other) parece el naranja de permiso")
+            }
+            // El uso alto: miel hasta 95 % y rojo después, nunca el naranja de permiso.
+            for percent in [50.0, 85, 97] {
+                let color = NSColor(UsageMonitor.color(percent))
+                #expect(!same(color, Theme.attentionNSColor, appearance), "\(percent) %")
+            }
+            #expect(same(NSColor(UsageMonitor.color(85)), Theme.accentNSColor, appearance))
+            #expect(same(NSColor(UsageMonitor.color(97)), Theme.dangerNSColor, appearance))
+        }
+    }
+
+    /// Los archivos de HiveKit que dibujan estados de sesión (o definen los colores): los únicos que
+    /// pueden usar el naranja de permiso y el verde de «te espera».
+    static let statusColorFiles: Set<String> = ["DesignSystem.swift", "StatusStyle.swift", "SessionCards.swift",
+                                                "SidebarView.swift", "CompactLayout.swift", "Appearance.swift"]
+
+    @Test("En el código, el naranja y el verde de estado solo aparecen donde se dibujan sesiones, y no quedan colores del sistema")
+    func reservedStatusColorsInSource() throws {
+        // Tests/HiveKitTests/ContrastTests.swift → la raíz del paquete.
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let views = root.appendingPathComponent("Sources/HiveKit")
+        let files = try #require(FileManager.default.enumerator(at: views, includingPropertiesForKeys: nil)?
+            .compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" && $0.lastPathComponent != "LogoAssets.swift" })
+        #expect(files.count > 20)
+        let status = try NSRegularExpression(pattern: #"Theme\.(attention|pending)"#)
+        // `.red`, `Color.green`, `NSColor.systemOrange`…: no se adaptan al modo claro y se confunden con los estados.
+        let system = try NSRegularExpression(pattern: #"(Color\.|\(\.|: \.|\? \.)(red|green|blue|orange|yellow)\b|\.system(Red|Green|Blue|Orange|Yellow)\b"#)
+        for file in files {
+            let name = file.lastPathComponent
+            let lines = try String(contentsOf: file, encoding: .utf8).components(separatedBy: "\n")
+            for (index, line) in lines.enumerated() where !line.trimmingCharacters(in: .whitespaces).hasPrefix("//") {
+                let range = NSRange(line.startIndex..., in: line)
+                if !Self.statusColorFiles.contains(name) {
+                    #expect(status.firstMatch(in: line, range: range) == nil,
+                            "\(name):\(index + 1) usa el color de un estado de sesión (Theme.attention o Theme.pending): usá danger, info, running o el acento")
+                }
+                if name != "DesignSystem.swift" {
+                    #expect(system.firstMatch(in: line, range: range) == nil, "\(name):\(index + 1) usa un color del sistema: usá un token de Theme")
+                }
+            }
+        }
+    }
+
+    @Test("El botón principal de cada hoja (el de Return) es el miel de Hive, no el botón por defecto del sistema")
+    func defaultButtonsUseAccentFill() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let files = try #require(FileManager.default.enumerator(at: root.appendingPathComponent("Sources/HiveKit"), includingPropertiesForKeys: nil)?
+            .compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" })
+        var found = 0
+        for file in files {
+            let lines = try String(contentsOf: file, encoding: .utf8).components(separatedBy: "\n")
+            for (index, line) in lines.enumerated() where line.contains(".keyboardShortcut(.defaultAction)") {
+                found += 1
+                let before = lines[max(0, index - 3)..<index].joined(separator: "\n")
+                #expect(before.contains(".buttonStyle(.hiveProminent)"),
+                        "\(file.lastPathComponent):\(index + 1): el botón de Return va con .buttonStyle(.hiveProminent) (miel con texto oscuro)")
+            }
+        }
+        #expect(found >= 5)
+    }
+
+    @Test("Botón principal: miel habilitado y gris deshabilitado (no un miel transparente que se ve marrón)")
+    func prominentButtonFill() {
+        for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+            let base = contrastBackground(appearance).usingColorSpace(.sRGB) ?? .white
+            let enabled = HiveContrast.resolve(NSColor(HiveProminentButtonStyle.fill(enabled: true, pressed: false)), in: appearance)
+            let fill = HiveContrast.resolve(Theme.accentFillNSColor, in: appearance)
+            #expect(abs(enabled.redComponent - fill.redComponent) < 0.01 && abs(enabled.blueComponent - fill.blueComponent) < 0.01)
+            let disabled = HiveContrast.composite(
+                HiveContrast.resolve(NSColor(HiveProminentButtonStyle.fill(enabled: false, pressed: false)), in: appearance), over: base)
+            #expect(abs(disabled.redComponent - disabled.blueComponent) < 0.02, "\(appearance.rawValue): \(disabled)")
+            #expect(abs(disabled.redComponent - base.redComponent) > 0.02, "\(appearance.rawValue): se tiene que ver el botón")
+        }
+    }
+
+    @Test("Diff: las marcas de conflicto van en una franja gris, distinta del rojo de lo borrado")
+    func conflictMarkersAreNotRemovals() {
+        for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+            let base = contrastBackground(appearance).usingColorSpace(.sRGB) ?? .white
+            let marker = HiveContrast.composite(HiveContrast.resolve(NSColor(DiffLineColors.background(.conflictMarker)), in: appearance), over: base)
+            let removed = HiveContrast.composite(HiveContrast.resolve(NSColor(DiffLineColors.background(.removed)), in: appearance), over: base)
+            // Lo borrado tira a rojo; la marca es gris (sin tono) y se ve sobre el fondo.
+            #expect(removed.redComponent - removed.greenComponent > 0.05, "\(appearance.rawValue)")
+            #expect(abs(marker.redComponent - marker.greenComponent) < 0.02 && abs(marker.greenComponent - marker.blueComponent) < 0.02,
+                    "\(appearance.rawValue)")
+            #expect(abs(marker.redComponent - base.redComponent) > 0.03, "\(appearance.rawValue): \(marker) sobre \(base)")
+        }
+    }
+
     @Test("Color.honey es el acento del tema: cambia con la apariencia")
     func honeyIsAccent() {
         for appearance in [NSAppearance.Name.aqua, .darkAqua] {

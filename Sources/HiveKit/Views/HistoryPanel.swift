@@ -377,6 +377,9 @@ private struct HistoryRow: View {
     /// La búsqueda, si esta entrada coincide (para resaltarla).
     let query: String
     let isCurrentMatch: Bool
+    /// El botón de copiar de cada mensaje aparece al pasar el mouse (y está en el menú contextual):
+    /// siete iconitos iguales en una columna eran ruido.
+    @State private var hovering = false
 
     var body: some View {
         Group {
@@ -385,6 +388,12 @@ private struct HistoryRow: View {
             case .system: system
             case .user: user
             case .assistant: assistant
+            }
+        }
+        .onHover { hovering = $0 }
+        .contextMenu {
+            if entry.role != .marker {
+                Button("Copiar el mensaje") { ExternalApps.copyToPasteboard(entry.text) }
             }
         }
         .overlay {
@@ -401,16 +410,17 @@ private struct HistoryRow: View {
     /// Una divisoria con lo que pasó. Un corte se lee con una frase clara («Se cortó: llegaste al
     /// límite de uso») y el código de la API queda abajo, chiquito, por si hace falta buscarlo.
     private var marker: some View {
+        // «Se cortó» es una falla: va en rojo (el naranja es solo de «necesita permiso»).
         let failed = entry.text.hasPrefix(AgentEventInterpreter.stopFailureMarker)
         let label = HistoryStore.markerTitle(entry.text)
         let meaning = HistoryStore.markerMeaning(entry.text)
-        let rule = Rectangle().fill((failed ? Theme.attention : Color.primary).opacity(0.2)).frame(minWidth: 12, maxHeight: 1)
+        let rule = Rectangle().fill((failed ? Theme.danger : Color.primary).opacity(0.2)).frame(minWidth: 12, maxHeight: 1)
         return VStack(spacing: 2) {
             HStack(spacing: 8) {
                 rule
                 Text("\(label.title) · \(time)")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(failed ? AnyShapeStyle(Theme.attention) : AnyShapeStyle(.secondary))
+                    .foregroundStyle(failed ? AnyShapeStyle(Theme.danger) : AnyShapeStyle(.secondary))
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                     .layoutPriority(1)
@@ -419,7 +429,7 @@ private struct HistoryRow: View {
             if let code = label.code {
                 Text(code)
                     .font(.caption2.monospaced())
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Theme.secondaryText)
                     .accessibilityLabel("Código del error: \(code)")
             }
         }
@@ -437,9 +447,9 @@ private struct HistoryRow: View {
                     .font(.system(size: 11, weight: .semibold))
                 Text(time)
                     .font(.system(size: 11))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Theme.secondaryText)
                 Spacer()
-                HistoryCopyButton(text: entry.text)
+                HistoryCopyButton(text: entry.text, revealed: hovering)
             }
             .foregroundStyle(.secondary)
             Text(highlighted(HistoryRow.withoutTags(entry.text)))
@@ -460,9 +470,9 @@ private struct HistoryRow: View {
                     .font(.system(size: 11, weight: .semibold))
                 Text(time)
                     .font(.system(size: 11))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Theme.secondaryText)
                 Spacer()
-                HistoryCopyButton(text: entry.text)
+                HistoryCopyButton(text: entry.text, revealed: hovering)
             }
             .foregroundStyle(.secondary)
             Text(highlighted(entry.text))
@@ -472,7 +482,7 @@ private struct HistoryRow: View {
         }
         .padding(.horizontal, 11)
         .padding(.vertical, 9)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.accent.opacity(0.12)))
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.accentFill.opacity(0.16)))
         .padding(.leading, 24)
     }
 
@@ -485,9 +495,9 @@ private struct HistoryRow: View {
                     .foregroundStyle(.secondary)
                 Text(time)
                     .font(.system(size: 11))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Theme.secondaryText)
                 Spacer()
-                HistoryCopyButton(text: entry.text)
+                HistoryCopyButton(text: entry.text, revealed: hovering)
             }
             ForEach(Array(HistoryExport.blocks(entry.text).enumerated()), id: \.offset) { _, block in
                 switch block {
@@ -518,10 +528,12 @@ private struct HistoryRow: View {
     }
 }
 
-/// Copiar, siempre visible (tenue hasta que pasás el mouse) y con un tilde al copiar.
+/// Copiar, con un tilde al copiar. `revealed` nil: siempre visible, tenue hasta que pasás el mouse
+/// (bloques de código); si no, solo cuando se pasa el mouse por el mensaje.
 private struct HistoryCopyButton: View {
     let text: String
     var label = "Copiar"
+    var revealed: Bool?
     @State private var hovering = false
     @State private var copied = false
 
@@ -540,7 +552,7 @@ private struct HistoryCopyButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
-        .opacity(hovering || copied ? 1 : 0.35)
+        .opacity(hovering || copied ? 1 : (revealed.map { $0 ? 0.6 : 0 } ?? 0.35))
         .onHover { hovering = $0 }
         .help(copied ? "Copiado" : label)
         .accessibilityLabel(label)
@@ -634,7 +646,7 @@ enum HistoryMarkdown {
             let length = plain.distance(from: found.lowerBound, to: found.upperBound)
             let start = text.characters.index(text.startIndex, offsetBy: lower)
             let end = text.characters.index(start, offsetBy: length)
-            text[start..<end].backgroundColor = Theme.accent.opacity(0.35)
+            text[start..<end].backgroundColor = Theme.accentFill.opacity(0.4)
             searchStart = found.upperBound
         }
     }

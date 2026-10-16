@@ -2,22 +2,39 @@ import AppKit
 import HiveCore
 import SwiftUI
 
+/// Lo que se sabe del remoto de un repo: a dónde apunta y su rama por defecto.
+struct RemoteInfo: Equatable, Sendable {
+    let remote: RemoteHost?
+    /// Rama por defecto del remoto, sin el prefijo ("main").
+    let defaultBase: String?
+
+    /// Lee el remoto fuera del hilo principal. nil si el repo no tiene remotos.
+    static func load(git: GitClient, path: String) async -> RemoteInfo? {
+        let (url, base) = await Task.detached(priority: .utility) {
+            (git.remoteURL(path), git.defaultRemoteBranch(path))
+        }.value
+        guard let url else { return nil }
+        return RemoteInfo(remote: RemoteHost.parse(url),
+                          defaultBase: base.map { ref in ref.firstIndex(of: "/").map { String(ref[ref.index(after: $0)...]) } ?? ref })
+    }
+}
+
 /// Traer, publicar y abrir el MR de la rama en GitLab (o el PR en GitHub) sin instalar nada.
-/// Si el repo no tiene remotos, no se muestra.
+/// Si el repo no tiene remotos, no se muestra. Con `info` ya leída (la barra de la sesión la lee
+/// antes de poner el menú, para no dejar una cápsula vacía), no vuelve a leer el remoto.
 struct RemoteActionsMenu: View {
     @Environment(AppStore.self) private var store
     let project: Project
     let branch: Branch
-    @State private var hasRemote = false
-    @State private var remote: RemoteHost?
-    /// Rama por defecto del remoto, sin el prefijo ("main").
-    @State private var defaultBase: String?
+    private let known: RemoteInfo?
+    @State private var loaded: RemoteInfo?
     /// Para mostrar el spinner ya andando (las capturas de los tests).
     private let previewBusy: String?
 
-    init(project: Project, branch: Branch, busy: String? = nil) {
+    init(project: Project, branch: Branch, info: RemoteInfo? = nil, busy: String? = nil) {
         self.project = project
         self.branch = branch
+        known = info
         previewBusy = busy
     }
 
@@ -25,13 +42,19 @@ struct RemoteActionsMenu: View {
     /// nuevo al cambiar de sesión: con un pre-push de varios minutos, al volver sigue el spinner con su X.
     private var busy: String? { previewBusy ?? store.remoteOperations[branch.id]?.label }
 
+    private var info: RemoteInfo? { known ?? loaded }
+    private var remote: RemoteHost? { info?.remote }
+
     var body: some View {
         content
-            .task(id: project.path) { await load() }
+            .task(id: project.path) {
+                guard known == nil else { return }
+                loaded = await RemoteInfo.load(git: store.git, path: project.path)
+            }
     }
 
     @ViewBuilder private var content: some View {
-        if hasRemote {
+        if info != nil {
             HStack(spacing: 6) {
                 if let busy {
                     ProgressView()
@@ -64,7 +87,7 @@ struct RemoteActionsMenu: View {
     @ViewBuilder private var menuItems: some View {
         let active = store.isActive(branch, in: project)
         Button {
-            perform("Trayendo cambios…", title: "No se pudieron traer los cambios", cancelled: "Cancelaste «Traer cambios»") { git, dir, _ in
+            perform("Trayendo cambios…", title: "No pude traer los cambios", cancelled: "Cancelaste «Traer cambios»") { git, dir, _ in
                 git.pull(ffOnly: true, in: dir)
             }
         } label: {
@@ -73,7 +96,7 @@ struct RemoteActionsMenu: View {
         .disabled(!active)
         .help(active ? "git pull --ff-only" : "Hacé checkout de la rama para traer sus cambios")
         Button {
-            perform("Publicando…", title: "No se pudo publicar la rama", cancelled: "Cancelaste la publicación de «\(branch.name)»") { git, dir, name in
+            perform("Publicando…", title: "No pude publicar la rama", cancelled: "Cancelaste la publicación de «\(branch.name)»") { git, dir, name in
                 git.push(branch: name, setUpstream: true, in: dir)
             }
         } label: {
@@ -103,17 +126,6 @@ struct RemoteActionsMenu: View {
         }
     }
 
-    private func load() async {
-        let git = store.git
-        let path = project.path
-        let (url, base) = await Task.detached(priority: .utility) {
-            (git.remoteURL(path), git.defaultRemoteBranch(path))
-        }.value
-        hasRemote = url != nil
-        remote = url.flatMap(RemoteHost.parse)
-        defaultBase = base.map { ref in ref.firstIndex(of: "/").map { String(ref[ref.index(after: $0)...]) } ?? ref }
-    }
-
     /// Corre una operación de git fuera del hilo principal, cancelable con la X junto al spinner; si
     /// falla, avisa con una alerta, y si la cancelaste, con un aviso corto. Una sola por rama.
     private func perform(_ label: String, title: String, cancelled: String,
@@ -126,7 +138,7 @@ struct RemoteActionsMenu: View {
     /// Publica la rama si hace falta y abre la página del MR nuevo contra la rama por defecto.
     private func createMergeRequest(_ remote: RemoteHost) {
         let status = store.gitStatus(for: branch, in: project)
-        let target = defaultBase ?? "main"
+        let target = info?.defaultBase ?? "main"
         guard let url = remote.newMergeRequestURL(source: branch.name, target: target) else { return }
         // Publicada = sigue a su par en el remoto (no a origin/main, como deja `git checkout -b x origin/main`)
         // y no tiene commits sin subir.
@@ -135,7 +147,7 @@ struct RemoteActionsMenu: View {
             BrowserLink.open(url)
             return
         }
-        perform("Publicando…", title: "No se pudo publicar la rama", cancelled: "Cancelaste la publicación de «\(branch.name)»", { git, dir, name in
+        perform("Publicando…", title: "No pude publicar la rama", cancelled: "Cancelaste la publicación de «\(branch.name)»", { git, dir, name in
             git.push(branch: name, setUpstream: true, in: dir)
         }, then: { BrowserLink.open(url) })
     }

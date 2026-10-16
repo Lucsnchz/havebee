@@ -19,23 +19,17 @@ struct SessionCard: View {
         let rt = store.runtimes[session.id]
         let status = rt?.status ?? .dormant
         let unseen = rt?.unseen ?? false
-        let ring = Activity.Ring.of(status: status, unseen: unseen)
+        let style = StatusStyle.of(status: status, unseen: unseen, kind: session.kind)
         Button {
             Self.open(session.id, in: store)
         } label: {
             VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 8) {
-                    AgentLogo(kind: session.kind, size: 18)
-                    Text(session.name)
-                        .font(HiveFont.heading)
-                        .lineLimit(1)
-                    Spacer(minLength: 6)
-                    HStack(spacing: 5) {
-                        StatusIndicator(status: status, unseen: unseen, kind: session.kind)
-                        Text(status.label(for: session.kind))
-                            .font(HiveFont.meta.weight(.medium))
-                            .foregroundStyle(status.tint(unseen: unseen))
-                    }
+                // Si con el texto del estado el nombre no entra pero con el ícono solo sí, queda el ícono
+                // (el texto va en la ayuda). Si el nombre no entra igual, se corta y el estado se lee entero.
+                ViewThatFits(in: .horizontal) {
+                    header(style: style, status: status, unseen: unseen, fullName: true, showsText: true)
+                    header(style: style, status: status, unseen: unseen, fullName: true, showsText: false)
+                    header(style: style, status: status, unseen: unseen, fullName: false, showsText: true)
                 }
                 summaryView(Self.summary(session: session, branchName: branch.name, title: rt?.title, notice: rt?.notice))
                 footer(status: status, rt: rt)
@@ -44,7 +38,7 @@ struct SessionCard: View {
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .topLeading)
-            .hiveCard(interactive: true, border: borderColor(ring))
+            .hiveCard(interactive: true, border: Self.borderColor(style))
         }
         .buttonStyle(.plain)
         .contextMenu { SessionMenu(project: project, branch: branch, session: session) }
@@ -52,44 +46,76 @@ struct SessionCard: View {
         .accessibilityHint("Abre la sesión")
     }
 
-    /// Abajo: hace cuánto que trabaja, o cuándo se usó por última vez.
+    private func header(style: StatusStyle, status: SessionStatus, unseen: Bool, fullName: Bool, showsText: Bool) -> some View {
+        HStack(spacing: 8) {
+            AgentLogo(kind: session.kind, size: 18)
+            Text(session.name)
+                .font(HiveFont.heading)
+                .lineLimit(1)
+                .fixedSize(horizontal: fullName, vertical: false)
+            Spacer(minLength: 6)
+            statusLabel(status: status, unseen: unseen, style: style, showsText: showsText)
+        }
+    }
+
+    /// Arriba a la derecha: el ícono del estado y, si entra, su nombre en el color del estado.
+    private func statusLabel(status: SessionStatus, unseen: Bool, style: StatusStyle, showsText: Bool) -> some View {
+        HStack(spacing: 5) {
+            StatusIndicator(status: status, unseen: unseen, kind: session.kind)
+            if showsText {
+                Text(style.text)
+                    .font(HiveFont.meta.weight(.medium))
+                    .foregroundStyle(style.color ?? Theme.secondaryText)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+        }
+    }
+
+    /// Abajo: hace cuánto que trabaja (solo el tiempo: que trabaja ya lo dice arriba), o cuándo se
+    /// usó por última vez.
     @ViewBuilder
     private func footer(status: SessionStatus, rt: SessionRuntime?) -> some View {
         if status == .working, let since = rt?.workingSince {
             TimelineView(.periodic(from: .now, by: 1)) { context in
-                Text("Trabajando · \(RelativeTime.elapsed((fixedNow ?? context.date).timeIntervalSince(since)))")
+                let elapsed = RelativeTime.elapsed((fixedNow ?? context.date).timeIntervalSince(since))
+                Label(elapsed, systemImage: "timer")
                     .monospacedDigit()
                     .foregroundStyle(Theme.accent)
+                    .help("Trabajando hace \(elapsed)")
+                    .accessibilityLabel("Trabajando hace \(elapsed)")
             }
         } else if let date = session.lastActivityAt ?? session.lastLaunchedAt {
             Text(RelativeTime.string(date, relativeTo: fixedNow ?? Date()))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(Theme.secondaryText)
         } else {
             Text("Sin usar todavía")
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(Theme.secondaryText)
         }
     }
 
-    /// Naranja si pide permiso, verde si te espera y no la viste; si no, el borde neutro.
-    private func borderColor(_ ring: Activity.Ring) -> Color? {
-        switch ring {
+    /// El borde destaca lo que te espera: naranja si pide permiso, verde si no la viste; si no, el
+    /// borde neutro.
+    static func borderColor(_ style: StatusStyle) -> Color? {
+        switch style.glyph {
         case .attention: Theme.attention.opacity(0.75)
         case .pending: Theme.pending.opacity(0.6)
         default: nil
         }
     }
 
-    /// Debajo del nombre: lo que pide el agente (en naranja, mientras espera tu permiso) o lo último que respondió.
+    /// Debajo del nombre: lo que pide el agente (en naranja, mientras espera tu permiso: el «!» de
+    /// arriba ya dice qué es) o lo último que respondió.
     @ViewBuilder
     private func summaryView(_ summary: Summary) -> some View {
         Group {
             if summary.isNotice {
-                Text("\(Image(systemName: "hand.raised.fill")) \(summary.text)")
+                Text(summary.text)
                     .foregroundStyle(Theme.attention)
                     .accessibilityLabel("Necesita permiso: \(summary.text)")
             } else {
                 Text(summary.text)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.secondaryText)
             }
         }
         .font(HiveFont.secondary)
@@ -244,14 +270,14 @@ struct ArchivedSessions: View {
                 Text(session.name).font(HiveFont.body.weight(.medium))
                 Text(session.lastMessage ?? "Sin respuestas guardadas.")
                     .font(HiveFont.meta)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.secondaryText)
                     .lineLimit(1)
             }
             Spacer()
             if let date = session.archivedAt {
                 Text("archivada \(RelativeTime.string(date, relativeTo: fixedNow ?? Date()))")
                     .font(HiveFont.meta)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Theme.secondaryText)
             }
             Button("Ver historial") { historyFor = session }
                 .help("Leer la conversación sin abrir la sesión")

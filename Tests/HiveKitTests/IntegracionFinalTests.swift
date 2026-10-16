@@ -367,7 +367,7 @@ struct IntegracionFinalTests {
         #expect(BranchGitBadges.make(GitStatus(branch: "main")).isEmpty)
         let badges = BranchGitBadges.make(GitStatus(branch: "feature", upstream: "origin/feature", ahead: 2, behind: 1,
                                                     upstreamGone: true, operation: .rebase))
-        #expect(badges.map(\.text) == ["Rebase en curso", "Remota borrada", "↑ 2", "↓ 1"])
+        #expect(badges.map(\.text) == ["Rebase a medias", "Remota borrada", "↑ 2", "↓ 1"])
         #expect(badges.map(\.warning) == [true, true, false, false])
     }
 
