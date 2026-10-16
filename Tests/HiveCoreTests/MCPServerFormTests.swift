@@ -115,6 +115,17 @@ struct MCPServerFormTests {
         #expect(!MCPServerForm(name: "x", remote: true, url: "ftp://ejemplo.com").canSave)
         #expect(MCPServerForm(name: "x", remote: true, url: " https://ejemplo.com/mcp ").canSave)
         #expect(MCPServerForm(name: "x", remote: true, url: "http://localhost:8080/mcp").canSave)
+        #expect(!MCPServerForm(name: "x", remote: true, url: "https://").canSave)
+    }
+
+    @Test("Una URL con variables de entorno (que Claude expande) se puede guardar sin tocarla")
+    func urlWithEnvironmentVariables() {
+        let server = MCPServer(name: "api", config: ["type": "http", "url": "${API_BASE_URL:-https://api.ejemplo.com}/mcp"])
+        var form = MCPServerForm(server: server)
+        #expect(form.isValidURL && form.canSave)
+        #expect(form.apply(to: server) == server)
+        form.name = "api-nueva"
+        #expect(form.apply(to: server).config == server.config)
     }
 
     @Test("Nombre repetido")

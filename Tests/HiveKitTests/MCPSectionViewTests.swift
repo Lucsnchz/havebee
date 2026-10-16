@@ -19,6 +19,13 @@ private enum MCPViewRender {
         window.appearance = NSAppearance(named: .darkAqua)
         host.layoutSubtreeIfNeeded()
         try? await Task.sleep(nanoseconds: 500_000_000) // deja correr las tareas de carga (.task)
+        let rep = capture(host, name: name)
+        window.close()
+        return rep
+    }
+
+    /// La captura de una vista ya dibujada; con `HIVE_SNAPSHOTS` también la guarda en PNG.
+    static func capture(_ host: NSView, name: String) -> NSBitmapImageRep? {
         host.layoutSubtreeIfNeeded()
         guard let rep = Snapshot.bitmap(for: host) else { return nil }
         host.cacheDisplay(in: host.bounds, to: rep)
@@ -26,7 +33,6 @@ private enum MCPViewRender {
             try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
             try? png.write(to: URL(fileURLWithPath: dir).appendingPathComponent("\(name).png"))
         }
-        window.close()
         return rep
     }
 
@@ -119,6 +125,45 @@ struct MCPSectionViewTests {
         #expect(MCPConfig.load(dir: project.path).first { $0.name == "docs" }?.config["type"] == "sse")
     }
 
+    @Test("El entorno muestra lo que cargó y se edita sin comillas tipográficas ni rayas")
+    func environmentEditorIsPlain() async throws {
+        let world = TestWorld()
+        let store = world.makeStore()
+        let repo = GitRepo(name: "node")
+        await store.addProject(at: repo.path)
+        let project = try #require(store.repoProjects.first)
+        let env = "NODE_OPTIONS=--max-old-space-size=4096"
+        try MCPConfig.upsert(MCPServer(name: "node", config: ["command": "node", "env": ["NODE_OPTIONS": "--max-old-space-size=4096"]]),
+                             dir: project.path)
+        _ = NSApplication.shared
+        let host = NSHostingView(rootView: MCPEditorSheet(target: MCPEditorTarget(projectId: project.id, serverName: "node"))
+            .environment(store)
+            .frame(width: 480, height: 360)
+            .background(Color(nsColor: .windowBackgroundColor))
+            .environment(\.colorScheme, .dark))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 360), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.appearance = NSAppearance(named: .darkAqua)
+        window.contentView = host
+        defer { window.close() }
+
+        func textViews(_ view: NSView) -> [NSTextView] {
+            (view as? NSTextView).map { [$0] } ?? view.subviews.flatMap(textViews)
+        }
+        // La carga del servidor es asíncrona: esperamos a que el editor muestre el entorno.
+        let loaded = await waitUntil(timeout: 10) {
+            host.layoutSubtreeIfNeeded()
+            return textViews(host).contains { $0.string == env }
+        }
+        #expect(loaded)
+        let editor = try #require(textViews(host).first { $0.string == env })
+        #expect(!editor.isAutomaticQuoteSubstitutionEnabled)
+        #expect(!editor.isAutomaticDashSubstitutionEnabled)
+        #expect(!editor.isAutomaticTextReplacementEnabled)
+        #expect(!editor.isRichText)
+        #expect(MCPViewRender.isDrawn(MCPViewRender.capture(host, name: "mcp-editor-entorno")))
+    }
+
     // MARK: - Lo que lee la sección (fuera del hilo principal)
 
     @Test("Con el archivo roto: el error, sin sugeridos (agregar fallaría) y el archivo existe")
@@ -145,6 +190,16 @@ struct MCPSectionViewTests {
         #expect(data.fileExists)
         #expect(!data.suggestions.map(\.name).contains("laravel-boost"))
         #expect(data.suggestions.map(\.name).contains("context7"))
+    }
+
+    @Test("Sugeridos: abiertos sin MCP, cerrados con MCP, y no se cierran después de agregar uno desde ahí")
+    func suggestionsExpandedRule() {
+        #expect(MCPSectionData.suggestionsExpanded(saved: "", hasServers: false, addedFromSuggestions: false))
+        #expect(!MCPSectionData.suggestionsExpanded(saved: "", hasServers: true, addedFromSuggestions: false))
+        #expect(MCPSectionData.suggestionsExpanded(saved: "", hasServers: true, addedFromSuggestions: true))
+        // Lo que eligió el usuario manda.
+        #expect(MCPSectionData.suggestionsExpanded(saved: "open", hasServers: true, addedFromSuggestions: false))
+        #expect(!MCPSectionData.suggestionsExpanded(saved: "closed", hasServers: false, addedFromSuggestions: true))
     }
 
     @Test("Sin .mcp.json: sin servidores, sin error y con sugeridos")
