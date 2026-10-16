@@ -331,7 +331,8 @@ public struct HistoryStore: Sendable {
             return "\n## Aviso automático · \(when)\n\n\(entry.text)\n"
         case .marker:
             let marker = markerTitle(entry.text)
-            let code = marker.code.map { " (código `\($0)`)" } ?? ""
+            // Igual que la ayuda del panel: «… sigue en la memoria de la IA. Código del error: `rate_limit`.»
+            let code = marker.code.map { " Código del error: `\($0)`." } ?? ""
             return "\n---\n\n> **\(marker.title) · \(when)**: \(markerMeaning(entry.text))\(code)\n\n---\n"
         }
     }

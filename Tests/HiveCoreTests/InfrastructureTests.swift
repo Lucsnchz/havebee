@@ -205,8 +205,8 @@ struct HistoryStoreTests {
         #expect(byMarker["/compact"]?.contains("contexto limpio") == false)
         // El corte se lee con una frase clara y el código de la API queda como detalle.
         #expect(byMarker["⚠︎ Se cortó: llegaste al límite de uso"]?.contains("contexto limpio") == false)
-        #expect(byMarker["⚠︎ Se cortó: llegaste al límite de uso"]?.contains("(código `rate_limit`)") == true)
-        #expect(byMarker["/clear"]?.contains("código") == false)
+        #expect(byMarker["⚠︎ Se cortó: llegaste al límite de uso"]?.contains("en la memoria de la IA. Código del error: `rate_limit`.\n") == true)
+        #expect(byMarker["/clear"]?.contains("Código") == false)
         #expect(byMarker["Nueva conversación"]?.contains("contexto limpio") == true)
         #expect(markdown.contains("## Aviso automático · "))
         #expect(store.load(id).last?.role == .system)
