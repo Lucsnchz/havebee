@@ -130,6 +130,8 @@ struct HistoryPanel: View {
     private func timeline(_ shown: [HistoryEntry], found: [UUID]) -> some View {
         let items = HistoryTimelineItem.build(shown)
         let matchSet = Set(found)
+        // Una sola vez: `currentMatch` vuelve a buscar en todas las entradas y acá se usa en cada fila.
+        let current = found.isEmpty ? nil : found[min(matchIndex, found.count - 1)]
         return ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 14) {
@@ -139,7 +141,7 @@ struct HistoryPanel: View {
                             HistoryDaySeparator(label: label)
                         case .entry(let entry):
                             HistoryRow(entry: entry, agent: session.kind, query: matchSet.contains(entry.id) ? query : "",
-                                       isCurrentMatch: entry.id == currentMatch)
+                                       isCurrentMatch: entry.id == current)
                                 .id(entry.id)
                         }
                     }
