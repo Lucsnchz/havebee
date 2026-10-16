@@ -57,6 +57,7 @@ struct HiveCommands: Commands {
         let project = store.currentProjectId.flatMap(store.project)
         let selected = HiveNavigator.selectedSession(store)
         let runtime = selected.flatMap { store.runtimes[$0.session.id] }
+        let panels = HiveNavigator.sidePanels(selected)
         Button(target.map { "Nueva sesión de \($0.kind.defaultName)" } ?? "Nueva sesión") {
             HiveNavigator.newSession(store)
         }
@@ -96,10 +97,10 @@ struct HiveCommands: Commands {
         Divider()
         Toggle("Historial", isOn: panel("history"))
             .hiveShortcut(.history)
-            .disabled(selected == nil)
+            .disabled(!panels.history)
         Toggle("Cambios", isOn: panel("changes"))
             .hiveShortcut(.changes)
-            .disabled(selected == nil || selected?.project.isScratch == true)
+            .disabled(!panels.changes)
     }
 
     private func panel(_ name: String) -> Binding<Bool> {
@@ -339,6 +340,13 @@ enum HiveNavigator {
         return store.sessionContext(id)
     }
 
+    /// Qué paneles laterales tiene la sesión abierta, igual que los botones de su barra: Historial
+    /// en los agentes (una terminal no tiene conversación) y Cambios fuera de «Terminales».
+    static func sidePanels(_ selected: (project: Project, branch: Branch, session: Session)?) -> (history: Bool, changes: Bool) {
+        guard let selected else { return (false, false) }
+        return (selected.session.kind.isAgent, !selected.project.isScratch)
+    }
+
     /// Dónde y de qué agente es la sesión que crea ⌘T: el de la sesión abierta (o Claude), en la
     /// rama de la selección o en la rama por defecto del proyecto.
     static func newSessionTarget(_ store: AppStore) -> (branchId: UUID, kind: SessionKind)? {
@@ -466,8 +474,10 @@ enum HiveNavigator {
         let sender = NSMenuItem()
         sender.tag = action.rawValue
         let selector = #selector(NSResponder.performTextFinderAction(_:))
-        if NSApp.keyWindow?.firstResponder is HiveTerminalView {
-            NSApp.sendAction(selector, to: nil, from: sender)
+        // El foco en la terminal o en su barra de búsqueda: ahí mismo, sin moverlo (si ⌘G lo pasara
+        // a la terminal, lo que siguieras escribiendo le llegaría al agente).
+        if let terminal = terminal(containing: NSApp.keyWindow?.firstResponder) {
+            NSApp.sendAction(selector, to: terminal, from: sender)
             return
         }
         if let id = selectedSession(store)?.session.id, let terminal = store.runtimes[id]?.terminal,
@@ -477,5 +487,21 @@ enum HiveNavigator {
             return
         }
         if !NSApp.sendAction(selector, to: nil, from: sender) { NSSound.beep() }
+    }
+
+    /// La terminal que tiene el foco: la vista misma o algo adentro, como el campo de su barra de
+    /// búsqueda (ahí el foco lo tiene el editor de campo, cuyo delegado es el campo).
+    static func terminal(containing responder: NSResponder?) -> HiveTerminalView? {
+        var view: NSView?
+        if let editor = responder as? NSTextView, editor.isFieldEditor {
+            view = editor.delegate as? NSView
+        } else {
+            view = responder as? NSView
+        }
+        while let current = view {
+            if let terminal = current as? HiveTerminalView { return terminal }
+            view = current.superview
+        }
+        return nil
     }
 }
