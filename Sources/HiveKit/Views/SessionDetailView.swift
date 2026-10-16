@@ -127,7 +127,7 @@ private struct SessionPanelToggles: View {
     }
 }
 
-/// «Nueva sesión»: el clic crea otra del mismo agente en la rama; mantener apretado deja elegir.
+/// «Nueva sesión»: el clic crea otra del mismo agente en la rama; la flechita deja elegir otro.
 private struct NewSessionMenu: View {
     @Environment(AppStore.self) private var store
     let branchId: UUID
@@ -141,7 +141,7 @@ private struct NewSessionMenu: View {
         } primaryAction: {
             store.requestNewSession(branchId: branchId, kind: kind)
         }
-        .help("Nueva sesión de \(kind.label) en esta rama (mantené apretado para elegir otro agente)")
+        .help("Nueva sesión de \(kind.label) en esta rama (con la flechita elegís otro agente)")
     }
 }
 
