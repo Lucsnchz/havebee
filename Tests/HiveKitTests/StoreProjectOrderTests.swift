@@ -51,6 +51,17 @@ struct StoreProjectOrderTests {
         store.runtimes[session.id]?.unseen = true
         #expect(store.visibleProjects.map(\.project.name) == ["fijado", "viejo", "hoy", "Terminales"])
         #expect(store.visibleProjects[1].isActive)
+
+        // Lo que tiene aro (trabajando, permiso o sin ver) nunca queda entre los apagados.
+        store.runtimes[session.id]?.unseen = false
+        #expect(store.visibleProjects.map(\.project.name) == ["fijado", "hoy", "viejo", "Terminales"])
+        for status in [SessionStatus.working, .attention] {
+            store.runtimes[session.id]?.status = status
+            #expect(store.visibleProjects.first { $0.id == w.old.id }?.group == .active)
+        }
+        for item in store.visibleProjects where !item.isActive {
+            #expect(store.activity(of: item.project).ring == .none)
+        }
     }
 
     @Test("Al cambiar el día, lo de ayer pasa a los apagados")

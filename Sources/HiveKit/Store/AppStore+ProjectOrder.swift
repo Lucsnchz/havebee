@@ -8,8 +8,11 @@ extension AppStore {
     var projectOrdering: ProjectOrdering {
         // Se lee para que las vistas se vuelvan a dibujar cuando cambia el día.
         _ = dayStamp
-        // Prendida: corriendo, o con algo que mostrarte aunque el proceso ya haya terminado.
-        let live = runtimes.values.filter { $0.isRunning || $0.unseen || $0.status == .attention }.map(\.sessionId)
+        // Prendida: corriendo, o con algo que mostrarte (un aro) aunque el proceso ya haya terminado.
+        // Así un proyecto apagado nunca tiene aro.
+        let live = runtimes.values.filter { rt in
+            rt.isRunning || rt.unseen || rt.status == .attention || rt.status == .working
+        }.map(\.sessionId)
         return ProjectOrdering(now: environment.now(), calendar: environment.calendar, liveSessions: Set(live),
                                busyProjects: Set(commandRuns.filter(\.running).map(\.projectId)))
     }
