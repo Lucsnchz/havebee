@@ -12,7 +12,11 @@ extension AppStore {
         if TerminalInput.isLoneEscape(data) {
             // Esc rechaza el pedido de permiso o interrumpe al agente: ya no trabaja ni espera que
             // le des permiso, te toca a vos. No hace falta avisarte: lo acabás de hacer vos.
-            if rt.status == .attention || rt.status == .working {
+            if rt.backgroundAgents > 0 {
+                // Esc no frena a los subagentes ni al workflow en segundo plano: si rechazaste un permiso
+                // de uno de ellos, los demás siguen trabajando.
+                if rt.status == .attention { setStatus(rt, .working) }
+            } else if rt.status == .attention || rt.status == .working {
                 rt.workingSince = nil
                 setStatus(rt, .waiting, quiet: true)
             }
@@ -29,10 +33,12 @@ extension AppStore {
         for event in events {
             guard let rt = runtimes[event.sessionId], rt.isRunning, let ctx = sessionContext(event.sessionId) else { continue }
             rt.hooksSeen = true
+            rt.lastEventAt = environment.now()
             // Un thread de Codex distinto del de la sesión puede ser de un subagente: esos avisos se ignoran.
             let outcome = AgentEventInterpreter.interpret(event, status: rt.status, agentSessionId: ctx.session.agentSessionId,
                                                           isSubagentThread: environment.agents.isCodexSubagentThread,
-                                                          pendingPermission: rt.pendingPermission)
+                                                          pendingPermission: rt.pendingPermission,
+                                                          inBackground: rt.backgroundAgents > 0)
             if !outcome.history.isEmpty {
                 let place = ctx.project.isScratch ? ctx.project.name : "\(ctx.project.name) › \(ctx.branch.name)"
                 history.ensureMarkdown(session: ctx.session, place: place)
@@ -53,6 +59,7 @@ extension AppStore {
                 }
                 scheduleSave()
             }
+            if let agents = outcome.backgroundAgents { rt.backgroundAgents = agents }
             if let status = outcome.status { setStatus(rt, status, notify: outcome.notification) }
             if let request = outcome.permissionRequest, rt.status == .attention { rt.pendingPermission = request }
         }
@@ -111,10 +118,17 @@ extension AppStore {
         }
     }
 
-    /// Cada segundo, la regla del silencio para los agentes que figuran trabajando.
+    /// Cada segundo, la regla del silencio para los agentes que figuran trabajando. Con subagentes o un
+    /// workflow en segundo plano la terminal puede quedar quieta mucho rato: ahí vale `BackgroundRule`.
     func tick() {
         let now = environment.now()
         for rt in runtimes.values where rt.kind.isAgent && rt.status == .working {
+            if rt.backgroundAgents > 0 {
+                guard BackgroundRule.expired(now: now, lastEvent: rt.lastEventAt) else { continue }
+                rt.backgroundAgents = 0
+                setStatus(rt, .waiting, notify: BackgroundRule.expiredNotification)
+                continue
+            }
             let verdict = SilenceRule.evaluate(now: now, workingSince: rt.workingSince, lastOutput: rt.lastOutput, hooksSeen: rt.hooksSeen)
             if verdict.stopWorking { setStatus(rt, .waiting, notify: verdict.notify ? "Espera tu respuesta." : nil) }
         }
