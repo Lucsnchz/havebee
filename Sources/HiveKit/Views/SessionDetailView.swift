@@ -10,6 +10,13 @@ struct SessionDetailView: View {
     /// Panel lateral abierto: "changes", "history" o "" (ninguno).
     @AppStorage("sessionSidePanel") private var sidePanel = ""
     @AppStorage(TerminalPreferences.themeKey) private var terminalTheme = TerminalPreferences.Theme.system.rawValue
+    /// «Abrir sitio» y el menú del remoto se leen acá, antes de ponerlos en la barra: un botón que
+    /// todavía no sabe si va (o que no va) dejaba una cápsula de vidrio vacía en la barra de macOS.
+    /// Se guardan con la carpeta y el repo para los que se leyeron (al cambiar de sesión no se
+    /// muestra el de la anterior).
+    @State private var site: Loaded<String>?
+    @State private var remote: Loaded<RemoteInfo>?
+    var usage: UsageMonitor = .shared
 
     var body: some View {
         if let ctx = store.sessionContext(sessionId), let rt = store.runtimes[sessionId] {
@@ -65,18 +72,20 @@ struct SessionDetailView: View {
                 }
                 ToolbarItemGroup {
                     StatusPill(status: rt.status, kind: ctx.session.kind)
-                    // «ctx 72%» en Claude y Codex (nada mientras no informen).
-                    if ctx.session.kind == .claude || ctx.session.kind == .codex {
-                        UsageBadge(sessionId: sessionId)
+                    // Cuánto contexto ocupa, en Claude y Codex (nada mientras no informen).
+                    if ctx.session.kind == .claude || ctx.session.kind == .codex, usage.sessions[sessionId]?.contextPercent != nil {
+                        UsageBadge(sessionId: sessionId, monitor: usage)
                     }
-                    SessionPanelToggles(sidePanel: $sidePanel,
-                                        showsChanges: !ctx.project.isScratch,
-                                        changes: store.gitStatus(for: ctx.branch, in: ctx.project)?.changes.count ?? 0)
+                    SessionPanelToggles(sidePanel: $sidePanel, showsChanges: !ctx.project.isScratch)
                     NewSessionMenu(branchId: ctx.branch.id, kind: ctx.session.kind)
                     if !ctx.project.isScratch {
                         SessionCommandsMenu(project: ctx.project, branch: ctx.branch)
-                        OpenSiteButton(project: ctx.project, branch: ctx.branch)
-                        RemoteActionsMenu(project: ctx.project, branch: ctx.branch)
+                        if let url = site?.value(for: ctx.project.directory(for: ctx.branch)) {
+                            OpenSiteButton(project: ctx.project, branch: ctx.branch, url: url)
+                        }
+                        if let info = remote?.value(for: ctx.project.path) {
+                            RemoteActionsMenu(project: ctx.project, branch: ctx.branch, info: info)
+                        }
                     }
                     Button {
                         rt.terminal?.openFindBar()
@@ -90,6 +99,18 @@ struct SessionDetailView: View {
             }
             .task(id: sessionId) {
                 store.activate(sessionId)
+                usage.attach(store)
+            }
+            .task(id: ctx.project.isScratch ? "" : ctx.project.directory(for: ctx.branch)) {
+                guard !ctx.project.isScratch else { return }
+                let dir = ctx.project.directory(for: ctx.branch)
+                let url = await OpenSiteButton.loadURL(project: ctx.project, branch: ctx.branch, home: store.environment.home)
+                site = Loaded(key: dir, value: url)
+            }
+            .task(id: ctx.project.isScratch ? "" : ctx.project.path) {
+                guard !ctx.project.isScratch else { return }
+                let path = ctx.project.path
+                remote = Loaded(key: path, value: await RemoteInfo.load(git: store.git, path: path))
             }
             .task(id: store.focusTerminalRequest) {
                 guard store.focusTerminalRequest == sessionId else { return }
@@ -148,11 +169,20 @@ struct LaunchingIndicator: View {
 
 // MARK: - Barra de herramientas
 
-/// Historial y Cambios: dos botones que se excluyen. Tocar el activo cierra el panel.
+/// Algo que se leyó en segundo plano para una carpeta o un repo (`key`).
+struct Loaded<Value: Sendable>: Sendable {
+    let key: String
+    let value: Value?
+
+    /// El valor, si se leyó para esta clave.
+    func value(for key: String) -> Value? { self.key == key ? value : nil }
+}
+
+/// Historial y Cambios: dos botones que se excluyen. Tocar el activo cierra el panel. La cantidad
+/// de cambios no va acá: ya está en la barra de abajo («2 cambios»), que abre el mismo panel.
 private struct SessionPanelToggles: View {
     @Binding var sidePanel: String
     let showsChanges: Bool
-    let changes: Int
 
     var body: some View {
         ControlGroup {
@@ -162,15 +192,9 @@ private struct SessionPanelToggles: View {
             .help("Todo lo que se habló en esta sesión, también lo anterior a cada /clear")
             if showsChanges {
                 Toggle(isOn: panel("changes")) {
-                    if changes > 0 {
-                        Label("\(changes)", systemImage: "plusminus")
-                            .labelStyle(.titleAndIcon)
-                    } else {
-                        Label("Cambios", systemImage: "plusminus")
-                    }
+                    Label("Cambios", systemImage: GitCounters.changesSymbol)
                 }
-                .help(changes == 0 ? "Cambios de git de esta rama" : "Cambios de git de esta rama (\(SessionStatusBar.changesLabel(changes)))")
-                .accessibilityLabel("Cambios, \(SessionStatusBar.changesLabel(changes))")
+                .help("Cambios de git de esta rama")
             }
         }
     }
@@ -310,8 +334,8 @@ private struct ExitedBar: View {
         HStack(spacing: 10) {
             if missing {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(Theme.attention)
-                Text("No se encontró \(kind.label)")
+                    .foregroundStyle(Theme.danger)
+                Text("No encuentro \(kind.label)")
                 Spacer()
                 Button(copied ? "Copiado" : "Copiar comando de instalación") {
                     ExternalApps.copyToPasteboard(kind.installHint)
@@ -376,7 +400,7 @@ private struct MovedHeadBanner: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(Theme.attention)
+                .foregroundStyle(Theme.danger)
             Text("La carpeta principal ahora está en «\(store.mainHeads[project.id] ?? "")»: esta sesión está viendo esa rama, no «\(branch.name)».")
                 .font(.callout)
             Spacer()
@@ -384,7 +408,7 @@ private struct MovedHeadBanner: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
-        .background(Theme.attention.opacity(0.12))
+        .background(Theme.danger.opacity(0.1))
     }
 }
 
