@@ -5,7 +5,7 @@ import HiveCore
 /// revisión lenta devuelve lo que había al empezar (como pasa cuando git tarda de verdad).
 final class DelayedGit: GitClient, @unchecked Sendable {
     enum Operation: Hashable {
-        case topLevel, currentBranch, worktrees, status
+        case topLevel, currentBranch, worktrees, status, checkout
     }
 
     private let base = GitCLI()
@@ -60,5 +60,6 @@ final class DelayedGit: GitClient, @unchecked Sendable {
         self.base.addWorktree(at: path, branch: branch, newBranch: newBranch, base: base, in: dir)
     }
     func removeWorktree(_ path: String, force: Bool, in dir: String) -> CommandResult { base.removeWorktree(path, force: force, in: dir) }
-    func checkout(_ branch: String, in dir: String) -> CommandResult { base.checkout(branch, in: dir) }
+    /// Hace el checkout y recién después espera: así git ya cambió de rama mientras Hive todavía no lo sabe.
+    func checkout(_ branch: String, in dir: String) -> CommandResult { slow(.checkout) { base.checkout(branch, in: dir) } }
 }
