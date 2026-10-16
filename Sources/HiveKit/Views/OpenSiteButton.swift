@@ -51,11 +51,14 @@ struct OpenSiteButton: View {
     }
 }
 
-/// Abre una página web en el navegador.
+/// Abre una página web en el navegador. Solo http y https: nunca un archivo, una app ni otro esquema.
 enum BrowserLink {
     static func url(_ text: String) -> URL? {
+        guard SiteURL.isWebURL(text) else { return nil }
         // Los corchetes de las URLs de MR de GitLab no son válidos sin escapar en todas las versiones de URL.
-        URL(string: text) ?? text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed).flatMap(URL.init(string:))
+        let link = URL(string: text) ?? text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed).flatMap(URL.init(string:))
+        guard let scheme = link?.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return nil }
+        return link
     }
 
     static func open(_ text: String) {

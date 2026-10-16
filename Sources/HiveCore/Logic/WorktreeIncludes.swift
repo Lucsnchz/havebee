@@ -50,7 +50,9 @@ public enum WorktreeIncludes {
 
         /// Recorre la carpeta sin seguir enlaces y con un tope, para no tardar en repos enormes. Va por
         /// niveles: si se llega al tope en una carpeta gigante (storage, .next…), los archivos de arriba,
-        /// como el .env de la raíz, ya se encontraron.
+        /// como el .env de la raíz, ya se encontraron. No entra en otro repo ni en otro worktree (una
+        /// subcarpeta con su propio .git, como los de Claude Code en .claude/worktrees o un submódulo):
+        /// sus .env no son de este proyecto.
         static func liveFiles(root: String, skipping: Set<String>, limit: Int = 50_000) -> [String] {
             let keys: [URLResourceKey] = [.isDirectoryKey, .isRegularFileKey]
             var queue: [(url: URL, relative: String)] = [(URL(fileURLWithPath: root, isDirectory: true), "")]
@@ -68,7 +70,8 @@ public enum WorktreeIncludes {
                     let relative = folder.relative.isEmpty ? name : folder.relative + "/" + name
                     let values = try? url.resourceValues(forKeys: Set(keys))
                     if values?.isDirectory == true {
-                        if !skipping.contains(name) { queue.append((url, relative)) }
+                        let nestedRepo = FileManager.default.fileExists(atPath: url.appendingPathComponent(".git").path)
+                        if !skipping.contains(name) && !nestedRepo { queue.append((url, relative)) }
                     } else if values?.isRegularFile == true {
                         result.append(relative)
                     }

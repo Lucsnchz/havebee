@@ -189,7 +189,8 @@ public enum BranchPlanner {
             let local = git.localBranches(project.path)
             guard !local.contains(name) else { return .failure(.alreadyExists(name)) }
             let base = request.base.isEmpty ? "HEAD" : request.base
-            if local.isEmpty && base == "HEAD" { return .failure(.noCommits) }
+            // Sin ramas locales puede ser un repo sin commits… o un HEAD desacoplado, que sí sirve de base.
+            if local.isEmpty && base == "HEAD" && git.status(project.path)?.isUnborn == true { return .failure(.noCommits) }
             // Desde una rama remota (origin/main) la rama nueva no la sigue: si no, `git push` iría a main.
             let track: Bool? = base.contains("/") && git.remoteBranches(project.path).contains(base) ? false : nil
             switch request.mode {

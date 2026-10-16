@@ -40,6 +40,7 @@ public protocol GitClient: Sendable {
     /// URL del remoto principal (origin, o el primero que haya).
     func remoteURL(_ dir: String) -> String?
     func remotes(_ dir: String) -> [String]
+    /// Commit vacío (el primero de un repo nuevo, por ejemplo): no incluye lo que esté preparado.
     func commitAllowEmpty(message: String, in dir: String) -> CommandResult
     /// Como `addWorktree`, eligiendo el seguimiento de la rama nueva: true `--track`, false `--no-track`, nil lo que decida git.
     func addWorktree(at path: String, branch: String, newBranch: Bool, base: String?, track: Bool?, in dir: String) -> CommandResult
@@ -229,7 +230,13 @@ public struct GitCLI: GitClient {
         // Si la carpeta ya no existe (se borró por fuera), alcanza con olvidarla.
         if !FileManager.default.fileExists(atPath: path) {
             let pruned = pruneWorktrees(dir)
-            return pruned.ok ? CommandResult(status: 0) : pruned
+            guard pruned.ok else { return pruned }
+            // prune no toca los bloqueados: el lock es justamente para un disco que no está conectado.
+            guard worktrees(dir).contains(where: { $0.isLocked && samePath($0.path, path) }) else { return CommandResult(status: 0) }
+            guard force else {
+                return CommandResult(status: 1, stderr: "La carpeta del worktree no está (¿un disco desconectado?) y está bloqueado con git worktree lock.")
+            }
+            return run(["worktree", "remove", "-f", "-f", path], in: dir)
         }
         var flags: [String] = []
         if force {
@@ -324,7 +331,8 @@ public struct GitCLI: GitClient {
     }
 
     public func commitAllowEmpty(message: String, in dir: String) -> CommandResult {
-        run(["commit", "--quiet", "--allow-empty", "-m", message], in: dir)
+        // --only sin rutas: el commit sale vacío aunque haya archivos preparados, que siguen preparados.
+        run(["commit", "--quiet", "--allow-empty", "--only", "-m", message], in: dir)
     }
 
     public func pruneWorktrees(_ dir: String) -> CommandResult {

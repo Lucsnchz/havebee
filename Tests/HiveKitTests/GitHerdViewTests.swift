@@ -86,6 +86,10 @@ struct GitHerdViewTests {
         let url = try #require(remote.newMergeRequestURL(source: "feature/x", target: "main"))
         #expect(BrowserLink.url(url) != nil)
         #expect(BrowserLink.url("https://ecommerce.test")?.host == "ecommerce.test")
+        // Nunca un archivo (un .command se ejecutaría), una app ni otro esquema.
+        #expect(BrowserLink.url("file:///Users/x/repo/instalar.command") == nil)
+        #expect(BrowserLink.url("x-apple.systempreferences:com.apple.preference.security") == nil)
+        #expect(BrowserLink.url("javascript:alert(1)") == nil)
     }
 
     @Test("Nueva rama con Herd: carpeta hermana, copia, preparación y chips de la primera sesión")

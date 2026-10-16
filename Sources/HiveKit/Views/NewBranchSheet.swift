@@ -398,8 +398,8 @@ struct NewBranchSheet: View {
         let localSet = Set(localBranches)
         let hive = inHive
         let checkName = isNew && !candidate.isEmpty
-        let hasCert = mainHasCert
         let currentLocation = location
+        let hasCert = ProjectScripts.securesWorktree(location: currentLocation, herdServesParent: herdServesParent, mainHasCert: mainHasCert)
         let derived = await Task.detached(priority: .userInitiated) { () -> (error: String?, sibling: String, nested: String, setup: ProjectScripts.Script?) in
             var error: String?
             if checkName {
