@@ -42,10 +42,12 @@ struct ReplySenderTests {
     @Test("Bytes con y sin pegado entre corchetes")
     func payload() {
         let text = "seguí con los tests\ny avisame"
-        #expect(ReplySender.payload(text, bracketed: false) == Array(text.utf8))
         #expect(ReplySender.payload(text, bracketed: true)
             == Array("\u{1B}[200~".utf8) + Array(text.utf8) + Array("\u{1B}[201~".utf8))
         #expect(!ReplySender.payload("hola", bracketed: true).contains(13))
+        // Sin pegado entre corchetes, un salto de línea mandaría la primera línea sola: va un espacio.
+        #expect(ReplySender.payload(text, bracketed: false) == Array("seguí con los tests y avisame".utf8))
+        #expect(!ReplySender.payload(text, bracketed: false).contains(10))
     }
 
     @Test("Sin caracteres de control: un ESC no cierra el pegado antes de tiempo")
@@ -54,7 +56,9 @@ struct ReplySenderTests {
         #expect(ReplySender.payload("hola\u{1B}[201~rm -rf", bracketed: true)
             == ReplySender.pasteStart + Array("hola[201~rm -rf".utf8) + ReplySender.pasteEnd)
         // Ctrl-C, campana y retorno de carro afuera; saltos de línea, tabulaciones y tildes quedan.
-        #expect(ReplySender.payload("a\r\nb\tc\u{3}\u{7}ñ", bracketed: false) == Array("a\nb\tcñ".utf8))
+        #expect(ReplySender.payload("a\r\nb\tc\u{3}\u{7}ñ", bracketed: true)
+            == ReplySender.pasteStart + Array("a\nb\tcñ".utf8) + ReplySender.pasteEnd)
+        #expect(ReplySender.payload("a\r\nb\tc\u{3}\u{7}ñ", bracketed: false) == Array("a b\tcñ".utf8))
         #expect(!ReplySender.payload("uno\rdos", bracketed: false).contains(13))
     }
 
@@ -95,6 +99,26 @@ struct ReplySenderTests {
         #expect(f.store.selection == .session(f.session.id))
         #expect(f.store.alert?.title == "Copié tu respuesta")
         #expect(f.store.runtimes[f.session.id]?.status == .dormant)
+    }
+
+    @Test("Si la sesión pide permiso no escribe nada: la abre y deja el texto en el portapapeles")
+    func holdsWhenAskingPermission() async throws {
+        let f = try ReplyFixture()
+        let (_, sent) = try f.launch()
+        let rt = try #require(f.store.runtimes[f.session.id])
+        rt.status = .attention
+        var activated = false
+        let outcome = ReplySender.send("no, pará", sessionId: f.session.id, store: f.store, pasteboard: f.pasteboard,
+                                       submitDelay: 0, activateApp: { activated = true })
+        #expect(outcome == .heldForPermission)
+        // Ni el texto ni el Enter (que aprobaría la opción marcada).
+        try await Task.sleep(nanoseconds: 100_000_000)
+        #expect(sent().isEmpty)
+        #expect(rt.status == .attention)
+        #expect(activated)
+        #expect(f.pasteboard.string(forType: .string) == "no, pará")
+        #expect(f.store.selection == .session(f.session.id))
+        #expect(f.store.alert?.title == "La sesión está pidiendo permiso")
     }
 
     @Test("Una sesión que ya no existe no hace nada")
