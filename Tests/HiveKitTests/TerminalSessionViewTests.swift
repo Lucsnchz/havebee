@@ -110,11 +110,11 @@ struct TerminalSessionViewTests {
         let folder = URL(fileURLWithPath: NSTemporaryDirectory())
         for dark in [true, false] {
             let suffix = dark ? "oscuro" : "claro"
-            await check(SettingsGeneralPane(dataFolder: folder), size: CGSize(width: 540, height: 420), name: "ts-ajustes-general-\(suffix)", dark: dark)
+            await check(SettingsGeneralPane(dataFolder: folder), size: CGSize(width: 540, height: 540), name: "ts-ajustes-general-\(suffix)", dark: dark)
             await check(SettingsTerminalPane(), size: CGSize(width: 540, height: 560), name: "ts-ajustes-terminal-\(suffix)", dark: dark, settle: 0.8)
             await check(SettingsNotificationsPane(), size: CGSize(width: 540, height: 260), name: "ts-ajustes-avisos-\(suffix)", dark: dark)
         }
-        await check(SettingsView(dataFolder: folder), size: CGSize(width: 540, height: 480), name: "ts-ajustes")
+        await check(SettingsView(dataFolder: folder), size: CGSize(width: 540, height: 600), name: "ts-ajustes")
     }
 
     @Test("Sesión: barra de estado con la rama, los cambios y los comandos; nada encima de la terminal")

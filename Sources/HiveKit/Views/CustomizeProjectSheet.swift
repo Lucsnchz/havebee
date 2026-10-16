@@ -118,7 +118,7 @@ struct CustomizeProjectSheet: View {
                                         .scaledToFit()
                                         .padding(6)
                                         .frame(width: 52, height: 52)
-                                        .background(Color(white: 0.97), in: RoundedRectangle(cornerRadius: 10))
+                                        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
                                         .overlay {
                                             RoundedRectangle(cornerRadius: 10)
                                                 .strokeBorder(path == form.imagePath ? Theme.accent : .clear, lineWidth: 2.5)
@@ -227,6 +227,7 @@ struct CustomizeProjectSheet: View {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.image]
         panel.allowsMultipleSelection = false
+        if let project = store.project(projectId) { panel.directoryURL = URL(fileURLWithPath: project.path) }
         panel.message = "Elegí una imagen para el ícono del proyecto"
         guard panel.runModal() == .OK, let url = panel.url, let path = store.importIcon(from: url) else { return }
         form.imagePath = path

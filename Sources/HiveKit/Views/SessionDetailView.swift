@@ -35,7 +35,13 @@ struct SessionDetailView: View {
                         }
                         TerminalContainer(terminal: rt.terminal)
                             .background(terminalBackground)
+                            .disabled(rt.isSwitchingAgent)
                             .overlay {
+                                if rt.isSwitchingAgent {
+                                    ProgressView("Guardando contexto y cambiando de IA…")
+                                        .padding(20)
+                                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                                }
                                 // Mientras se arma el lanzamiento (búsquedas en disco), algo que diga que viene.
                                 if rt.isLaunching && rt.terminal == nil {
                                     LaunchingIndicator(kind: ctx.session.kind)
@@ -67,13 +73,17 @@ struct SessionDetailView: View {
                 ToolbarItem(placement: .navigation) {
                     HStack(spacing: 6) {
                         ProjectTile(project: ctx.project, size: 18)
-                        AgentLogo(kind: ctx.session.kind, size: 16)
+                        if ctx.session.kind.reportsConversation {
+                            SessionAgentMenu(session: ctx.session, runtime: rt, active: active)
+                        } else {
+                            AgentLogo(kind: ctx.session.kind, size: 16)
+                        }
                     }
                 }
                 ToolbarItemGroup {
                     StatusPill(status: rt.status, unseen: rt.unseen, kind: ctx.session.kind, background: rt.backgroundAgents > 0)
                     // Cuánto contexto ocupa, en Claude y Codex (nada mientras no informen).
-                    if ctx.session.kind == .claude || ctx.session.kind == .codex, usage.sessions[sessionId]?.contextPercent != nil {
+                    if usage.sessions[sessionId]?.agent == ctx.session.kind, usage.sessions[sessionId]?.contextPercent != nil {
                         UsageBadge(sessionId: sessionId, monitor: usage)
                     }
                     SessionPanelToggles(sidePanel: $sidePanel, showsChanges: !ctx.project.isScratch)
@@ -101,6 +111,7 @@ struct SessionDetailView: View {
                 store.activate(sessionId)
                 usage.attach(store)
             }
+            .onChange(of: ctx.session.kind) { usage.refresh() }
             .task(id: ctx.project.isScratch ? "" : ctx.project.directory(for: ctx.branch)) {
                 guard !ctx.project.isScratch else { return }
                 let dir = ctx.project.directory(for: ctx.branch)
@@ -145,6 +156,43 @@ struct SessionDetailView: View {
     /// El mismo fondo que la terminal (oscuro o claro según el ajuste y el sistema).
     private var terminalBackground: Color {
         Color(nsColor: terminalIsLight ? TerminalPalette.light.background : TerminalPalette.dark.background)
+    }
+}
+
+/// Cambia la IA de esta misma conversación; «Nueva sesión» sigue creando una conversación aparte.
+struct SessionAgentMenu: View {
+    @Environment(AppStore.self) private var store
+    let session: Session
+    let runtime: SessionRuntime
+    let active: Bool
+
+    var body: some View {
+        let availability = AgentAvailability.shared(for: store)
+        Menu {
+            Section("Continuar esta conversación con") {
+                ForEach(SessionKind.allCases.filter { $0.reportsConversation && $0 != session.kind }) { kind in
+                    Button {
+                        store.requestSwitchAgent(session.id, to: kind)
+                    } label: {
+                        Label {
+                            Text(availability.isInstalled(kind) ? kind.label : "\(kind.label) (no instalado)")
+                        } icon: {
+                            Image(nsImage: AgentLogo.menuImage(kind))
+                        }
+                    }
+                }
+            }
+            Text("Conserva el historial de esta sesión")
+        } label: {
+            Label {
+                Text(session.kind.defaultName)
+            } icon: {
+                AgentLogo(kind: session.kind, size: 16)
+            }
+        }
+        .labelStyle(.titleAndIcon)
+        .disabled(!active || runtime.isLaunching || runtime.isSwitchingAgent)
+        .help("Cambiar de IA y continuar con el historial de esta conversación")
     }
 }
 

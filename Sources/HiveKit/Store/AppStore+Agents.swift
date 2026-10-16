@@ -6,7 +6,7 @@ extension AppStore {
     // MARK: - Estado de los agentes
 
     func userInput(_ id: UUID, _ data: ArraySlice<UInt8>) {
-        guard let rt = runtimes[id] else { return }
+        guard let rt = runtimes[id], !rt.isSwitchingAgent else { return }
         if rt.unseen { markSeen(rt) }
         guard rt.kind.isAgent else { return }
         if TerminalInput.isLoneEscape(data) {
@@ -37,6 +37,10 @@ extension AppStore {
     func handle(_ events: [HiveEvent]) {
         for event in events {
             guard let rt = runtimes[event.sessionId], rt.isRunning, let ctx = sessionContext(event.sessionId) else { continue }
+            guard !rt.isSwitchingAgent, event.source == ctx.session.kind.rawValue,
+                  event.launchId.map({ $0 == rt.launchId }) ?? (ctx.session.handoffFrom == nil) else { continue }
+            // El título automático no cuenta como actividad ni como un hook del agente principal.
+            guard !CodexTitleGeneration.isCompletion(event) else { continue }
             rt.hooksSeen = true
             rt.lastEventAt = environment.now()
             // Un thread de Codex distinto del de la sesión puede ser de un subagente: esos avisos se ignoran.
@@ -48,7 +52,7 @@ extension AppStore {
                 let place = ctx.project.isScratch ? ctx.project.name : "\(ctx.project.name) › \(ctx.branch.name)"
                 history.ensureMarkdown(session: ctx.session, place: place)
                 for entry in outcome.history {
-                    history.append(HistoryEntry(date: environment.now(), role: entry.role, text: entry.text),
+                    history.append(HistoryEntry(date: environment.now(), role: entry.role, text: entry.text, agent: ctx.session.kind),
                                    sessionId: ctx.session.id, agentName: ctx.session.kind.label)
                 }
                 historyVersions[ctx.session.id, default: 0] += 1

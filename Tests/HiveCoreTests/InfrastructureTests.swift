@@ -415,17 +415,20 @@ struct EventBridgeTests {
         defer { withExtendedLifetime(installed) {} }
         let (dir, paths) = (installed.dir, installed.paths)
         let id = UUID()
-        #expect(runScript(paths, args: ["claude", "Stop"], stdin: #"{"last_assistant_message": "Listo"}"#, sessionId: id).ok)
+        let launchId = UUID()
+        let generation = ["HIVE_LAUNCH_ID": launchId.uuidString]
+        #expect(runScript(paths, args: ["claude", "Stop"], stdin: #"{"last_assistant_message": "Listo"}"#, sessionId: id, extra: generation).ok)
         // Codex: el notify original se sigue llamando con el mismo payload.
         let chained = dir.url.appendingPathComponent("encadenado.txt").path
         let payload = #"{"type":"agent-turn-complete","thread-id":"t-1"}"#
-        #expect(runScript(paths, args: ["codex", "/bin/sh", "-c", "printf '%s' \"$1\" > \(shellQuote(chained))", "sh", payload], sessionId: id).ok)
+        #expect(runScript(paths, args: ["codex", "/bin/sh", "-c", "printf '%s' \"$1\" > \(shellQuote(chained))", "sh", payload], sessionId: id, extra: generation).ok)
         #expect(runScript(paths, args: ["desconocido", "x"], sessionId: id).ok)
 
         let received = Locked<[HiveEvent]>([])
         let watcher = EventWatcher(directory: paths.eventsDir) { events in received.mutate { $0 += events } }
         let events = watcher.drain()
         #expect(events.map(\.name) == ["Stop", "notify"])
+        #expect(events.map(\.launchId) == [launchId, launchId])
         #expect(events[0].payload["last_assistant_message"]?.string == "Listo")
         #expect(events[1].payload["thread-id"]?.string == "t-1")
         #expect(received.value.count == 2)

@@ -10,6 +10,7 @@ public struct HiveApplication: App {
     @NSApplicationDelegateAdaptor(HiveAppDelegate.self) private var appDelegate
     @State private var store = AppStore.shared
     @AppStorage("layout") private var layout: HiveLayout = .tree
+    @AppStorage(AppAppearance.key) private var appearance: AppAppearance = .system
 
     public init() {}
 
@@ -20,6 +21,8 @@ public struct HiveApplication: App {
                 .frame(minWidth: 880, minHeight: 540)
                 // Con la vista compacta, barra de herramientas baja y sin título (las pestañas ya lo dicen).
                 .background(WindowChrome(compact: layout == .compact))
+                .preferredColorScheme(appearance.colorScheme)
+                .onChange(of: appearance, initial: true) { NSApp.appearance = appearance.native }
         }
         .defaultSize(width: 1280, height: 800)
         .commands {
@@ -28,6 +31,8 @@ public struct HiveApplication: App {
 
         Settings {
             SettingsView(dataFolder: store.environment.paths.root, agents: store.environment.agents)
+                .preferredColorScheme(appearance.colorScheme)
+                .onChange(of: appearance, initial: true) { NSApp.appearance = appearance.native }
         }
     }
 }
@@ -38,6 +43,7 @@ final class HiveAppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillFinishLaunching(_ notification: Notification) {
         // Hive tiene una sola ventana: sin pestañas de ventana (y sin «Nueva pestaña» en ⌘T).
         NSWindow.allowsAutomaticWindowTabbing = false
+        NSApp.appearance = AppAppearance.read().native
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {

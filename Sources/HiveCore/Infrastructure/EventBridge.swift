@@ -48,12 +48,12 @@ public enum EventBridge {
     tmp=$(mktemp "$dir/tmp.XXXXXX") || exit 0
     case "$src" in
       claude|grok)
-        { printf '%s\t%s\t%s\n' "$sid" "$src" "$1"; cat; } > "$tmp"
+        { printf '%s\t%s\t%s\t%s\n' "$sid" "$src" "$1" "$HIVE_LAUNCH_ID"; cat; } > "$tmp"
         ;;
       codex)
         payload=""
         for a in "$@"; do payload="$a"; done
-        { printf '%s\t%s\t%s\n' "$sid" codex notify; printf '%s' "$payload"; } > "$tmp"
+        { printf '%s\t%s\t%s\t%s\n' "$sid" codex notify "$HIVE_LAUNCH_ID"; printf '%s' "$payload"; } > "$tmp"
         # Si el usuario ya tenía un notify configurado, lo seguimos llamando igual que antes.
         if [ $# -gt 1 ]; then ( "$@" >/dev/null 2>&1 & ); fi
         ;;

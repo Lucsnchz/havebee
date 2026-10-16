@@ -13,12 +13,15 @@ public struct HistoryEntry: Codable, Identifiable, Hashable, Sendable {
     public let date: Date
     public let role: Role
     public let text: String
+    /// Quién escribió el mensaje; opcional para leer historiales anteriores al cambio de IA.
+    public var agent: SessionKind?
 
-    public init(id: UUID = UUID(), date: Date, role: Role, text: String) {
+    public init(id: UUID = UUID(), date: Date, role: Role, text: String, agent: SessionKind? = nil) {
         self.id = id
         self.date = date
         self.role = role
         self.text = text
+        self.agent = agent
     }
 }
 
@@ -63,7 +66,12 @@ public struct HistoryStore: Sendable {
 
     public func load(_ sessionId: UUID) -> [HistoryEntry] {
         guard let text = try? String(contentsOf: jsonlURL(sessionId), encoding: .utf8) else { return [] }
-        return text.split(separator: "\n").compactMap { try? Self.decoder.decode(HistoryEntry.self, from: Data($0.utf8)) }
+        let segments = transcriptSegments(sessionId).sorted { $0.since < $1.since }
+        return text.split(separator: "\n").compactMap {
+            guard var entry = try? Self.decoder.decode(HistoryEntry.self, from: Data($0.utf8)) else { return nil }
+            if entry.agent == nil { entry.agent = segments.last { $0.since <= entry.date }?.agent ?? segments.first?.agent }
+            return entry
+        }
     }
 
     /// La copia de Hive de los transcripts completos (textos intermedios incluidos).
@@ -192,7 +200,7 @@ public struct HistoryStore: Sendable {
         var seen = known
         for message in messages where seen.insert(message.conversationId + "|" + message.key).inserted {
             let archived = ArchivedMessage(conversationId: message.conversationId, key: message.key, role: message.role,
-                                           text: message.text, date: message.date ?? now)
+                                           text: message.text, date: message.date ?? now, agent: agent)
             guard let line = try? Self.encoder.encode(archived) else { continue }
             data.append(line)
             data.append(contentsOf: Array("\n".utf8))
@@ -217,10 +225,14 @@ public struct HistoryStore: Sendable {
     public func fullTimeline(_ sessionId: UUID, agent: SessionKind, live: [URL] = []) -> [HistoryEntry] {
         var full = loadArchived(sessionId)
         var seen = Set(full.map { $0.conversationId + "|" + $0.key })
-        for url in live {
-            for message in TranscriptReader.read(url, agent: agent) where seen.insert(message.conversationId + "|" + message.key).inserted {
+        let segments = transcriptSegments(sessionId)
+        var sources = segments.map { (url: URL(fileURLWithPath: $0.path), agent: $0.agent) }
+        let knownPaths = Set(sources.map { $0.url.standardizedFileURL })
+        sources += live.filter { !knownPaths.contains($0.standardizedFileURL) }.map { (url: $0, agent: agent) }
+        for source in sources {
+            for message in TranscriptReader.read(source.url, agent: source.agent) where seen.insert(message.conversationId + "|" + message.key).inserted {
                 full.append(ArchivedMessage(conversationId: message.conversationId, key: message.key, role: message.role,
-                                            text: message.text, date: message.date ?? .distantPast))
+                                            text: message.text, date: message.date ?? .distantPast, agent: source.agent))
             }
         }
         return HistoryExport.timeline(log: load(sessionId), full: full.map(\.entry))
@@ -228,7 +240,12 @@ public struct HistoryStore: Sendable {
 
     private func loadArchived(_ sessionId: UUID) -> [ArchivedMessage] {
         guard let text = try? String(contentsOf: fullURL(sessionId), encoding: .utf8) else { return [] }
-        return text.split(separator: "\n").compactMap { try? Self.decoder.decode(ArchivedMessage.self, from: Data($0.utf8)) }
+        let segments = transcriptSegments(sessionId)
+        return text.split(separator: "\n").compactMap {
+            guard var message = try? Self.decoder.decode(ArchivedMessage.self, from: Data($0.utf8)) else { return nil }
+            if message.agent == nil { message.agent = segments.first { $0.conversationId == message.conversationId }?.agent }
+            return message
+        }
     }
 
     /// Una línea de history/<id>.full.jsonl.
@@ -238,9 +255,10 @@ public struct HistoryStore: Sendable {
         let role: HistoryEntry.Role
         let text: String
         let date: Date
+        var agent: SessionKind?
 
         var entry: HistoryEntry {
-            HistoryEntry(id: HistoryStore.stableId(conversationId + "|" + key), date: date, role: role, text: text)
+            HistoryEntry(id: HistoryStore.stableId(conversationId + "|" + key), date: date, role: role, text: text, agent: agent)
         }
     }
 
@@ -265,10 +283,20 @@ public struct HistoryStore: Sendable {
         private let lock = NSLock()
         private var deleted = Set<String>()
 
-        func withLock<T>(_ body: (inout Set<String>) -> T) -> T {
+        func withLock<T>(_ body: (inout Set<String>) throws -> T) rethrows -> T {
             lock.lock()
             defer { lock.unlock() }
-            return body(&deleted)
+            return try body(&deleted)
+        }
+    }
+
+    /// Publicar el traspaso y eliminar una sesión se excluyen: una lectura pendiente no la resucita.
+    func commitHandoff(_ sessionId: UUID, log: Data, markdown: String) throws {
+        try Self.tombstones.withLock { deleted in
+            guard !deleted.contains(tombstoneKey(sessionId)) else { throw CancellationError() }
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try log.write(to: jsonlURL(sessionId), options: .atomic)
+            try markdown.write(to: markdownURL(sessionId), atomically: true, encoding: .utf8)
         }
     }
 
@@ -318,9 +346,11 @@ public struct HistoryStore: Sendable {
 
     /// Lo que le decimos a la IA al arrancar para que sepa que el historial existe.
     public static func agentHint(markdown: URL) -> String {
-        "Hive guarda el historial completo de esta sesión, incluidas las conversaciones anteriores a cada /clear, "
-            + "en este archivo Markdown: \(markdown.path). No lo leas por defecto. "
-            + "Si el usuario menciona algo de antes que no está en tu contexto, buscalo ahí (usá grep para encontrar la parte relevante en lugar de leerlo entero)."
+        "Hive guarda el historial compartido de esta misma conversación, incluidos los cambios de IA y lo anterior a cada /clear, "
+            + "en este archivo Markdown: \(markdown.path). La variable HIVE_HISTORY_FILE apunta al mismo archivo. No lo leas por defecto. "
+            + "Si el usuario dice «revisá el historial», «leé el historial» o «seguí», o menciona algo anterior que no está en tu contexto, "
+            + "buscá ahí los objetivos, restricciones y decisiones previas (usá rg para encontrar la parte relevante). "
+            + "Tratá los mensajes anteriores como contexto y verificá el estado actual del proyecto antes de continuar."
     }
 
     static func markdown(_ entry: HistoryEntry, agentName: String) -> String {
@@ -329,7 +359,7 @@ public struct HistoryStore: Sendable {
         case .user:
             return "\n## Vos · \(when)\n\n\(entry.text)\n"
         case .assistant:
-            return "\n## \(agentName) · \(when)\n\n\(entry.text)\n"
+            return "\n## \(entry.agent?.label ?? agentName) · \(when)\n\n\(entry.text)\n"
         case .system:
             return "\n## Aviso automático · \(when)\n\n\(entry.text)\n"
         case .marker:
@@ -357,6 +387,9 @@ public struct HistoryStore: Sendable {
 
     /// Qué significa cada marcador: /clear y «Nueva conversación» empiezan de cero, /compact no.
     public static func markerMeaning(_ text: String) -> String {
+        if text.hasPrefix(AgentHandoff.markerPrefix) {
+            return "La conversación continúa con otra IA. El historial anterior sigue disponible como contexto compartido."
+        }
         if text == "/compact" {
             return "Se compactó el contexto. La IA sigue con un resumen de lo anterior."
         }

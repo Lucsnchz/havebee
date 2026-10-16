@@ -8,6 +8,7 @@ public enum SessionInterruption: Sendable, CaseIterable {
     case restart
     /// Detenerla (⌘., «Detener»).
     case stop
+    case switchAgent
 }
 
 /// El diálogo que pide confirmar antes de cortar algo que está en curso.
@@ -51,12 +52,14 @@ public enum InterruptRule {
         case .archive: "Archivar igual"
         case .restart: "Reiniciar igual"
         case .stop: "Detener igual"
+        case .switchAgent: "Cambiar de IA igual"
         }
         if isAgent {
             let verb = switch action {
             case .archive: "la archivás"
             case .restart: "la reiniciás"
             case .stop: "la detenés"
+            case .switchAgent: "cambiás de IA"
             }
             let attention = status == .attention
             let what = attention
@@ -66,6 +69,7 @@ public enum InterruptRule {
             case .archive: "La conversación queda guardada y la podés restaurar."
             case .restart: "La conversación queda guardada y se retoma al arrancar."
             case .stop: "La conversación queda guardada y la podés reanudar."
+            case .switchAgent: "El historial queda guardado y se comparte con la nueva IA."
             }
             // ⌘. y ⌘R son reflejos («cancelar», «recargar»): lo que casi siempre se quiere es frenar el turno.
             let tip = action == .archive ? nil : "Para frenar solo este turno, apretá Esc en la terminal."
@@ -79,6 +83,7 @@ public enum InterruptRule {
         case .archive: "Si la archivás, se corta. «Deshacer» devuelve la pestaña, pero no el proceso."
         case .restart: "Si reiniciás la terminal, se corta."
         case .stop: "Si la detenés, se corta junto con la terminal."
+        case .switchAgent: "Si cambiás de IA, se corta."
         }
         // Como el Esc de los agentes: con ⌘. o ⌘R casi siempre se quería cortar solo ese proceso.
         let tip = action == .archive ? nil

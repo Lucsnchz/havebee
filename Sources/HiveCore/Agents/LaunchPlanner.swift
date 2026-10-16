@@ -9,6 +9,9 @@ public struct LaunchPlan: Equatable, Sendable {
     /// ID de conversación que queda asociado a la sesión.
     public var agentSessionId: String?
 
+    /// Solo se dibuja en Hive, nunca se manda al proceso como entrada ni como argumentos.
+    public var restoredHistory: [HistoryEntry] = []
+
     public var environmentList: [String] {
         environment.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }
     }
@@ -41,13 +44,17 @@ public struct LaunchContext: Sendable {
     public var claudeUsage: Bool
     /// El statusLine que ya tenías configurado en Claude: el de Hive lo sigue llamando.
     public var claudeUserStatusLine: String?
+    public var handoffContext: String?
+    /// Línea de tiempo leída fuera del hilo principal, para recuperar el scroll al lanzar.
+    public var historyEntries: [HistoryEntry]
 
     public init(session: Session, project: Project, branch: Branch, directory: String, path: String,
                 inheritedEnvironment: [String: String], paths: HivePaths, claudeInline: Bool = true, historyHint: Bool = true,
                 newAgentId: String = UUID().uuidString.lowercased(), claudeConversationExists: Bool = false,
                 grokConversationExists: Bool = false, discoveredAgentId: String? = nil, mcpFile: URL? = nil, mcpServers: [MCPServer] = [],
                 geminiSettingsPath: String? = nil, codexExistingNotify: [String]? = nil,
-                claudeUsage: Bool = false, claudeUserStatusLine: String? = nil) {
+                claudeUsage: Bool = false, claudeUserStatusLine: String? = nil, handoffContext: String? = nil,
+                historyEntries: [HistoryEntry] = []) {
         self.session = session
         self.project = project
         self.branch = branch
@@ -67,6 +74,8 @@ public struct LaunchContext: Sendable {
         self.codexExistingNotify = codexExistingNotify
         self.claudeUsage = claudeUsage
         self.claudeUserStatusLine = claudeUserStatusLine
+        self.handoffContext = handoffContext
+        self.historyEntries = historyEntries
     }
 }
 
@@ -78,10 +87,13 @@ public enum LaunchPlanner {
         env["HIVE_EVENT_BIN"] = ctx.paths.eventBin.path
         env["HIVE_PROJECT"] = ctx.project.name
         env["HIVE_BRANCH"] = ctx.branch.name
+        if ctx.session.kind.reportsConversation {
+            env["HIVE_HISTORY_FILE"] = HistoryStore(directory: ctx.paths.historyDir).markdownURL(ctx.session.id).path
+        }
 
-        let hint = ctx.historyHint && ctx.session.kind.reportsConversation
+        let hint = ctx.handoffContext ?? (ctx.historyHint && ctx.session.kind.reportsConversation
             ? HistoryStore.agentHint(markdown: HistoryStore(directory: ctx.paths.historyDir).markdownURL(ctx.session.id))
-            : nil
+            : nil)
 
         switch ctx.session.kind {
         case .shell:
@@ -102,8 +114,12 @@ public enum LaunchPlanner {
                 args += ["--mcp-config", mcpFile.path]
             }
             // En la terminal normal la charla queda en el scroll, también después de /clear.
-            if ctx.claudeInline { env["CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN"] = "1" }
-            return LaunchPlan(binary: "claude", args: args, environment: env, agentSessionId: agentId)
+            let restored = ConversationScrollback.previousEntries(ctx.historyEntries, resuming: ctx.claudeConversationExists)
+            if ctx.claudeInline || ctx.session.handoffFrom != nil || !restored.isEmpty {
+                env["CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN"] = "1"
+            }
+            return LaunchPlan(binary: "claude", args: args, environment: env, agentSessionId: agentId,
+                              restoredHistory: restored)
 
         case .codex:
             let thread = ctx.session.agentSessionId ?? ctx.discoveredAgentId
@@ -113,9 +129,13 @@ public enum LaunchPlanner {
             var args: [String] = thread == nil ? [] : ["resume"]
             args += ["-c", notify] + extra
             // Igual que Claude: sin pantalla alternativa, la charla queda en el scroll para leerla y copiarla.
-            if ctx.claudeInline { args += ["-c", #"tui.alternate_screen="never""#] }
+            let restored = ConversationScrollback.previousEntries(ctx.historyEntries, resuming: thread != nil)
+            if ctx.claudeInline || ctx.session.handoffFrom != nil || !restored.isEmpty {
+                args += ["-c", #"tui.alternate_screen="never""#]
+            }
             if let thread { args.append(thread) }
-            return LaunchPlan(binary: "codex", args: args, environment: env, agentSessionId: thread)
+            return LaunchPlan(binary: "codex", args: args, environment: env, agentSessionId: thread,
+                              restoredHistory: restored)
 
         case .gemini:
             // El chat que ya era de esta sesión le gana a cualquiera que aparezca en la carpeta.

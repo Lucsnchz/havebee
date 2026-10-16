@@ -127,6 +127,20 @@ public final class HiveTerminalView: TerminalView, TerminalViewDelegate, LocalPr
 
     func setProcessOutputHandler(_ handler: @escaping () -> Void) { onOutput = handler }
 
+    /// Recupera la charla de otros procesos dentro del mismo scroll antes de arrancar la IA.
+    /// Se deja una pantalla vacía para que el TUI pueda posicionar el cursor sin pisar el historial.
+    func restoreHistory(_ entries: [HistoryEntry], agent: SessionKind) {
+        guard !entries.isEmpty else { return }
+        let dimensions = terminalDimensions
+        let rendered = ConversationTerminalRenderer.render(entries, agent: agent, columns: dimensions.cols)
+        guard !rendered.ansi.isEmpty else { return }
+        changeScrollback(rendered.lineCount + 10_000)
+        preserver.protectsScrollback = true
+        preservesScrollbackOnClear = true
+        feed(text: rendered.ansi.replacingOccurrences(of: "\n", with: "\r\n")
+             + String(repeating: "\r\n", count: max(dimensions.rows, 1)) + "\u{1B}[H")
+    }
+
     /// Todo el texto de la terminal, con el scroll incluido (para copiar o guardar).
     func fullText() -> String {
         selectAll(nil)

@@ -40,6 +40,24 @@ private func sameColor(_ a: NSColor, _ b: NSColor) -> Bool {
 @MainActor
 @Suite("Apariencia de la terminal", .serialized)
 struct TerminalAppearanceTests {
+    @Test("La terminal sigue el tema de la app, salvo que se elija un tema propio")
+    func followsApplication() async {
+        let store = TerminalAppearanceDefaults()
+        let view = makeTerminal(store.defaults, appearance: .aqua)
+        store.defaults.set("dark", forKey: AppAppearance.key)
+        #expect(await waitUntil { sameColor(view.nativeBackgroundColor, TerminalPalette.dark.background) })
+        #expect(AppAppearance.read(store.defaults).colorScheme == .dark)
+        store.defaults.set("light", forKey: TerminalPreferences.themeKey)
+        #expect(await waitUntil { sameColor(view.nativeBackgroundColor, TerminalPalette.light.background) })
+        store.defaults.set("light", forKey: AppAppearance.key)
+        store.defaults.set("dark", forKey: TerminalPreferences.themeKey)
+        #expect(await waitUntil { sameColor(view.nativeBackgroundColor, TerminalPalette.dark.background) })
+        #expect(AppAppearance.read(store.defaults).colorScheme == .light)
+        store.defaults.set("system", forKey: TerminalPreferences.themeKey)
+        #expect(await waitUntil { sameColor(view.nativeBackgroundColor, TerminalPalette.light.background) })
+        store.defaults.set("system", forKey: AppAppearance.key)
+        #expect(AppAppearance.read(store.defaults).native == nil)
+    }
     func makeTerminal(_ defaults: UserDefaults, appearance: NSAppearance.Name = .darkAqua) -> HiveTerminalView {
         _ = NSApplication.shared
         let view = HiveTerminalView(frame: NSRect(x: 0, y: 0, width: 600, height: 200), scrollback: 1_000)

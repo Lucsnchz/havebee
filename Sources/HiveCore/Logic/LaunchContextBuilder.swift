@@ -68,6 +68,12 @@ public struct LaunchContextBuilder: Sendable {
         let geminiSettings = session.kind == .gemini
             ? MCPConfig.writeGeminiSettings(mcpServers, to: paths.geminiDir.appendingPathComponent("\(session.id.uuidString).json"))
             : nil
+        let history = HistoryStore(directory: paths.historyDir)
+        let entries = session.kind.reportsConversation ? history.fullTimeline(session.id, agent: session.kind) : []
+        let handoffContext = session.handoffFrom.map {
+            AgentHandoff.instructions(from: $0, markdown: history.markdownURL(session.id),
+                                      entries: entries)
+        }
         return LaunchContext(
             session: session, project: project, branch: branch, directory: directory, path: path,
             inheritedEnvironment: inheritedEnvironment, paths: paths,
@@ -76,6 +82,7 @@ public struct LaunchContextBuilder: Sendable {
             grokConversationExists: session.kind == .grok && session.agentSessionId.map(agents.grokSessionExists) == true,
             discoveredAgentId: discovered, mcpFile: mcpFile, mcpServers: mcpServers, geminiSettingsPath: geminiSettings,
             codexExistingNotify: session.kind == .codex ? agents.codexExistingNotify() : nil,
-            claudeUsage: claudeUsage, claudeUserStatusLine: userStatusLine)
+            claudeUsage: claudeUsage, claudeUserStatusLine: userStatusLine, handoffContext: handoffContext,
+            historyEntries: entries)
     }
 }

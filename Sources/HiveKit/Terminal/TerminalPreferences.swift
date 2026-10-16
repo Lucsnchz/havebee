@@ -21,7 +21,7 @@ struct TerminalPreferences: Equatable {
         var id: String { rawValue }
         var label: String {
             switch self {
-            case .system: "Seguir al sistema"
+            case .system: "Seguir a la aplicación"
             case .dark: "Oscuro"
             case .light: "Claro"
             }
@@ -101,10 +101,12 @@ struct TerminalPreferences: Equatable {
     var fontName = Self.systemFontName
     var cursor = Cursor.blinkBlock
     var theme = Theme.system
+    var appAppearance = AppAppearance.system
     var optionKey = OptionKey.characters
 
     static func read(_ defaults: UserDefaults = .standard) -> TerminalPreferences {
         var prefs = TerminalPreferences()
+        prefs.appAppearance = AppAppearance.read(defaults)
         if let size = defaults.object(forKey: fontSizeKey) as? Double { prefs.fontSize = clampedSize(size) }
         if let name = defaults.string(forKey: fontNameKey), !name.isEmpty { prefs.fontName = name }
         if let cursor = defaults.string(forKey: cursorKey).flatMap(Cursor.init(rawValue:)) { prefs.cursor = cursor }
@@ -131,7 +133,12 @@ struct TerminalPreferences: Equatable {
         switch theme {
         case .dark: false
         case .light: true
-        case .system: appearance.bestMatch(from: [.darkAqua, .aqua]) == .aqua
+        case .system:
+            switch appAppearance {
+            case .dark: false
+            case .light: true
+            case .system: appearance.bestMatch(from: [.darkAqua, .aqua]) == .aqua
+            }
         }
     }
 

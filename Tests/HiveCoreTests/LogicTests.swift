@@ -176,6 +176,15 @@ struct CommandSuggestionsTests {
 
 @Suite("Logos del repo")
 struct LogoFinderTests {
+    @Test("Encuentra el logo de una app macOS en Resources, tanto PNG como ICNS")
+    func macApp() {
+        let dir = TempDir()
+        dir.write("Resources/AppIcon.icns")
+        let finder = LogoFinder(isUsable: { _ in true })
+        #expect(finder.find(in: dir.path).map { URL(fileURLWithPath: $0).lastPathComponent } == ["AppIcon.icns"])
+        dir.write("Resources/AppIcon.png")
+        #expect(finder.find(in: dir.path).first?.hasSuffix("Resources/AppIcon.png") == true)
+    }
     @Test("Prefiere íconos grandes y respeta el validador")
     func priority() {
         let dir = TempDir()

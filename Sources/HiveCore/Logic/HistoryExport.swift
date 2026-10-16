@@ -12,7 +12,7 @@ public enum HistoryExport {
     public static func plainText(_ entry: HistoryEntry, agent: String) -> String {
         switch entry.role {
         case .user: return "Vos: \(entry.text)"
-        case .assistant: return "\(agent): \(entry.text)"
+        case .assistant: return "\(entry.agent?.label ?? agent): \(entry.text)"
         case .system: return "Aviso automático: \(entry.text)"
         case .marker:
             // Un corte, con la frase clara y el código de la API entre paréntesis.

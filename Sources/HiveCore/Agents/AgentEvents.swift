@@ -6,12 +6,15 @@ public struct HiveEvent: Equatable, Sendable {
     public let source: String
     public let name: String
     public let payload: JSONValue
+    /// Identifica el proceso que avisó, para descartar hooks tardíos después de cambiar de IA.
+    public let launchId: UUID?
 
-    public init(sessionId: UUID, source: String, name: String, payload: JSONValue = .object([:])) {
+    public init(sessionId: UUID, source: String, name: String, payload: JSONValue = .object([:]), launchId: UUID? = nil) {
         self.sessionId = sessionId
         self.source = source
         self.name = name
         self.payload = payload
+        self.launchId = launchId
     }
 
     /// Formato del archivo `.evt`: una línea "<sesión>\t<origen>\t<evento>" y después el JSON.
@@ -21,7 +24,8 @@ public struct HiveEvent: Equatable, Sendable {
         let header = first.split(separator: "\t").map(String.init)
         guard header.count >= 3, let id = UUID(uuidString: header[0]) else { return nil }
         let payload = parts.count > 1 ? (JSONValue.parse(String(parts[1])) ?? .object([:])) : .object([:])
-        return HiveEvent(sessionId: id, source: header[1], name: header[2], payload: payload)
+        return HiveEvent(sessionId: id, source: header[1], name: header[2], payload: payload,
+                         launchId: header.count > 3 ? UUID(uuidString: header[3]) : nil)
     }
 }
 
@@ -107,6 +111,7 @@ public enum AgentEventInterpreter {
                                  isSubagentThread: (String) -> Bool = { _ in false },
                                  pendingPermission: PermissionRequestKey? = nil,
                                  inBackground: Bool = false) -> AgentEventOutcome {
+        guard !CodexTitleGeneration.isCompletion(event) else { return AgentEventOutcome() }
         var outcome = AgentEventOutcome()
         let payload = event.payload
         // Dentro de un subagente, los hooks traen `agent_id`: no dicen nada del agente principal.

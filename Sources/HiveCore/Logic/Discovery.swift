@@ -370,6 +370,8 @@ struct GradleText {
 public struct LogoFinder: Sendable {
     /// En orden de preferencia: íconos cuadrados y grandes primero, favicons chicos al final.
     public static let candidates = [
+        "Resources/AppIcon.png", "Resources/AppIcon.icns", "Resources/icon.png", "Resources/icon.icns",
+        "resources/icon.png", "resources/icon.icns", "AppIcon.png", "AppIcon.icns", "icon.icns",
         "public/apple-touch-icon.png", "public/brand/apple-touch-icon.png", "static/apple-touch-icon.png",
         "apple-touch-icon.png", "public/images/apple-touch-icon.png",
         "public/logo_icon.png", "public/logo-icon.png", "public/icon.png", "app/icon.png", "src/app/icon.png",

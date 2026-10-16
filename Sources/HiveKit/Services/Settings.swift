@@ -58,6 +58,7 @@ public struct SettingsView: View {
 
 /// Historial, agentes y datos.
 struct SettingsGeneralPane: View {
+    @AppStorage(AppAppearance.key) private var appearance: AppAppearance = .system
     @AppStorage(AppSettings.claudeInlineKey) private var claudeInline = true
     @AppStorage(AppSettings.historyHintKey) private var historyHint = true
     @AppStorage(AppSettings.showClaudeUsageKey) private var showClaudeUsage = true
@@ -68,6 +69,15 @@ struct SettingsGeneralPane: View {
 
     var body: some View {
         Form {
+            Section {
+                Picker("Aplicación", selection: $appearance) {
+                    ForEach(AppAppearance.allCases) { Text($0.label).tag($0) }
+                }
+            } header: {
+                Text("Apariencia")
+            } footer: {
+                SettingsFooter("Cambia toda la app al instante. En Terminal podés elegir otro tema o seguir el de la aplicación.")
+            }
             Section {
                 Toggle(isOn: $claudeInline) {
                     Text("Claude y Codex en la terminal normal")
@@ -159,7 +169,7 @@ struct SettingsTerminalPane: View {
                 }
                 .pickerStyle(.segmented)
                 Toggle("Que parpadee", isOn: cursorBlinks)
-                Picker("Tema", selection: $theme) {
+                Picker("Tema de la terminal", selection: $theme) {
                     ForEach(TerminalPreferences.Theme.allCases) { theme in
                         Text(theme.label).tag(theme.rawValue)
                     }

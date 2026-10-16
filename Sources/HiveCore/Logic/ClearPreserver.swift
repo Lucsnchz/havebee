@@ -9,6 +9,10 @@ public struct ClearPreserver: Sendable {
     /// Cuánto después de un Enter se considera que el borrado vino de un comando.
     public static let window: TimeInterval = 4
 
+    /// El scroll recuperado por Hive pertenece a toda la conversación, no al proceso nuevo.
+    /// Sus borrados de arranque o redibujado no pueden eliminarlo, aunque no haya un Enter reciente.
+    public var protectsScrollback = false
+
     private var carry: [UInt8] = []
     private var lastEnter: Date = .distantPast
 
@@ -34,7 +38,7 @@ public struct ClearPreserver: Sendable {
             carry = Self.eraseScreen + carry
             bytes.removeLast(Self.eraseScreen.count)
         }
-        guard recentEnter, let scrollbackRange = bytes.firstRange(of: Self.eraseScrollback) else { return bytes }
+        guard recentEnter, let scrollbackRange = bytes.firstRange(of: Self.eraseScrollback) else { return protect(bytes) }
 
         var result: [UInt8] = []
         let push = Self.pushScreenToScrollback(rows: rows, cols: cols, time: now)
@@ -49,6 +53,25 @@ public struct ClearPreserver: Sendable {
         }
         result += bytes[scrollbackRange.upperBound...]
         lastEnter = .distantPast // un solo /clear por Enter
+        return protect(result)
+    }
+
+    private func protect(_ bytes: [UInt8]) -> [UInt8] {
+        guard protectsScrollback else { return bytes }
+        var result: [UInt8] = []
+        var index = 0
+        while index < bytes.count {
+            if bytes[index...].starts(with: Self.eraseScrollback) {
+                index += Self.eraseScrollback.count
+            } else if bytes[index...].starts(with: [0x1B, 0x63]) {
+                // RIS recrea ambos buffers. Un reset de modos + pantalla mantiene el scroll de Hive.
+                result += Array("\u{1B}[!p\u{1B}[H\u{1B}[2J".utf8)
+                index += 2
+            } else {
+                result.append(bytes[index])
+                index += 1
+            }
+        }
         return result
     }
 

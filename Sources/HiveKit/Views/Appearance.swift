@@ -65,7 +65,7 @@ struct ProjectTile: View {
                 if let image = ImageCache.image(at: path) {
                     // El color del proyecto queda en el fondo, apenas, detrás del logo: así se sigue
                     // distinguiendo sin otro borde que se confunda con el aro de estado.
-                    shape.fill(Color(white: 0.97))
+                    shape.fill(Color(nsColor: .controlBackgroundColor))
                     shape.fill(tint.opacity(0.22))
                     Image(nsImage: image)
                         .resizable()

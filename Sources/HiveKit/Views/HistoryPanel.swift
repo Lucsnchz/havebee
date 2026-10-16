@@ -158,7 +158,7 @@ struct HistoryPanel: View {
                         case .day(let label, _):
                             HistoryDaySeparator(label: label)
                         case .entry(let entry):
-                            HistoryRow(entry: entry, agent: session.kind, query: matchSet.contains(entry.id) ? query : "",
+                            HistoryRow(entry: entry, agent: entry.agent ?? session.kind, query: matchSet.contains(entry.id) ? query : "",
                                        isCurrentMatch: entry.id == current)
                                 .id(entry.id)
                         }
@@ -220,7 +220,7 @@ struct HistoryPanel: View {
     // MARK: - Carga
 
     private var reloadKey: String {
-        "\(session.id)-\(store.historyVersions[session.id] ?? 0)-\(session.agentSessionId ?? "")"
+        "\(session.id)-\(session.kind.rawValue)-\(store.historyVersions[session.id] ?? 0)-\(session.agentSessionId ?? "")"
     }
 
     /// Carga en segundo plano y, mientras el agente trabaja, vuelve a leer su transcript cada tanto
@@ -244,7 +244,7 @@ struct HistoryPanel: View {
         let result = await Task.detached(priority: .userInitiated) { () -> (finals: [HistoryEntry], everything: [HistoryEntry]) in
             let log = history.load(id)
             guard kind.reportsConversation else { return (log, log) }
-            var live = history.transcriptSegments(id).map { URL(fileURLWithPath: $0.path) }
+            var live: [URL] = []
             if let agentId, let current = kind == .claude ? agents.claudeTranscriptURL(agentId) : agents.codexRolloutURL(agentId),
                !live.contains(where: { $0.standardizedFileURL == current.standardizedFileURL }) {
                 live.append(current)

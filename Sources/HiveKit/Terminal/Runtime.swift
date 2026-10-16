@@ -19,6 +19,8 @@ public final class SessionRuntime {
     @ObservationIgnored var pendingPermission: PermissionRequestKey?
     /// Se está armando su lanzamiento (búsquedas en disco fuera del hilo principal).
     public internal(set) var isLaunching = false
+    public internal(set) var isSwitchingAgent = false
+    @ObservationIgnored var launchId = UUID()
 
     @ObservationIgnored var events: TerminalEvents?
     /// Último momento en que la terminal recibió salida (para la regla del silencio).

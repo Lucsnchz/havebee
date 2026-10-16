@@ -1,4 +1,4 @@
-// Genera Resources/AppIcon.icns: un hexágono color miel sobre fondo oscuro.
+// Genera Resources/AppIcon.icns y AppIcon.png: el mismo logo para la app y el selector de proyectos.
 // Uso: swift scripts/make-icon.swift
 import AppKit
 
@@ -55,6 +55,7 @@ for base in [16, 32, 128, 256, 512] {
     try render(base * 2).write(to: iconset.appendingPathComponent("icon_\(base)x\(base)@2x.png"))
 }
 
+try render(1024).write(to: root.appendingPathComponent("Resources/AppIcon.png"))
 let output = root.appendingPathComponent("Resources/AppIcon.icns")
 let task = Process()
 task.executableURL = URL(fileURLWithPath: "/usr/bin/iconutil")

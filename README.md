@@ -45,7 +45,7 @@ La vista de cada rama muestra botones para crear sesiones, una tarjeta por sesi�
 - **Responder desde el aviso**: cuando Claude o Codex terminan su turno, la notificación tiene «Responder». Lo que escribís va directo a la sesión, como si lo tipearas, y la sesión pasa a «Trabajando». Si la sesión no está corriendo (o si mientras tanto pasó a pedir permiso, para no aprobar nada sin querer), Hive la abre y deja tu respuesta en el portapapeles. Los avisos de permiso solo tienen «Abrir».
 - **Terminales**: abajo de todo, un «proyecto» con terminales y agentes sueltos que arrancan en tu carpeta personal, fuera de cualquier repo.
 - **La terminal**: ⌥ escribe ñ, tildes, @ y corchetes (se cambia en Ajustes), Shift+Enter hace salto de línea en los agentes, podés soltar o pegar archivos y capturas (se pega la ruta), ⌘clic en una ruta como `app/Models/Order.php:42` la abre en tu editor en esa línea (o la URL en el navegador), ⌘F busca y el clic derecho tiene Copiar, Pegar, Limpiar, enlaces y tamaño de letra.
-- **La sesión**: arriba, Historial y Cambios, «Nueva sesión» (con la flechita elegís otro agente), Comandos, «Abrir sitio», el remoto, el uso y «Más» (reiniciar, copiar o guardar el texto, abrir en otra app, detener, archivar). Abajo, una barra con la rama, ↑↓, los cambios y los comandos que corren.
+- **La sesión**: arriba, el selector de IA para continuar la conversación con Claude o Codex, Historial y Cambios, «Nueva sesión» (con la flechita elegís otro agente), Comandos, «Abrir sitio», el remoto, el uso y «Más» (reiniciar, copiar o guardar el texto, abrir en otra app, detener, archivar). Abajo, una barra con la rama, ↑↓, los cambios y los comandos que corren.
 - **Comandos por proyecto**: en el Resumen del proyecto guardás comandos como `npm run dev` o `php artisan serve`. Hive sugiere los del `package.json`, `artisan` (servidor, cola, `php artisan test` y `pail`), `composer.json`, `docker-compose` y Gradle (compilar, instalar en el teléfono, tests, lint y logcat de la app). Corren en la rama abierta: dentro de una sesión aparecen en la barra de abajo (un clic muestra su salida) y en el Resumen o la rama, en la esquina de abajo a la derecha. Desde ahí ves la salida, los detenés o los reiniciás.
 - **Sitio y GitLab**: «Abrir sitio» abre la rama en el navegador (Herd o `polyscope.json`). El menú del remoto tiene «Traer cambios», «Publicar rama», «Crear MR en GitLab» (publica si hace falta y abre el MR), los MR de la rama y los pipelines (en GitHub, PR y Actions). Publicar y traer se cancelan con la ✕ junto al spinner.
 - **Uso y límites**: cuánto contexto ocupa cada sesión de Claude y Codex (un anillito en la barra, «Conviene usar /compact» desde 80 %) y cuánto te queda de los límites de 5 horas y semanal, al pie del sidebar y del riel.
@@ -88,15 +88,17 @@ Al saltar a una sesión con el teclado, el árbol se despliega hasta ella y la t
 
 *Hive → Ajustes* tiene tres pestañas:
 
-- **General**: Claude y Codex en la terminal normal (para que la charla quede en el scroll), avisarle a la IA que existe el historial, mostrar el uso de Claude en su barra, y un aviso si tu `notify` de Codex tiene un formato que Hive no entiende.
-- **Terminal**: fuente, tamaño (9 a 28 pt, también con ⌘+ y ⌘−), cursor, tema (seguir al sistema, oscuro o claro), qué hace la tecla ⌥ (escribir caracteres o funcionar como Meta) y con qué editor se abren los archivos (Android Studio y Xcode se eligen solos según el proyecto). Se aplica al instante.
+- **General**: apariencia de toda la app (seguir al sistema, oscuro o claro), Claude y Codex en la terminal normal (para que la charla quede en el scroll), avisarle a la IA que existe el historial, mostrar el uso de Claude en su barra, y un aviso si tu `notify` de Codex tiene un formato que Hive no entiende.
+- **Terminal**: fuente, tamaño (9 a 28 pt, también con ⌘+ y ⌘−), cursor, tema (seguir a la aplicación, oscuro o claro), qué hace la tecla ⌥ (escribir caracteres o funcionar como Meta) y con qué editor se abren los archivos (Android Studio y Xcode se eligen solos según el proyecto). La apariencia de la app y la terminal se aplican al instante y pueden elegirse por separado.
 - **Avisos**: si macOS tiene los avisos permitidos (con un botón a Ajustes del Sistema si no) y si suenan.
 
 ## Historial que sobrevive a /clear
 
-- **En la terminal**: Claude y Codex corren en la terminal normal (no en su pantalla completa), así que después de `/clear` lo anterior sigue arriba en el scroll para leerlo y copiarlo. Para los otros agentes, si borran pantalla y scroll justo después de un Enter, Hive manda lo que se veía al scroll con una línea divisoria. Cada terminal guarda 10.000 líneas.
+- **Cambiar de IA**: tocá el nombre de Claude o Codex en la barra y elegí «Continuar esta conversación con». Se conserva la misma pestaña, nombre e historial. Los mensajes anteriores se recuperan arriba en el scroll de esa misma terminal, también al reabrir Hive; cada respuesta conserva su autor y queda una marca del cambio. Hive detiene el agente anterior, guarda su conversación completa y abre la otra IA con un extracto reciente y acceso al historial completo; podés decirle «revisá el historial y seguí». Si el agente está trabajando, pregunta antes de cortarlo. El traspaso explícito comparte el contexto aunque el aviso general de historial esté desactivado y usa la terminal normal para mantener accesible el scroll. Por ahora está disponible entre Claude y Codex.
+- **En la terminal**: Claude y Codex corren en la terminal normal (no en su pantalla completa), así que después de `/clear` lo anterior sigue arriba en el scroll para leerlo y copiarlo. Al reanudar, Hive repone lo anterior al último cambio de IA o `/clear`, y el agente dibuja su conversación actual. Los borrados de arranque no eliminan el historial recuperado. Para los otros agentes, si borran pantalla y scroll justo después de un Enter, Hive manda lo que se veía al scroll con una línea divisoria. Cada terminal guarda 10.000 líneas; al recuperar una conversación, amplía la capacidad para incluir además el historial anterior.
+- **Formato del historial recuperado**: tus mensajes aparecen con un borde azul y «Vos»; las respuestas, con el nombre de la IA y la hora. Títulos, negritas, listas, enlaces y bloques de código se dibujan con formato. Los adjuntos dicen «Imagen adjunta» y los prompts auxiliares de titulación no se muestran como parte de la charla. Los archivos originales se conservan completos.
 - **Panel «Historial»** (botón del reloj en la sesión, ⌥⌘1): la conversación completa con Claude o Codex, también los mensajes intermedios de cada turno, con Markdown y bloques de código para copiar, separada por día y con «Todo» o «Solo respuestas finales». Marca cada `/clear` y cada corte (por ejemplo, «Se cortó: llegaste al límite de uso»). Hive guarda su propia copia de los transcripts, así que sigue ahí aunque el agente borre sus archivos. Tiene buscador, y el botón de los globitos busca lo mismo en todas las sesiones: abre ⌘K con `?` y lo que escribiste.
-- **La IA también lo puede leer**: al arrancar, Hive le dice a Claude (`--append-system-prompt`) y a Codex (`developer_instructions`) dónde está el historial en Markdown. Lo consultan solo si mencionás algo que ya no está en su contexto.
+- **La IA también lo puede leer**: al arrancar, Hive le dice a Claude (`--append-system-prompt`) y a Codex (`developer_instructions`) dónde está el historial en Markdown y expone esa ruta en `HIVE_HISTORY_FILE`. Las instrucciones indican que «revisá el historial», «leé el historial» y «seguí» se refieren a ese archivo de la misma conversación.
 - Se configura en *Hive → Ajustes*. Gemini no avisa sus mensajes, así que su panel no tiene la conversación: ofrece copiar el scroll de la terminal.
 
 Los archivos están en `~/Library/Application Support/Hive/history/`. Lo de una sesión eliminada pasa a `history/deleted/` y se borra a los 30 días.
@@ -112,12 +114,12 @@ En el Resumen de cada proyecto, la sección **MCP** muestra los servidores del `
 
 ## Personalizar y ordenar
 
-- **Proyectos**: cada uno recibe un color distinto y, si el repo tiene logo (`apple-touch-icon`, favicon, ícono de Android o Xcode), lo usa como ícono. Clic derecho → «Personalizar…» para cambiar nombre, color e ícono (logo, iniciales, símbolo, emoji o una imagen tuya).
+- **Proyectos**: cada uno recibe un color distinto y, si el repo tiene logo (`apple-touch-icon`, favicon, ícono de Android, Xcode o `Resources/AppIcon.png` / `.icns`), lo usa como ícono. Clic derecho → «Personalizar…» para cambiar nombre, color e ícono (logo, iniciales, símbolo, emoji o una imagen tuya). El logo de Hive está disponible en [Resources/AppIcon.png](Resources/AppIcon.png) y aparece en ese selector; «Elegir imagen…» abre la carpeta del proyecto.
 - **Ramas**: clic derecho → «Color». Si no tienen, usan el del proyecto.
 - **Orden**: arrastrá ramas y sesiones en el sidebar, y proyectos en el árbol o en el riel (dentro de su grupo, ver «Dos vistas»), o usá «Subir / Bajar» en el menú contextual. «Fijar arriba» deja un proyecto siempre primero.
 - El cursor de cada terminal toma el color de su proyecto.
 - Panel de cambios estilo VS Code (botón ± en la barra de la sesión, ⌥⌘2): ícono por tipo de archivo, «Preparados» y «Sin preparar», doble clic abre el archivo.
-- Claro u oscuro: Hive sigue al sistema con un solo acento miel y contraste medido en los dos modos; la terminal puede seguir al sistema o fijarse en Ajustes.
+- Claro u oscuro: en Ajustes → General elegís la apariencia de toda la aplicación, incluidas las barras, paneles y ventanas. En Ajustes → Terminal elegís si la terminal acompaña a la app o usa su propio tema.
 
 Las sesiones siguen corriendo aunque cambies de sesión o cierres la ventana. Al salir de Hive se cortan, pero al volver a abrir cada sesión de agente **retoma su conversación** (`claude --resume` / `codex resume`) cuando la seleccionás.
 
@@ -137,7 +139,7 @@ Son los mismos íconos y colores en el sidebar, las pestañas, las tarjetas, el 
 ## Cómo sabe Hive qué hace cada agente
 
 - **Claude Code**: se lanza con `--settings ~/Library/Application Support/Hive/claude-settings.json` (o `claude-settings-usage.json`, si está prendido el uso), que agrega hooks: `SessionStart`, `UserPromptSubmit`, `Notification` (leído según su tipo), `Stop`, `StopFailure` (el corte con su motivo), `PermissionRequest` (el pedido de permiso al instante) y `PreToolUse`, `PostToolUse` y `PostToolUseFailure`. Con el uso prendido suma un `statusLine` que guarda el contexto y los límites, y si ya tenías uno propio lo sigue mostrando. Tu configuración de Claude no se modifica.
-- **Codex**: se lanza con `-c notify=[...]`. Si ya tenías un `notify` en `~/.codex/config.toml`, Hive lo sigue llamando igual (y Ajustes avisa si no entiende su formato). Los subagentes de Codex se ignoran, y el uso sale de su `token_count`.
+- **Codex**: se lanza con `-c notify=[...]`. Si ya tenías un `notify` en `~/.codex/config.toml`, Hive lo sigue llamando igual (y Ajustes avisa si no entiende su formato). Los subagentes y los turnos internos que generan títulos se ignoran: no disparan «Tu turno», no reemplazan la respuesta ni cambian la conversación activa. El uso sale de su `token_count`.
 - **Gemini**: no tiene hooks configurables desde afuera, así que su estado sale de la actividad de la terminal. Para reanudar, Hive busca el chat que Gemini guardó en `~/.gemini/tmp` (el que empezó más cerca del arranque) y usa `gemini --resume <id>`; si no lo encuentra, arranca una sesión nueva.
 - **Grok** ([Grok Build](https://docs.x.ai/build/cli/reference), el CLI de xAI; se instala con `curl -fsSL https://x.ai/cli/install.sh | bash`): se lanza con `--session-id <id>` la primera vez y con `--resume <id>` cuando Grok ya guardó la sesión en `~/.grok/sessions`, y con `--no-alt-screen` para que la charla quede en el scroll. Grok no acepta hooks por parámetro, así que Hive instala los suyos en `~/.grok/hooks/hive.json` (`SessionStart`, `UserPromptSubmit`, las herramientas, `Notification`, `Stop`, `StopFailure` y `StopCancelled`). Llaman al puente solo dentro de Hive: afuera, `HIVE_EVENT_BIN` no existe y corren `true`.
 - Claude, Codex y Grok avisan a través de `~/Library/Application Support/Hive/bin/hive-event`, que deja archivos en `events/` para que la app los lea.
@@ -183,7 +185,7 @@ Principios:
 ## Tests
 
 ```bash
-scripts/test.sh                              # todo (862 tests: 480 de HiveCore y 382 de HiveKit)
+scripts/test.sh                              # todo
 scripts/test.sh HiveCoreTests                # solo el core (unos 3 s)
 scripts/test.sh StoreProjectOrder            # cualquier filtro
 scripts/test.sh --snapshots /tmp/capturas    # además guarda capturas de cada vista, en claro y en oscuro

@@ -71,10 +71,13 @@ public struct Session: Identifiable, Codable, Hashable, Sendable {
     /// Si el nombre lo pone Hive (nil cuenta como sí): la sesión toma el nombre de lo primero que le
     /// pedís. Al renombrarla a mano pasa a false y Hive no lo vuelve a tocar.
     public var autoNamed: Bool?
+    /// La IA anterior de esta conversación. El nuevo agente recibe el historial compartido al arrancar.
+    public var handoffFrom: SessionKind?
 
     public init(id: UUID = UUID(), name: String, kind: SessionKind, createdAt: Date = Date(),
                 agentSessionId: String? = nil, lastLaunchedAt: Date? = nil, lastMessage: String? = nil,
-                lastActivityAt: Date? = nil, archivedAt: Date? = nil, autoNamed: Bool? = nil) {
+                lastActivityAt: Date? = nil, archivedAt: Date? = nil, autoNamed: Bool? = nil,
+                handoffFrom: SessionKind? = nil) {
         self.id = id
         self.name = name
         self.kind = kind
@@ -85,6 +88,7 @@ public struct Session: Identifiable, Codable, Hashable, Sendable {
         self.lastActivityAt = lastActivityAt
         self.archivedAt = archivedAt
         self.autoNamed = autoNamed
+        self.handoffFrom = handoffFrom
     }
 
     public var isArchived: Bool { archivedAt != nil }

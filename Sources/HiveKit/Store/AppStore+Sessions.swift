@@ -36,7 +36,7 @@ extension AppStore {
     /// (historial, MCP, conversaciones anteriores) corren fuera del hilo principal; la terminal se
     /// crea al volver, si la sesión sigue ahí y nadie la lanzó mientras tanto.
     func launch(_ id: UUID) {
-        guard let ctx = sessionContext(id), !ctx.session.isArchived, let rt = runtimes[id], !rt.isRunning, !rt.isLaunching,
+        guard let ctx = sessionContext(id), !ctx.session.isArchived, let rt = runtimes[id], !rt.isRunning, !rt.isLaunching, !rt.isSwitchingAgent,
               !removingBranches.contains(ctx.branch.id) else { return }
         let dir = ctx.project.directory(for: ctx.branch)
         guard folderExists(dir, project: ctx.project, branch: ctx.branch, warnKey: id) else { return }
@@ -71,18 +71,25 @@ extension AppStore {
     /// Crea la terminal y arranca el proceso según el plan.
     private func startSession(_ id: UUID, plan: LaunchPlan, directory dir: String) {
         guard let ctx = sessionContext(id), let rt = runtimes[id] else { return }
+        rt.launchId = UUID()
+        var plan = plan
+        plan.environment["HIVE_LAUNCH_ID"] = rt.launchId.uuidString
         let terminal = HiveTerminalView(frame: NSRect(x: 0, y: 0, width: 900, height: 600))
         TerminalTheme.apply(to: terminal)
         // El cursor toma el color del proyecto: así sabés en cuál estás de un vistazo.
         terminal.caretColor = ctx.project.tint.nsColor
         // En los agentes, /clear deja lo anterior en el scroll con una divisoria.
         terminal.preservesScrollbackOnClear = ctx.session.kind.isAgent
+        terminal.restoreHistory(plan.restoredHistory, agent: ctx.session.kind)
         let events = TerminalEvents(
-            onTitle: { [weak self] title in self?.runtimes[id]?.title = title },
+            onTitle: { [weak rt] title in rt?.title = title },
             onExit: { [weak self] terminal, code in self?.processExited(id, terminal: terminal, code: code) })
         terminal.processDelegate = events
         terminal.setProcessOutputHandler { [weak rt] in rt?.lastOutput = Date() }
-        terminal.onUserInput = { [weak self] data in self?.userInput(id, data) }
+        terminal.onUserInput = { [weak self, weak rt] data in
+            guard let self, let rt, self.runtimes[id] === rt else { return }
+            self.userInput(id, data)
+        }
 
         var started = true
         if let binary = plan.binary {
@@ -119,7 +126,7 @@ extension AppStore {
     /// (como mucho 2 s): así no retoma la conversación mientras la anterior sigue escribiendo. Un shell
     /// interactivo ignora SIGTERM, así que ahí no se espera: se cierra al soltar su terminal.
     public func relaunch(_ id: UUID) {
-        guard let rt = runtimes[id], !relaunching.contains(id) else { return }
+        guard let rt = runtimes[id], !rt.isSwitchingAgent, !relaunching.contains(id) else { return }
         guard rt.kind.isAgent, rt.isRunning, let old = rt.terminal, old.isProcessRunning else {
             replaceTerminal(id)
             return
@@ -143,6 +150,7 @@ extension AppStore {
 
     public func stop(_ id: UUID) {
         guard let rt = runtimes[id], let terminal = rt.terminal else { return }
+        rt.isSwitchingAgent = false
         // Un agente termina con SIGTERM (y guarda su conversación); el shell interactivo de una sesión
         // de Terminal lo ignora, así que se corta como al cerrar una ventana.
         if rt.kind.isAgent { terminal.terminate() } else { terminal.hangUp() }
@@ -179,6 +187,89 @@ extension AppStore {
         rt.status = .exited(code)
         rt.unseen = false
         updateBadge()
+    }
+
+    // MARK: - Continuar con otra IA
+
+    public func requestSwitchAgent(_ id: UUID, to kind: SessionKind) {
+        guard let ctx = sessionContext(id), ctx.session.kind.reportsConversation, kind.reportsConversation,
+              ctx.session.kind != kind, !ctx.session.isArchived, let rt = runtimes[id],
+              !rt.isLaunching, !rt.isSwitchingAgent, !relaunching.contains(id),
+              isActive(ctx.branch, in: ctx.project), !removingBranches.contains(ctx.branch.id) else { return }
+        guard let binary = kind.binary, environment.processes.resolve(binary, path: currentPATH) != nil else {
+            alert = AgentAvailability.installAlert(for: kind)
+            return
+        }
+        confirmInterruption(.switchAgent, of: id) { [weak self] in self?.switchAgent(id, to: kind) }
+    }
+
+    private func switchAgent(_ id: UUID, to kind: SessionKind) {
+        guard let ctx = sessionContext(id), !ctx.session.isArchived, ctx.session.kind != kind,
+              let rt = runtimes[id], !rt.isSwitchingAgent, !rt.isLaunching, !relaunching.contains(id),
+              isActive(ctx.branch, in: ctx.project), !removingBranches.contains(ctx.branch.id) else { return }
+        let directory = ctx.project.directory(for: ctx.branch)
+        guard folderExists(directory, project: ctx.project, branch: ctx.branch, warnKey: id) else { return }
+        rt.isSwitchingAgent = true
+        Task { [weak self] in
+            guard let self else { return }
+            defer { rt.isSwitchingAgent = false }
+            if let terminal = rt.terminal {
+                await waitForExit(terminal)
+                if terminal.isProcessRunning {
+                    terminal.hangUp()
+                    await waitForExit(terminal)
+                }
+                guard !terminal.isProcessRunning else {
+                    alert = AppAlert(title: "No pude cambiar de IA", message: "El proceso anterior sigue abierto. Detenelo y volvé a intentar.")
+                    return
+                }
+            }
+            guard canFinishAgentSwitch(id, runtime: rt) else { return }
+            let history = self.history
+            let agents = environment.agents
+            let now = environment.now()
+            let claimed = projects.claimedAgentIds(ctx.session.kind, except: id)
+            let place = ctx.project.isScratch ? ctx.project.name : "\(ctx.project.name) › \(ctx.branch.name)"
+            do {
+                try await Task.detached(priority: .userInitiated) {
+                    try history.prepareHandoff(session: ctx.session, place: place, agents: agents,
+                                               directory: directory, excluding: claimed, now: now)
+                }.value
+            } catch {
+                if canFinishAgentSwitch(id, runtime: rt) {
+                    alert = AppAlert(title: "No pude guardar el contexto para cambiar de IA", message: error.localizedDescription)
+                }
+                return
+            }
+            guard canFinishAgentSwitch(id, runtime: rt) else { return }
+            history.append(HistoryEntry(date: now, role: .marker,
+                                        text: AgentHandoff.markerPrefix + "\(ctx.session.kind.label) → \(kind.label)"),
+                           sessionId: id, agentName: kind.label)
+            historyVersions[id, default: 0] += 1
+            tearDown(rt.terminal)
+            rt.terminal = nil
+            environment.notifier.clear(id)
+            try? FileManager.default.removeItem(at: environment.paths.usageDir.appendingPathComponent("\(id.uuidString).json"))
+            projects.updateSession(id) {
+                $0.kind = kind
+                // Los IDs nativos no son intercambiables entre proveedores. El historial de Hive sí.
+                $0.agentSessionId = nil
+                $0.lastLaunchedAt = nil
+                $0.handoffFrom = ctx.session.kind
+                $0.autoNamed = false
+                $0.lastActivityAt = now
+            }
+            runtimes[id] = SessionRuntime(sessionId: id, kind: kind)
+            updateBadge()
+            scheduleSave()
+            launch(id)
+            if selection == .session(id) { requestTerminalFocus(id) }
+        }
+    }
+
+    private func canFinishAgentSwitch(_ id: UUID, runtime: SessionRuntime) -> Bool {
+        guard runtime.isSwitchingAgent, runtimes[id] === runtime, let ctx = sessionContext(id) else { return false }
+        return !ctx.session.isArchived && !removingBranches.contains(ctx.branch.id) && isActive(ctx.branch, in: ctx.project)
     }
 
     // MARK: - Confirmar antes de cortar
@@ -232,6 +323,7 @@ extension AppStore {
         // Una ya archivada no se vuelve a archivar (le cambiaría la fecha y el deshacer la restauraría).
         guard let ctx = sessionContext(id), !ctx.session.isArchived else { return }
         if let rt = runtimes[id] {
+            rt.isSwitchingAgent = false
             tearDown(rt.terminal)
             rt.terminal = nil
             rt.status = .dormant

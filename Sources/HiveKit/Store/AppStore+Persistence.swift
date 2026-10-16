@@ -75,7 +75,11 @@ extension AppStore {
 
     public func shutdown() {
         saveNow()
-        for rt in runtimes.values { rt.terminal?.terminate() }
+        for rt in runtimes.values {
+            rt.isSwitchingAgent = false
+            rt.isLaunching = false
+            rt.terminal?.terminate()
+        }
         for run in commandRuns where run.running { run.terminal?.terminate() }
         watcher?.stop()
         timers.forEach { $0.invalidate() }
