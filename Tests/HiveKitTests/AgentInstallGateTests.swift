@@ -55,8 +55,11 @@ struct AgentInstallGateTests {
         await HiveNavigator.requestNewSession(f.store, branchId: f.branchId, kind: .gemini)?.value
         #expect(f.sessions.isEmpty)
         #expect(f.store.alert?.title == "Gemini no está instalado")
-        // ⌘K lo muestra como no instalado.
+        // ⌘K lo muestra como no instalado (con lo que le pasa QuickSwitcher).
         #expect(f.availability.missing == [.gemini])
+        let action = SwitcherIndex.search(">nueva gemini", in: f.store.projects, missingAgents: f.availability.missing).first
+        #expect(action?.target == .action(.newSession(branch: f.branchId, kind: .gemini)))
+        #expect(action?.subtitle == "No instalado · \(SessionKind.gemini.installHint)")
     }
 
     @Test("Con el agente instalado, la sesión se crea al toque")
