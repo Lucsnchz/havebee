@@ -53,7 +53,15 @@ struct AgentHooksTests {
         (["tool_name": "WebFetch", "tool_input": ["url": "https://laravel.com"]] as JSONValue, "Pide permiso para abrir https://laravel.com"),
         (["tool_name": "mcp__laravel-boost__database-query", "tool_input": [:]] as JSONValue,
          "Pide permiso para usar database-query (MCP laravel-boost)"),
-        (["tool_name": "Task"] as JSONValue, "Pide permiso para Task"),
+        (["tool_name": "Task"] as JSONValue, "Pide permiso para lanzar un subagente"),
+        (["tool_name": "Task", "tool_input": ["description": "Revisar los modelos"]] as JSONValue,
+         "Pide permiso para lanzar un subagente: Revisar los modelos"),
+        (["tool_name": "Glob", "tool_input": ["pattern": "**/*.php"]] as JSONValue, "Pide permiso para Glob"),
+        // El plan y las preguntas pasan por el mismo diálogo, pero no son un permiso.
+        (["tool_name": "ExitPlanMode", "tool_input": ["plan": "1. Migrar"]] as JSONValue, "Tiene un plan listo para que lo apruebes"),
+        (["tool_name": "AskUserQuestion", "tool_input": ["questions": [["question": "¿Uso Pest o PHPUnit?", "header": "Tests"]]]] as JSONValue,
+         "Te hace una pregunta: ¿Uso Pest o PHPUnit?"),
+        (["tool_name": "AskUserQuestion"] as JSONValue, "Te hace una pregunta"),
         ([:] as JSONValue, AgentEventInterpreter.permissionNotification),
     ])
     func permissionRequest(payload: JSONValue, text: String) {

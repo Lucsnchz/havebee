@@ -233,6 +233,14 @@ public enum AgentEventInterpreter {
         }
         let detail: String?
         switch tool {
+        // Estos dos también pasan por el diálogo de permiso, pero no piden permiso para hacer algo.
+        case "ExitPlanMode":
+            return "Tiene un plan listo para que lo apruebes"
+        case "AskUserQuestion":
+            let question = input?["questions"]?.array?.first?["question"]?.string
+            return question.flatMap { summary($0, limit: 120) }.map { "Te hace una pregunta: \($0)" } ?? "Te hace una pregunta"
+        case "Task", "Agent":
+            detail = "lanzar un subagente" + (field("description").map { ": \($0)" } ?? "")
         case "Bash":
             detail = field("command").flatMap { summary($0, limit: 120) }.map { "Bash: \($0)" }
         case "Edit", "MultiEdit", "Write", "NotebookEdit":
