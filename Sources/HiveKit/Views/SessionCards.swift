@@ -24,18 +24,12 @@ struct SessionCard: View {
             Self.open(session.id, in: store)
         } label: {
             VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 8) {
-                    AgentLogo(kind: session.kind, size: 18)
-                    Text(session.name)
-                        .font(HiveFont.heading)
-                        .lineLimit(1)
-                        .layoutPriority(1)
-                    Spacer(minLength: 6)
-                    // Si el nombre no entra, el estado queda solo con su ícono (el texto va en la ayuda).
-                    ViewThatFits(in: .horizontal) {
-                        statusLabel(status: status, unseen: unseen, style: style, showsText: true)
-                        statusLabel(status: status, unseen: unseen, style: style, showsText: false)
-                    }
+                // Si con el texto del estado el nombre no entra pero con el ícono solo sí, queda el ícono
+                // (el texto va en la ayuda). Si el nombre no entra igual, se corta y el estado se lee entero.
+                ViewThatFits(in: .horizontal) {
+                    header(style: style, status: status, unseen: unseen, fullName: true, showsText: true)
+                    header(style: style, status: status, unseen: unseen, fullName: true, showsText: false)
+                    header(style: style, status: status, unseen: unseen, fullName: false, showsText: true)
                 }
                 summaryView(Self.summary(session: session, branchName: branch.name, title: rt?.title, notice: rt?.notice))
                 footer(status: status, rt: rt)
@@ -50,6 +44,18 @@ struct SessionCard: View {
         .contextMenu { SessionMenu(project: project, branch: branch, session: session) }
         .accessibilityLabel(accessibilityText(status: status, unseen: unseen))
         .accessibilityHint("Abre la sesión")
+    }
+
+    private func header(style: StatusStyle, status: SessionStatus, unseen: Bool, fullName: Bool, showsText: Bool) -> some View {
+        HStack(spacing: 8) {
+            AgentLogo(kind: session.kind, size: 18)
+            Text(session.name)
+                .font(HiveFont.heading)
+                .lineLimit(1)
+                .fixedSize(horizontal: fullName, vertical: false)
+            Spacer(minLength: 6)
+            statusLabel(status: status, unseen: unseen, style: style, showsText: showsText)
+        }
     }
 
     /// Arriba a la derecha: el ícono del estado y, si entra, su nombre en el color del estado.
