@@ -89,6 +89,49 @@ struct HiveCommandsTests {
         #expect(HiveNavigator.stopDecision(selection: .project(id), keyWindowIsMain: true, sheetOpen: false) == .cancel)
     }
 
+    @Test("⌘F/⌘G con el foco en la barra de búsqueda de la terminal la usan sin mover el foco")
+    func terminalContainingFocus() throws {
+        let terminal = HiveTerminalView(frame: NSRect(x: 0, y: 0, width: 400, height: 300))
+        let bar = NSView(frame: NSRect(x: 0, y: 0, width: 200, height: 30))
+        let field = NSSearchField(frame: NSRect(x: 0, y: 0, width: 150, height: 22))
+        bar.addSubview(field)
+        terminal.addSubview(bar)
+        // Otro campo de la ventana, fuera de la terminal (como el buscador del historial).
+        let outside = NSSearchField(frame: NSRect(x: 420, y: 0, width: 150, height: 22))
+        let content = NSView(frame: NSRect(x: 0, y: 0, width: 600, height: 300))
+        content.addSubview(terminal)
+        content.addSubview(outside)
+        let window = NSWindow(contentRect: content.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = content
+        defer { window.close() }
+
+        #expect(HiveNavigator.terminal(containing: terminal) === terminal)
+        #expect(HiveNavigator.terminal(containing: field) === terminal)
+        // Mientras escribís en el campo, el foco lo tiene el editor de campo de la ventana.
+        #expect(window.makeFirstResponder(field))
+        let editor = try #require(window.firstResponder as? NSTextView)
+        #expect(editor.isFieldEditor)
+        #expect(HiveNavigator.terminal(containing: editor) === terminal)
+        #expect(window.makeFirstResponder(outside))
+        #expect(HiveNavigator.terminal(containing: window.firstResponder) == nil)
+        #expect(HiveNavigator.terminal(containing: NSTextView()) == nil)
+        #expect(HiveNavigator.terminal(containing: nil) == nil)
+    }
+
+    @Test("Historial solo en los agentes y Cambios fuera de «Terminales», como en la barra de la sesión")
+    func sidePanels() {
+        let claude = Session(name: "Claude 1", kind: .claude, createdAt: Date())
+        let shell = Session(name: "Terminal 1", kind: .shell, createdAt: Date())
+        let main = Branch(name: "main", mode: .main, sessions: [claude, shell])
+        let repo = Project(name: "ecommerce", path: "/e", branches: [main])
+        let scratch = Project.scratch(home: "/h")
+        #expect(HiveNavigator.sidePanels(nil) == (false, false))
+        #expect(HiveNavigator.sidePanels((repo, main, claude)) == (true, true))
+        #expect(HiveNavigator.sidePanels((repo, main, shell)) == (false, true))
+        #expect(HiveNavigator.sidePanels((scratch, scratch.branches[0], claude)) == (true, false))
+    }
+
     @Test("Tamaño de letra: un punto por vez, entre 9 y 28")
     func fontSize() {
         typealias FontSize = HiveCommands.FontSize
