@@ -150,8 +150,10 @@ public enum SwitcherIndex {
     }
 
     /// Lo que se puede hacer desde el buscador: sesiones nuevas en cada rama, ramas nuevas,
-    /// agregar proyectos, cambiar de vista y abrir los ajustes.
-    public static func actions(projects: [Project], compactLayout: Bool = false) -> [SwitcherItem] {
+    /// agregar proyectos, cambiar de vista y abrir los ajustes. Las sesiones de un agente de
+    /// `missingAgents` (no instalado) dicen «No instalado» y el comando para instalarlo.
+    public static func actions(projects: [Project], compactLayout: Bool = false,
+                               missingAgents: Set<SessionKind> = []) -> [SwitcherItem] {
         var items: [SwitcherItem] = [
             SwitcherItem(id: "x-add-project", target: .action(.addProject), title: "Agregar proyecto…",
                          subtitle: "Elegí la carpeta de un repo de git",
@@ -174,9 +176,11 @@ public enum SwitcherIndex {
                 let place = project.isScratch ? project.name : "\(project.name) › \(branch.name)"
                 let recency = branch.activeSessions.map(\.recency).max() ?? .distantPast
                 for kind in SessionKind.allCases {
+                    let subtitle = missingAgents.contains(kind) ? "No instalado · \(kind.installHint)"
+                        : kind.isAgent ? "Agente nuevo en esa carpeta" : "Tu shell en esa carpeta"
                     items.append(SwitcherItem(
                         id: "x-new-\(branch.id)-\(kind.rawValue)", target: .action(.newSession(branch: branch.id, kind: kind)),
-                        title: "Nueva sesión de \(kind.label) en \(place)", subtitle: kind.isAgent ? "Agente nuevo en esa carpeta" : "Tu shell en esa carpeta",
+                        title: "Nueva sesión de \(kind.label) en \(place)", subtitle: subtitle,
                         haystack: "nueva sesion crear abrir \(kind.label) \(kind.defaultName) \(kind.binary ?? "shell") \(branch.name) \(project.name)",
                         recency: recency))
                 }
@@ -192,12 +196,12 @@ public enum SwitcherIndex {
     /// (`HistoryStore.search` y después `historyItems`).
     public static func search(_ query: String, in projects: [Project], limit: Int = 40,
                               includeArchived: Bool = false, includeActions: Bool = false,
-                              compactLayout: Bool = false) -> [SwitcherItem] {
+                              compactLayout: Bool = false, missingAgents: Set<SessionKind> = []) -> [SwitcherItem] {
         if historyQuery(query) != nil { return [] }
         let parsed = parse(query)
         if parsed.actionsOnly {
-            return rank(parsed.text, actions(projects: projects, compactLayout: compactLayout), limit: limit, minimumScore: 0,
-                        fuzzyInTitleOnly: true)
+            return rank(parsed.text, actions(projects: projects, compactLayout: compactLayout, missingAgents: missingAgents),
+                        limit: limit, minimumScore: 0, fuzzyInTitleOnly: true)
         }
         let all = items(projects, includeArchived: includeArchived)
         let q = parsed.text
@@ -213,7 +217,8 @@ public enum SwitcherIndex {
         if includeActions {
             // Sin «>», solo las acciones cuyo título empieza así («nueva…», «ajus…»): si no,
             // escribir el nombre de un proyecto llenaría la lista de «Nueva sesión en…».
-            let actions = rank(q, actions(projects: projects, compactLayout: compactLayout), limit: limit, minimumScore: 100)
+            let actions = rank(q, actions(projects: projects, compactLayout: compactLayout, missingAgents: missingAgents),
+                               limit: limit, minimumScore: 100)
             let archivedStart = results.firstIndex { $0.kind == .archived } ?? results.endIndex
             results.insert(contentsOf: actions, at: archivedStart)
             results = Array(results.prefix(limit))

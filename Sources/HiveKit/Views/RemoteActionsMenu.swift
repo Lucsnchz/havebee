@@ -12,8 +12,18 @@ struct RemoteActionsMenu: View {
     @State private var remote: RemoteHost?
     /// Rama por defecto del remoto, sin el prefijo ("main").
     @State private var defaultBase: String?
-    /// Lo que se está haciendo, para el spinner.
-    @State private var busy: String?
+    /// Para mostrar el spinner ya andando (las capturas de los tests).
+    private let previewBusy: String?
+
+    init(project: Project, branch: Branch, busy: String? = nil) {
+        self.project = project
+        self.branch = branch
+        previewBusy = busy
+    }
+
+    /// Lo que se está haciendo, para el spinner. Lo guarda el store y no esta vista, que se arma de
+    /// nuevo al cambiar de sesión: con un pre-push de varios minutos, al volver sigue el spinner con su X.
+    private var busy: String? { previewBusy ?? store.remoteOperations[branch.id]?.label }
 
     var body: some View {
         content
@@ -27,6 +37,15 @@ struct RemoteActionsMenu: View {
                     ProgressView()
                         .controlSize(.small)
                         .help(busy)
+                    Button {
+                        store.cancelRemoteOperation(branchId: branch.id)
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Cancelar: corta git y lo que esté corriendo (un hook pre-push, por ejemplo)")
+                    .accessibilityLabel("Cancelar")
                 }
                 Menu {
                     menuItems
@@ -45,7 +64,7 @@ struct RemoteActionsMenu: View {
     @ViewBuilder private var menuItems: some View {
         let active = store.isActive(branch, in: project)
         Button {
-            perform("Trayendo cambios…", title: "No se pudieron traer los cambios") { git, dir, _ in
+            perform("Trayendo cambios…", title: "No se pudieron traer los cambios", cancelled: "Cancelaste «Traer cambios»") { git, dir, _ in
                 git.pull(ffOnly: true, in: dir)
             }
         } label: {
@@ -54,7 +73,7 @@ struct RemoteActionsMenu: View {
         .disabled(!active)
         .help(active ? "git pull --ff-only" : "Hacé checkout de la rama para traer sus cambios")
         Button {
-            perform("Publicando…", title: "No se pudo publicar la rama") { git, dir, name in
+            perform("Publicando…", title: "No se pudo publicar la rama", cancelled: "Cancelaste la publicación de «\(branch.name)»") { git, dir, name in
                 git.push(branch: name, setUpstream: true, in: dir)
             }
         } label: {
@@ -95,24 +114,13 @@ struct RemoteActionsMenu: View {
         defaultBase = base.map { ref in ref.firstIndex(of: "/").map { String(ref[ref.index(after: $0)...]) } ?? ref }
     }
 
-    /// Corre una operación de git fuera del hilo principal; si falla, avisa con una alerta.
-    private func perform(_ label: String, title: String,
-                         _ operation: @escaping @Sendable (GitClient, String, String) -> CommandResult,
+    /// Corre una operación de git fuera del hilo principal, cancelable con la X junto al spinner; si
+    /// falla, avisa con una alerta, y si la cancelaste, con un aviso corto. Una sola por rama.
+    private func perform(_ label: String, title: String, cancelled: String,
+                         _ work: @escaping @Sendable (GitClient, String, String) -> CommandResult,
                          then success: (() -> Void)? = nil) {
-        let git = store.git
-        let dir = project.directory(for: branch)
-        let name = branch.name
-        busy = label
-        Task {
-            let result = await Task.detached { operation(git, dir, name) }.value
-            busy = nil
-            if result.ok {
-                success?()
-            } else {
-                store.alert = AppAlert(title: title, message: result.errorMessage.isEmpty ? "git terminó con el código \(result.status)." : result.errorMessage)
-            }
-            store.refreshGit()
-        }
+        store.runRemoteOperation(branchId: branch.id, directory: project.directory(for: branch), branchName: branch.name,
+                                 label: label, failureTitle: title, cancelledNotice: cancelled, work, then: success)
     }
 
     /// Publica la rama si hace falta y abre la página del MR nuevo contra la rama por defecto.
@@ -127,7 +135,7 @@ struct RemoteActionsMenu: View {
             BrowserLink.open(url)
             return
         }
-        perform("Publicando…", title: "No se pudo publicar la rama", { git, dir, name in
+        perform("Publicando…", title: "No se pudo publicar la rama", cancelled: "Cancelaste la publicación de «\(branch.name)»", { git, dir, name in
             git.push(branch: name, setUpstream: true, in: dir)
         }, then: { BrowserLink.open(url) })
     }

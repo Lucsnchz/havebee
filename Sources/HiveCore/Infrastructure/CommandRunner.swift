@@ -40,12 +40,31 @@ extension CommandRunning {
 extension CommandResult {
     /// Status de un proceso que se cortó por tardar demasiado.
     public static let timedOutStatus: Int32 = -2
+    /// Status de un proceso que se cortó porque cancelaste la tarea que lo esperaba (`CancellableWork`).
+    public static let cancelledStatus: Int32 = -3
 
     public var timedOut: Bool { status == Self.timedOutStatus }
+    public var cancelled: Bool { status == Self.cancelledStatus }
+}
+
+/// Corre trabajo que lanza procesos (git, por ejemplo) fuera del hilo principal. Si se cancela la
+/// tarea que lo espera, se corta el proceso que esté corriendo en ese momento (con lo que lanzó: un
+/// hook, ssh) y vuelve con `CommandResult.cancelledStatus`. Es a pedido: el resto de las llamadas
+/// no se cortan aunque su tarea se cancele (una revisión de git a medias se tomaría por un error).
+public enum CancellableWork {
+    public static func run<T: Sendable>(priority: TaskPriority? = nil, _ work: @escaping @Sendable () -> T) async -> T {
+        let task = Task.detached(priority: priority) {
+            ProcessCommandRunner.$cancelsWithTask.withValue(true) { work() }
+        }
+        return await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
+    }
 }
 
 /// Implementación real con `Process`. Bloquea el hilo: llamarla fuera del principal.
 public struct ProcessCommandRunner: CommandRunning {
+    /// Adentro de `CancellableWork.run`: cancelar la tarea corta el proceso.
+    @TaskLocal public static var cancelsWithTask = false
+
     public init() {}
 
     public func run(_ executable: String, _ args: [String], cwd: String?, environment extra: [String: String]) -> CommandResult {
@@ -91,6 +110,12 @@ public struct ProcessCommandRunner: CommandRunning {
         // actual y, en el principal, ejecuta otro trabajo pendiente en medio de esta llamada.
         let exited = DispatchSemaphore(value: 0)
         process.terminationHandler = { _ in exited.signal() }
+        let cancellable = Self.cancelsWithTask
+        if cancellable && Task.isCancelled {
+            try? outHandle.close()
+            try? errHandle.close()
+            return CommandResult(status: CommandResult.cancelledStatus, stderr: "Se canceló.")
+        }
         do {
             try process.run()
         } catch {
@@ -100,35 +125,58 @@ public struct ProcessCommandRunner: CommandRunning {
         }
         try? outHandle.close()
         try? errHandle.close()
-        var timedOut = false
-        if let timeout {
-            if exited.wait(timeout: .now() + max(timeout, 0)) == .timedOut {
-                timedOut = true
-                // terminate() le manda SIGTERM al hijo y a lo que lanzó: Process lo deja en su propio grupo.
-                process.terminate()
-                // Si no se va con SIGTERM, lo matamos con todo su grupo (ssh, un hook de git), que si
-                // no quedaría vivo.
-                if exited.wait(timeout: .now() + 2) == .timedOut {
-                    let pid = process.processIdentifier
-                    kill(-pid, SIGKILL)
-                    kill(pid, SIGKILL)
-                    _ = exited.wait(timeout: .now() + 2)
-                }
+        let outcome = Self.wait(for: exited, timeout: timeout, cancellable: cancellable)
+        if outcome != .exited {
+            // terminate() le manda SIGTERM al hijo y a lo que lanzó: Process lo deja en su propio grupo.
+            process.terminate()
+            // Si no se va con SIGTERM, lo matamos con todo su grupo (ssh, un hook de git), que si
+            // no quedaría vivo.
+            if exited.wait(timeout: .now() + 2) == .timedOut {
+                let pid = process.processIdentifier
+                kill(-pid, SIGKILL)
+                kill(pid, SIGKILL)
+                _ = exited.wait(timeout: .now() + 2)
             }
-        } else {
-            exited.wait()
         }
         let outData = (try? Data(contentsOf: outFile)) ?? Data()
         let errData = (try? Data(contentsOf: errFile)) ?? Data()
-        if timedOut {
+        switch outcome {
+        case .timedOut:
             let seconds = String(format: "%g", timeout ?? 0)
             return CommandResult(status: CommandResult.timedOutStatus,
                                  stdout: String(decoding: outData, as: UTF8.self),
                                  stderr: "Tardó demasiado: se canceló después de \(seconds) s.")
+        case .cancelled:
+            return CommandResult(status: CommandResult.cancelledStatus, stdout: String(decoding: outData, as: UTF8.self),
+                                 stderr: "Se canceló.")
+        case .exited:
+            break
         }
         return CommandResult(status: process.terminationStatus,
                              stdout: String(decoding: outData, as: UTF8.self),
                              stderr: String(decoding: errData, as: UTF8.self))
+    }
+
+    private enum Outcome { case exited, timedOut, cancelled }
+
+    /// Espera a que termine, como mucho `timeout` segundos. Si es cancelable, cada décima de segundo
+    /// se fija si cancelaron la tarea.
+    private static func wait(for exited: DispatchSemaphore, timeout: TimeInterval?, cancellable: Bool) -> Outcome {
+        let deadline = timeout.map { DispatchTime.now() + max($0, 0) }
+        guard cancellable else {
+            guard let deadline else {
+                exited.wait()
+                return .exited
+            }
+            return exited.wait(timeout: deadline) == .timedOut ? .timedOut : .exited
+        }
+        while true {
+            var slice = DispatchTime.now() + 0.1
+            if let deadline, deadline < slice { slice = deadline }
+            if exited.wait(timeout: slice) == .success { return .exited }
+            if Task.isCancelled { return .cancelled }
+            if let deadline, DispatchTime.now() >= deadline { return .timedOut }
+        }
     }
 }
 

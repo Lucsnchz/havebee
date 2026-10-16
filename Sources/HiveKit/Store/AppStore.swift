@@ -33,6 +33,8 @@ public final class AppStore {
     var mcpVersion = 0
     /// Comandos del proyecto corriendo (en la esquina de la ventana).
     public internal(set) var commandRuns: [CommandRun] = []
+    /// Publicar o traer en curso, por rama (ver `runRemoteOperation`).
+    public internal(set) var remoteOperations: [UUID: RemoteOperation] = [:]
 
     // Diálogos y hojas abiertas.
     /// Alertas en cola: se muestran de a una y en orden.

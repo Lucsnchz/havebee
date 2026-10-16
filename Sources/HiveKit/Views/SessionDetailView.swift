@@ -192,7 +192,7 @@ private struct NewSessionMenu: View {
         } label: {
             Label("Nueva sesión", systemImage: "plus")
         } primaryAction: {
-            store.requestNewSession(branchId: branchId, kind: kind)
+            HiveNavigator.requestNewSession(store, branchId: branchId, kind: kind)
         }
         .help("Nueva sesión de \(kind.label) en esta rama (con la flechita elegís otro agente)")
     }
@@ -245,7 +245,7 @@ private struct SessionMoreMenu: View {
         Menu {
             if runtime.isRunning {
                 Button(session.kind.isAgent ? "Reiniciar (retoma la conversación)" : "Reiniciar la terminal") {
-                    store.relaunch(session.id)
+                    store.requestRestart(session.id)
                 }
             }
             Divider()
@@ -260,7 +260,7 @@ private struct SessionMoreMenu: View {
             }
             Divider()
             if runtime.isRunning {
-                Button("Detener") { store.stop(session.id) }
+                Button("Detener") { store.requestStop(session.id) }
             }
             Button("Archivar") { store.requestArchive(session.id) }
         } label: {

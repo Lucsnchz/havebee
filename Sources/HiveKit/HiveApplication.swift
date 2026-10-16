@@ -84,7 +84,8 @@ final class HiveAppDelegate: NSObject, NSApplicationDelegate {
     /// Si cancelás, no se corta nada.
     @MainActor
     static func terminateReply(store: AppStore, confirm: (String) -> Bool) -> NSApplication.TerminateReply {
-        if let message = QuitWarning.message(working: store.workingCount, commands: store.runningCommandsCount),
+        if let message = QuitWarning.message(working: store.workingCount, commands: store.runningCommandsCount,
+                                             permission: store.permissionCount, processes: store.busyTerminalsCount),
            !confirm(message) {
             return .terminateCancel
         }
@@ -131,13 +132,21 @@ private final class WindowChromeView: NSView {
     }
 }
 
-/// Aviso al salir si hay cosas corriendo.
+/// Aviso al salir si hay cosas corriendo: sesiones trabajando o esperando permiso, procesos en
+/// terminales (un `npm run dev`) y comandos.
 enum QuitWarning {
-    static func message(working: Int, commands: Int) -> String? {
+    static func message(working: Int, commands: Int, permission: Int = 0, processes: Int = 0) -> String? {
         var parts: [String] = []
         if working > 0 { parts.append(working == 1 ? "una sesión trabajando" : "\(working) sesiones trabajando") }
+        if permission > 0 {
+            parts.append(permission == 1 ? "una sesión esperando tu permiso" : "\(permission) sesiones esperando tu permiso")
+        }
+        if processes > 0 {
+            parts.append(processes == 1 ? "un proceso corriendo en una terminal" : "\(processes) procesos corriendo en terminales")
+        }
         if commands > 0 { parts.append(commands == 1 ? "un comando corriendo" : "\(commands) comandos corriendo") }
-        return parts.isEmpty ? nil : "Hay " + parts.joined(separator: " y ")
+        guard let last = parts.popLast() else { return nil }
+        return "Hay " + (parts.isEmpty ? last : parts.joined(separator: ", ") + " y " + last)
     }
 }
 

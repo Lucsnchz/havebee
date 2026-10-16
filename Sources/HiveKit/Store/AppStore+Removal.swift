@@ -35,9 +35,10 @@ extension AppStore {
             guard let p = project(id), !p.isScratch else { return }
             let stopping = Self.stoppingSummary(commands: commandRuns.filter { $0.projectId == id && $0.running }.count,
                                                 sessions: p.allSessions.filter { runtimes[$0.id]?.isRunning == true }.count)
+            // Qué pasa y qué no: lo de Hive se va (se puede deshacer unos segundos), el disco no se toca.
+            let message = [stopping, "Sus ramas, sesiones y comandos se quitan de Hive. No se borra nada del disco: la carpeta y el repo quedan como están."]
             pendingRemoval = PendingRemoval(item: item, title: "¿Quitar «\(p.name)» de Hive?",
-                                            message: [stopping, "No se borra nada del disco."].compactMap { $0 }.joined(separator: " "),
-                                            isWorktree: false)
+                                            message: message.compactMap { $0 }.joined(separator: " "), isWorktree: false)
         case .branch(let id):
             guard let ctx = branchContext(id) else { return }
             let worktree = ctx.branch.mode == .worktree
@@ -50,14 +51,22 @@ extension AppStore {
         case .session(let id):
             guard let ctx = sessionContext(id) else { return }
             let archived = ctx.session.isArchived
+            // Qué pasa al eliminarla y, si sigue abierta, la alternativa (el botón «Archivarla»).
             let message = switch (ctx.session.kind.reportsConversation, archived) {
-            case (true, false): "También se borra su historial en Hive (todo lo anterior a cada /clear). Si lo querés conservar, archivala."
-            case (false, false): "Se cierra su terminal. Si la querés conservar, archivala."
+            case (true, false): "Se cierra y se borra su historial en Hive (todo lo anterior a cada /clear). No se puede deshacer. Si lo querés conservar, archivala."
+            case (false, false): "Se cierra su terminal y se quita de Hive. Si la querés conservar, archivala."
             // Ya archivada: no tiene sentido ofrecer archivarla.
-            case (true, true): "También se borra su historial en Hive (todo lo anterior a cada /clear). No se puede deshacer."
+            case (true, true): "Se borra su historial en Hive (todo lo anterior a cada /clear). No se puede deshacer."
             case (false, true): "Se borra de las archivadas. No se puede deshacer."
             }
-            pendingRemoval = PendingRemoval(item: item, title: "¿Eliminar «\(ctx.session.name)»?", message: message, isWorktree: false,
+            // Si está en algo (la misma regla que ⌘W), que se sepa antes de elegir: «Archivarla» y
+            // «Eliminar sesión» lo cortan sin volver a preguntar.
+            let busy = runtimes[id].flatMap { rt in
+                rt.isRunning ? InterruptRule.removalNote(status: rt.status, isAgent: rt.kind.isAgent,
+                                                         foregroundJob: rt.kind.isAgent ? nil : rt.terminal?.foregroundJob) : nil
+            }
+            pendingRemoval = PendingRemoval(item: item, title: "¿Eliminar «\(ctx.session.name)»?",
+                                            message: [busy, message].compactMap { $0 }.joined(separator: " "), isWorktree: false,
                                             offersArchive: !archived)
         }
     }
@@ -110,15 +119,37 @@ extension AppStore {
             dropBranch(id)
             return true
         case .project(let id):
-            guard let p = project(id), !p.isScratch else { return false }
+            guard let index = projects.firstIndex(where: { $0.id == id }), !projects[index].isScratch else { return false }
+            let p = projects[index]
             terminate(p.allSessions.map(\.id))
             stopRuns { $0.projectId == id }
             let selectionWasInside = projects.contains(selection, inProject: id)
             projects.removeAll { $0.id == id }
             if selectionWasInside { select(nil) }
             scheduleSave()
+            // Se lleva sus sesiones (con la conversación), las archivadas, los comandos, el color y el
+            // ícono: volver a agregar el repo no los recupera, así que se puede deshacer.
+            offerUndo("Quitaste «\(p.name)» de Hive") { [weak self] in
+                self?.restoreProject(p, at: index, select: selectionWasInside)
+            }
             return true
         }
+    }
+
+    /// Vuelve a poner un proyecto quitado (el «Deshacer»). Sus sesiones vuelven dormidas, con la
+    /// conversación; los comandos que estaban corriendo quedaron cortados. Si mientras tanto volviste
+    /// a agregar el mismo repo, no se duplica.
+    func restoreProject(_ project: Project, at index: Int, select reopen: Bool) {
+        guard !projects.contains(where: { $0.id == project.id || (!$0.isScratch && $0.path == project.path) }) else { return }
+        projects.insert(project, at: min(index, projects.count))
+        for session in project.allSessions where runtimes[session.id] == nil {
+            runtimes[session.id] = SessionRuntime(sessionId: session.id, kind: session.kind)
+        }
+        gitGeneration += 1
+        scheduleSave()
+        // Al proyecto y no a la sesión que tenías abierta: abrirla la volvería a lanzar.
+        if reopen { select(.project(project.id)) }
+        refreshGit()
     }
 
     /// Corre el script de cierre del proyecto en el worktree (se ve en la esquinita) y espera a que

@@ -105,6 +105,22 @@ public final class HiveTerminalView: TerminalView, TerminalViewDelegate, LocalPr
     /// Lo usan el menú de la sesión, el dock y los paneles.
     var isProcessRunning: Bool { process.running }
 
+    /// El trabajo en primer plano, si no es el mismo proceso que lanzó la terminal (en una sesión de
+    /// Terminal, el shell esperando en el prompt): un `npm run dev`, un build. Devuelve su nombre (""
+    /// si no se pudo leer), o nil si no hay ninguno. Es lo que mira Terminal.app para preguntar antes
+    /// de cerrar una ventana: el grupo de procesos que tiene la terminal en primer plano.
+    var foregroundJob: String? {
+        guard process.running else { return nil }
+        let fd = process.childfd
+        let leader = process.shellPid
+        guard fd >= 0, leader > 0 else { return nil }
+        let group = tcgetpgrp(fd)
+        guard group > 0, group != leader else { return nil }
+        var name = [CChar](repeating: 0, count: 256)
+        guard proc_name(group, &name, UInt32(name.count)) > 0 else { return "" }
+        return String(decoding: name.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
+    }
+
     /// Si alguna vez se le pidió lanzar un proceso. Una sesión de agente que terminó sin haberlo
     /// lanzado es la que no encontró el programa en el PATH.
     var hasStartedProcess: Bool { startDirectory != nil }

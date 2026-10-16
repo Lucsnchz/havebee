@@ -395,8 +395,8 @@ struct SessionMenu: View {
         let rt = store.runtimes[session.id]
         Button("Renombrar…") { store.beginRename(.session(session.id)) }
         if rt?.isRunning == true {
-            Button("Reiniciar") { store.relaunch(session.id) }
-            Button("Detener") { store.stop(session.id) }
+            Button("Reiniciar") { store.requestRestart(session.id) }
+            Button("Detener") { store.requestStop(session.id) }
         } else if case .exited? = rt?.status {
             Button("Reanudar") { store.relaunch(session.id) }
         }

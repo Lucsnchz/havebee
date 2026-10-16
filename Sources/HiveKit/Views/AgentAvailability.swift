@@ -41,6 +41,15 @@ final class AgentAvailability {
 
     func isInstalled(_ kind: SessionKind) -> Bool { !missing.contains(kind) }
 
+    /// El aviso para un agente que no está instalado: cómo instalarlo, con un botón para copiar el
+    /// comando (lo muestran ⌘T, el menú «Sesión» y ⌘K en lugar de abrir una sesión que no arranca).
+    static func installAlert(for kind: SessionKind) -> AppAlert {
+        AppAlert(title: "\(kind.label) no está instalado",
+                 message: "Instalalo desde la terminal y volvé a intentar:\n\n\(kind.installHint)",
+                 actionTitle: "Copiar comando", cancelTitle: "Cerrar",
+                 action: { ExternalApps.copyToPasteboard(kind.installHint) })
+    }
+
     /// Vuelve a buscar los binarios. Con el lanzador real, la búsqueda en disco corre fuera del
     /// hilo principal; con uno de prueba se le pregunta a él.
     @discardableResult

@@ -76,24 +76,29 @@ extension GitClient {
 /// Implementación con el git del sistema.
 public struct GitCLI: GitClient {
     public let executable: String
-    /// Límite de cada llamada (las colgadas vuelven con status -2).
-    public let timeout: TimeInterval
-    /// Límite de las que van por la red o escriben muchos archivos (fetch, pull, push, worktree add).
-    public let networkTimeout: TimeInterval
+    /// Cuánto puede tardar cada tipo de llamada (las colgadas vuelven con status -2): ver `GitCallKind`.
+    public let timeouts: GitTimeouts
+    /// Límite de las llamadas locales.
+    public var timeout: TimeInterval { timeouts.local }
+    /// Límite de las que van por la red sin correr hooks (fetch) o borran muchos archivos.
+    public var networkTimeout: TimeInterval { timeouts.network }
     private let runner: CommandRunning
     private let environment = ["GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0", "LC_ALL": "C"]
 
+    /// `hooksTimeout`: el de las que pueden correr hooks del usuario (push, pull, switch, worktree
+    /// add, commit), mucho más amplio.
     public init(executable: String = "/usr/bin/git", runner: CommandRunning = ProcessCommandRunner(),
-                timeout: TimeInterval = 20, networkTimeout: TimeInterval = 120) {
+                timeout: TimeInterval = GitTimeouts.standard.local, networkTimeout: TimeInterval = GitTimeouts.standard.network,
+                hooksTimeout: TimeInterval = GitTimeouts.standard.hooks) {
         self.executable = executable
         self.runner = runner
-        self.timeout = timeout
-        self.networkTimeout = networkTimeout
+        self.timeouts = GitTimeouts(local: timeout, network: networkTimeout, hooks: hooksTimeout)
     }
 
+    /// Con el límite que corresponde a la llamada según `GitCallKind`.
     @discardableResult
-    public func run(_ args: [String], in dir: String) -> CommandResult {
-        run(args, in: dir, timeout: timeout)
+    public func run(_ args: [String], in dir: String, network: Bool = false) -> CommandResult {
+        run(args, in: dir, timeout: timeouts.limit(for: .of(args)), network: network)
     }
 
     /// `network`: sin preguntas por la terminal ni por ssh (si ssh necesita una clave con
@@ -112,6 +117,9 @@ public struct GitCLI: GitClient {
         if r.timedOut {
             return CommandResult(status: r.status, stdout: r.stdout,
                                  stderr: "git tardó demasiado: se canceló después de \(String(format: "%g", limit)) s (git \(args.first ?? "")).")
+        }
+        if r.cancelled {
+            return CommandResult(status: r.status, stdout: r.stdout, stderr: "Cancelaste git \(args.first ?? "").")
         }
         return r
     }
@@ -216,11 +224,11 @@ public struct GitCLI: GitClient {
     }
 
     public func addWorktree(at path: String, branch: String, newBranch: Bool, base: String?, track: Bool?, in dir: String) -> CommandResult {
+        // Corre el post-checkout del repo (y LFS): límite de hooks, no el de la red.
         if newBranch {
-            return run(["worktree", "add"] + trackFlag(track) + ["-b", branch, path] + (base.map { [$0] } ?? []),
-                       in: dir, timeout: networkTimeout)
+            return run(["worktree", "add"] + trackFlag(track) + ["-b", branch, path] + (base.map { [$0] } ?? []), in: dir)
         }
-        return run(["worktree", "add", path, branch], in: dir, timeout: networkTimeout)
+        return run(["worktree", "add", path, branch], in: dir)
     }
 
     public func removeWorktree(_ path: String, force: Bool, in dir: String) -> CommandResult {
@@ -244,29 +252,37 @@ public struct GitCLI: GitClient {
             let locked = worktrees(dir).contains { $0.isLocked && samePath($0.path, path) }
             flags = locked ? ["-f", "-f"] : ["--force"]
         }
-        return run(["worktree", "remove"] + flags + [path], in: dir, timeout: networkTimeout)
+        return run(["worktree", "remove"] + flags + [path], in: dir)
     }
 
     public func checkout(_ branch: String, in dir: String) -> CommandResult {
         // `switch` nunca toca archivos: con `checkout docs` y una carpeta docs/, git no sabe qué querés.
-        // Si la rama solo existe en un remoto, la crea siguiéndolo.
-        run(["switch", branch], in: dir, timeout: networkTimeout)
+        // Si la rama solo existe en un remoto, la crea siguiéndolo. Corre el post-checkout del repo (y
+        // LFS): cortarlo a mitad de camino dejaría el árbol mezclado entre las dos ramas.
+        run(["switch", branch], in: dir)
     }
 
     public func fetch(_ dir: String, timeout limit: TimeInterval?) -> CommandResult {
-        run(["fetch", "--all", "--prune", "--quiet"], in: dir, timeout: limit ?? networkTimeout, network: true)
+        let args = ["fetch", "--all", "--prune", "--quiet"]
+        return run(args, in: dir, timeout: limit ?? timeouts.limit(for: .of(args)), network: true)
     }
 
     public func pull(ffOnly: Bool, in dir: String) -> CommandResult {
-        run(["pull", "--quiet"] + (ffOnly ? ["--ff-only"] : ["--no-rebase"]), in: dir, timeout: networkTimeout, network: true)
+        // Puede correr post-merge: límite de hooks (y se puede cancelar desde la UI).
+        run(["pull", "--quiet"] + (ffOnly ? ["--ff-only"] : ["--no-rebase"]), in: dir, network: true)
     }
 
     public func push(branch: String, setUpstream: Bool, in dir: String) -> CommandResult {
         let configured = run(["config", "--get", "branch.\(branch).remote"], in: dir).output
         guard let remote = configured.isEmpty || configured == "." ? primaryRemote(dir) : configured else {
+            // Si lo cancelaste mientras buscaba el remoto, no es que no haya remotos.
+            if ProcessCommandRunner.cancelsWithTask && Task.isCancelled {
+                return CommandResult(status: CommandResult.cancelledStatus, stderr: "Cancelaste git push.")
+            }
             return CommandResult(status: -1, stderr: "El repo no tiene remotos.")
         }
-        return run(["push", "--quiet"] + (setUpstream ? ["-u"] : []) + [remote, branch], in: dir, timeout: networkTimeout, network: true)
+        // Un pre-push que corre la suite de tests tarda minutos: límite de hooks (y se puede cancelar).
+        return run(["push", "--quiet"] + (setUpstream ? ["-u"] : []) + [remote, branch], in: dir, network: true)
     }
 
     public func resolveConflict(path: String, using resolution: ConflictResolution, in dir: String) -> CommandResult {
