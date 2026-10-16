@@ -176,6 +176,20 @@ struct ContrastTests {
         #expect(found >= 5)
     }
 
+    @Test("Botón principal: miel habilitado y gris deshabilitado (no un miel transparente que se ve marrón)")
+    func prominentButtonFill() {
+        for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+            let base = contrastBackground(appearance).usingColorSpace(.sRGB) ?? .white
+            let enabled = HiveContrast.resolve(NSColor(HiveProminentButtonStyle.fill(enabled: true, pressed: false)), in: appearance)
+            let fill = HiveContrast.resolve(Theme.accentFillNSColor, in: appearance)
+            #expect(abs(enabled.redComponent - fill.redComponent) < 0.01 && abs(enabled.blueComponent - fill.blueComponent) < 0.01)
+            let disabled = HiveContrast.composite(
+                HiveContrast.resolve(NSColor(HiveProminentButtonStyle.fill(enabled: false, pressed: false)), in: appearance), over: base)
+            #expect(abs(disabled.redComponent - disabled.blueComponent) < 0.02, "\(appearance.rawValue): \(disabled)")
+            #expect(abs(disabled.redComponent - base.redComponent) > 0.02, "\(appearance.rawValue): se tiene que ver el botón")
+        }
+    }
+
     @Test("Diff: las marcas de conflicto van en una franja gris, distinta del rojo de lo borrado")
     func conflictMarkersAreNotRemovals() {
         for appearance in [NSAppearance.Name.aqua, .darkAqua] {

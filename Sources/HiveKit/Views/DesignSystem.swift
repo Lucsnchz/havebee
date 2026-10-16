@@ -185,6 +185,15 @@ struct HiveProminentButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         HiveProminentLabel(configuration: configuration)
     }
+
+    /// Deshabilitado va en gris, como el botón por defecto de macOS: el miel transparente se veía
+    /// marrón en oscuro, como si se pudiera tocar.
+    static let disabledFillNSColor = Theme.dynamicNSColor(light: NSColor(white: 0, alpha: 0.06), dark: NSColor(white: 1, alpha: 0.08))
+
+    /// Relleno del botón: miel (un poco más claro mientras se aprieta) o gris si está deshabilitado.
+    static func fill(enabled: Bool, pressed: Bool) -> Color {
+        enabled ? Theme.accentFill.opacity(pressed ? 0.8 : 1) : Color(nsColor: disabledFillNSColor)
+    }
 }
 
 private struct HiveProminentLabel: View {
@@ -196,12 +205,11 @@ private struct HiveProminentLabel: View {
         let small = controlSize == .small || controlSize == .mini
         configuration.label
             .font(.system(size: small ? 11 : 13, weight: .semibold))
-            .foregroundStyle(Theme.onAccentFill)
+            .foregroundStyle(isEnabled ? Theme.onAccentFill : Color(nsColor: .disabledControlTextColor))
             .padding(.horizontal, small ? 8 : 12)
             .padding(.vertical, small ? 3 : 5)
-            .background(Theme.accentFill.opacity(configuration.isPressed ? 0.8 : 1),
+            .background(HiveProminentButtonStyle.fill(enabled: isEnabled, pressed: configuration.isPressed),
                         in: RoundedRectangle(cornerRadius: small ? 5 : 7, style: .continuous))
-            .opacity(isEnabled ? 1 : 0.45)
             .contentShape(Rectangle())
     }
 }
