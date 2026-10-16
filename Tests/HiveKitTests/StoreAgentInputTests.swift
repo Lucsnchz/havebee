@@ -196,11 +196,11 @@ struct StoreAgentInputTests {
         prompt("/clear")
         #expect(s.store.sessionContext(session.id)?.session.name == "Claude 1") // un comando no da nombre
         prompt("Agregá validación de stock al checkout")
-        #expect(s.store.sessionContext(session.id)?.session.name == "Agregá validación de stock al")
+        #expect(s.store.sessionContext(session.id)?.session.name == "Agregá validación de stock")
         prompt("Ahora corré los tests")
-        #expect(s.store.sessionContext(session.id)?.session.name == "Agregá validación de stock al")
+        #expect(s.store.sessionContext(session.id)?.session.name == "Agregá validación de stock")
         // Se guardó.
-        #expect(s.world.makeStore().sessionContext(session.id)?.session.name == "Agregá validación de stock al")
+        #expect(s.world.makeStore().sessionContext(session.id)?.session.name == "Agregá validación de stock")
     }
 
     @Test("Una sesión renombrada a mano no se toca, aunque se llame «Claude 3»")
