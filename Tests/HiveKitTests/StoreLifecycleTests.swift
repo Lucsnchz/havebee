@@ -42,7 +42,7 @@ struct StoreLifecycleTests {
         try "x".write(toFile: folder.path + "/archivo.txt", atomically: true, encoding: .utf8)
         await store.addProject(at: folder.path)
         let alert = try #require(store.alert)
-        #expect(alert.message.hasPrefix("“\(folder.url.lastPathComponent)” no es un repo de git. ¿Querés inicializarlo y agregarlo a Hive?"))
+        #expect(alert.message.hasPrefix("«\(folder.url.lastPathComponent)» no es un repo de git. ¿Querés inicializarlo y agregarlo a Hive?"))
         #expect(alert.message.hasSuffix("\n\n\(folder.path)"))
         #expect(!alert.isDestructive)
         store.alert = AppAlert(title: "Otra", message: "en cola")
@@ -355,6 +355,6 @@ struct HomeAndWelcomeTests {
         }
         #expect(await renderNucleoSnapshot(light.environment(demo.store), size: CGSize(width: 700, height: 160),
                                            name: "nucleo-07-deshacer-claro", dark: false) > 3)
-        #expect(demo.store.undoAction?.message == "Archivaste “Revisá los tests de pagos”")
+        #expect(demo.store.undoAction?.message == "Archivaste «Revisá los tests de pagos»")
     }
 }

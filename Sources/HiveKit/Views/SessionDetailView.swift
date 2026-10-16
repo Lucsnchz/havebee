@@ -303,7 +303,7 @@ private struct SessionMoreMenu: View {
         do {
             try text.write(to: url, atomically: true, encoding: .utf8)
         } catch {
-            store.alert = AppAlert(title: "No se pudo guardar el texto", message: error.localizedDescription)
+            store.alert = AppAlert(title: "No pude guardar el texto", message: error.localizedDescription)
         }
     }
 }

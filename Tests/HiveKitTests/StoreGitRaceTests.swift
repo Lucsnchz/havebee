@@ -107,7 +107,7 @@ struct StoreGitRaceTests {
         s.store.requestCheckout(branchId: fix.id)
         let pending = try #require(s.store.pendingCheckout)
         #expect(!(await s.store.performCheckout(pending)))
-        #expect(s.store.alert?.title == "No se pudo hacer checkout de «fix»")
+        #expect(s.store.alert?.title == "No pude hacer checkout de «fix»")
         #expect(s.store.refreshTask != nil)
         #expect(await s.settle())
     }

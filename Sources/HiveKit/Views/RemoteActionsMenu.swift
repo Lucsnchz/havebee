@@ -79,7 +79,7 @@ struct RemoteActionsMenu: View {
     @ViewBuilder private var menuItems: some View {
         let active = store.isActive(branch, in: project)
         Button {
-            perform("Trayendo cambios…", title: "No se pudieron traer los cambios") { git, dir, _ in
+            perform("Trayendo cambios…", title: "No pude traer los cambios") { git, dir, _ in
                 git.pull(ffOnly: true, in: dir)
             }
         } label: {
@@ -88,7 +88,7 @@ struct RemoteActionsMenu: View {
         .disabled(!active)
         .help(active ? "git pull --ff-only" : "Hacé checkout de la rama para traer sus cambios")
         Button {
-            perform("Publicando…", title: "No se pudo publicar la rama") { git, dir, name in
+            perform("Publicando…", title: "No pude publicar la rama") { git, dir, name in
                 git.push(branch: name, setUpstream: true, in: dir)
             }
         } label: {
@@ -150,7 +150,7 @@ struct RemoteActionsMenu: View {
             BrowserLink.open(url)
             return
         }
-        perform("Publicando…", title: "No se pudo publicar la rama", { git, dir, name in
+        perform("Publicando…", title: "No pude publicar la rama", { git, dir, name in
             git.push(branch: name, setUpstream: true, in: dir)
         }, then: { BrowserLink.open(url) })
     }

@@ -25,7 +25,7 @@ extension AppStore {
               let command = project(projectId)?.commands[index] else { return }
         projects.updateProject(projectId) { $0.commands.remove(at: index) }
         scheduleSave()
-        offerUndo("Borraste el comando “\(command.name)”") { [weak self] in
+        offerUndo("Borraste el comando «\(command.name)»") { [weak self] in
             // Vuelve al mismo lugar de la lista.
             self?.projects.updateProject(projectId) { p in
                 guard !p.commands.contains(where: { $0.id == command.id }) else { return }
@@ -182,7 +182,7 @@ extension AppStore {
             try MCPConfig.upsert(server, replacing: oldName, dir: project.path)
             mcpVersion += 1
         } catch {
-            alert = AppAlert(title: "No se pudo guardar .mcp.json", message: error.localizedDescription)
+            alert = AppAlert(title: "No pude guardar .mcp.json", message: error.localizedDescription)
         }
     }
 
@@ -193,10 +193,10 @@ extension AppStore {
             try MCPConfig.remove(name, dir: project.path)
             mcpVersion += 1
             if let removed {
-                offerUndo("Quitaste el MCP “\(name)”") { [weak self] in self?.saveMCP(removed, replacing: nil, projectId: projectId) }
+                offerUndo("Quitaste el MCP «\(name)»") { [weak self] in self?.saveMCP(removed, replacing: nil, projectId: projectId) }
             }
         } catch {
-            alert = AppAlert(title: "No se pudo guardar .mcp.json", message: error.localizedDescription)
+            alert = AppAlert(title: "No pude guardar .mcp.json", message: error.localizedDescription)
         }
     }
 

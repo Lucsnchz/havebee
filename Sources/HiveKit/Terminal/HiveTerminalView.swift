@@ -279,7 +279,7 @@ public final class HiveTerminalView: TerminalView, TerminalViewDelegate, LocalPr
     nonisolated public func processFailedToStart(_ source: LocalProcess, error: LocalProcessError) {
         let report = { @MainActor [weak self] in
             guard let self else { return }
-            self.feed(text: "\r\n  No se pudo abrir el proceso: \(error)\r\n")
+            self.feed(text: "\r\n  No pude abrir el proceso: \(error)\r\n")
             self.processDelegate?.terminalProcessTerminated(self, exitCode: nil)
         }
         if Thread.isMainThread {

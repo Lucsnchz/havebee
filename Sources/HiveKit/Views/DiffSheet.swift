@@ -248,7 +248,7 @@ struct DiffSheet: View {
                 resolved[path] = message
             } else {
                 let detail = r.errorMessage.isEmpty ? "git terminó con el código \(r.status)." : r.errorMessage
-                resolveError = "No se pudo resolver: \(detail)"
+                resolveError = "No pude resolverlo: \(detail)"
             }
             store.refreshGit()
             await load()

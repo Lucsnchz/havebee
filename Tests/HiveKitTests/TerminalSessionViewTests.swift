@@ -134,7 +134,7 @@ struct TerminalSessionViewTests {
         #expect(SessionStatusBar.changesLabel(3) == "3 cambios")
     }
 
-    @Test("Un agente que no está instalado: «No se encontró» con el comando de instalación")
+    @Test("Un agente que no está instalado: «No encuentro» con el comando de instalación")
     func missingAgent() async throws {
         let demo = try await SessionDemo()
         #expect(demo.store.runtimes[demo.gemini.id]?.status == .exited(nil))
@@ -142,7 +142,7 @@ struct TerminalSessionViewTests {
                     size: CGSize(width: 1000, height: 500), name: "ts-sesion-sin-agente", settle: 0.8)
     }
 
-    @Test("«No se encontró» solo si el agente no arrancó y no está en el PATH")
+    @Test("«No encuentro» solo si el agente no arrancó y no está en el PATH")
     func missingAgentRule() {
         let nowhere: (String) -> String? = { _ in nil }
         let found: (String) -> String? = { "/fake/bin/\($0)" }

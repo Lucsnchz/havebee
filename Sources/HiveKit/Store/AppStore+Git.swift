@@ -36,7 +36,7 @@ extension AppStore {
             let folder = URL(fileURLWithPath: path).lastPathComponent
             alert = AppAlert(
                 title: "No es un repositorio git",
-                message: "“\(folder)” no es un repo de git. ¿Querés inicializarlo y agregarlo a Hive?\n\n\(path)",
+                message: "«\(folder)» no es un repo de git. ¿Querés inicializarlo y agregarlo a Hive?\n\n\(path)",
                 actionTitle: "Inicializar git",
                 action: { [weak self] in Task { await self?.initializeRepository(at: path) } })
             return
@@ -85,7 +85,7 @@ extension AppStore {
     func initializeRepository(at path: String) async {
         let git = self.git
         let r = await Task.detached { git.initRepository(path) }.value
-        if r.ok { await addProject(at: path) } else { alert = AppAlert(title: "No se pudo inicializar git", message: r.errorMessage) }
+        if r.ok { await addProject(at: path) } else { alert = AppAlert(title: "No pude inicializar git", message: r.errorMessage) }
     }
 
     /// Suma los worktrees que existen en git pero no en Hive y saca los que se borraron por fuera
@@ -196,7 +196,7 @@ extension AppStore {
         // Otra vez: una revisión que empezó durante el checkout pudo leer la rama de antes.
         gitGeneration += 1
         guard r.ok else {
-            alert = AppAlert(title: "No se pudo hacer checkout de «\(name)»", message: r.errorMessage)
+            alert = AppAlert(title: "No pude hacer checkout de «\(name)»", message: r.errorMessage)
             // La revisión que corría mientras tanto se descartó: que venga otra.
             refreshGit()
             return false
@@ -225,7 +225,7 @@ extension AppStore {
         let path = project.path
         let r = await Task.detached { git.commitAllowEmpty(message: "Primer commit", in: path) }.value
         guard r.ok else {
-            alert = AppAlert(title: "No se pudo crear el primer commit", message: r.errorMessage)
+            alert = AppAlert(title: "No pude crear el primer commit", message: r.errorMessage)
             return r.errorMessage
         }
         refreshGit()
@@ -357,7 +357,7 @@ extension AppStore {
         let message = running.count == 1
             ? "La sesión «\(running[0].name)» quedó viendo «\(new)» en «\(project.name)». ¿La movés a esa rama en Hive?"
             : "Las \(running.count) sesiones de esa rama quedaron viendo «\(new)» en «\(project.name)». ¿Las movés a esa rama en Hive?"
-        alert = AppAlert(title: "Algo cambió la carpeta principal de “\(old)” a “\(new)”",
+        alert = AppAlert(title: "Algo cambió la carpeta principal de «\(old)» a «\(new)»",
                          message: message,
                          actionTitle: "Mover las sesiones ahí", cancelTitle: "Dejar así",
                          action: { [weak self] in self?.followHead(branchId: branchId, to: new) })

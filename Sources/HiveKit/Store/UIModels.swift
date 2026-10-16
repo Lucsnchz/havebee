@@ -28,7 +28,7 @@ public struct AppAlert: Identifiable {
 /// es solo un aviso corto en la misma cápsula («Copié .env y auth.json a «feature-x»»).
 public struct UndoAction: Identifiable {
     public let id = UUID()
-    /// «Archivaste “Claude 2”».
+    /// «Archivaste «Claude 2»».
     public let message: String
     public let expiresAt: Date
     let undo: (() -> Void)?

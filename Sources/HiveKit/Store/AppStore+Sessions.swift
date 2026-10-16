@@ -213,7 +213,7 @@ extension AppStore {
         if wasOpen {
             select(neighbor.map { .session($0) } ?? .branch(ctx.branch.id))
         }
-        offerUndo("Archivaste “\(ctx.session.name)”") { [weak self] in self?.restoreArchived(id, select: wasOpen) }
+        offerUndo("Archivaste «\(ctx.session.name)»") { [weak self] in self?.restoreArchived(id, select: wasOpen) }
     }
 
     public func unarchive(_ id: UUID) {

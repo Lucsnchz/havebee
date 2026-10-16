@@ -193,7 +193,7 @@ struct AppStoreProjectTests {
         repo.sh("git branch -D otra") // alguien la borró por fuera
         store.requestCheckout(branchId: otra.id)
         #expect(!(await store.performCheckout(try #require(store.pendingCheckout))))
-        #expect(store.alert?.title == "No se pudo hacer checkout de «otra»")
+        #expect(store.alert?.title == "No pude hacer checkout de «otra»")
     }
 
     @Test("Detecta checkouts y worktrees hechos por fuera")
@@ -388,7 +388,7 @@ struct AppStoreProjectTests {
         #expect(copied.hasPrefix(world.paths.iconsDir.path))
         #expect(FileManager.default.fileExists(atPath: copied))
         #expect(store.importIcon(from: URL(fileURLWithPath: "/no/existe.png")) == nil)
-        #expect(store.alert?.title == "No se pudo usar la imagen")
+        #expect(store.alert?.title == "No pude usar la imagen")
     }
 }
 

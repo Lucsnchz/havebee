@@ -32,4 +32,29 @@ struct VisualTextsTests {
             #expect(!NewBranchSheet.modeExplanation(mode).contains("ignorad"))
         }
     }
+
+    @Test("Uso: sin «ctx» ni el porcentaje repetido abajo")
+    func usageTexts() {
+        #expect(UsageBadge.helpText(72) == "72 % del contexto ocupado")
+        #expect(UsageBadge.helpText(84.4) == "84 % del contexto ocupado. Conviene usar /compact.")
+        let now = Date(timeIntervalSince1970: 1_790_942_400)
+        let resets = now.addingTimeInterval(3 * 86_400)
+        let reset = UsageReader.resetText(resets, now: now)
+        #expect(UsageAccountRow.resetLine(UsageLimit(windowMinutes: 10080, usedPercent: 87, resetsAt: resets), resets: resets, now: now)
+                == "La semanal \(reset)")
+        #expect(UsageAccountRow.resetLine(UsageLimit(windowMinutes: 300, usedPercent: 60, resetsAt: resets), resets: resets, now: now)
+                == "La de 5 horas \(reset)")
+        #expect(UsageAccountRow.resetLine(UsageLimit(windowMinutes: 60, usedPercent: 60, resetsAt: resets), resets: resets, now: now)
+                == "La de una hora \(reset)")
+        #expect(!UsageAccountRow.resetLine(UsageLimit(windowMinutes: 10080, usedPercent: 87, resetsAt: resets), resets: resets, now: now)
+            .contains("%"))
+    }
+
+    @Test("Git en palabras: una operación «a medias», sin «upstream» ni «en curso»")
+    func gitWords() {
+        for operation in GitOperation.allCases {
+            #expect(operation.label.hasSuffix(" a medias"), "\(operation)")
+        }
+        #expect(BranchGitBadges.make(GitStatus(operation: .merge)).first?.text == "Merge a medias")
+    }
 }

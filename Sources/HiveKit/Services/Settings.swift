@@ -89,7 +89,7 @@ struct SettingsGeneralPane: View {
                 }
                 if let codexNotifyWarning {
                     Label {
-                        Text("No pude leer tu notify de Codex; no se va a llamar")
+                        Text("No entiendo el formato de tu notify de Codex: Hive no lo va a ejecutar")
                         Text(codexNotifyWarning)
                     } icon: {
                         Image(systemName: "exclamationmark.triangle.fill")
