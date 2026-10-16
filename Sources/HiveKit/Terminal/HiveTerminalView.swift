@@ -340,9 +340,11 @@ public final class HiveTerminalView: TerminalView, TerminalViewDelegate, LocalPr
         processDelegate?.terminalTitleChanged(self, title: title)
     }
 
-    /// OSC 7: el shell avisa en qué carpeta está (para resolver los enlaces relativos).
+    /// OSC 7: el shell avisa en qué carpeta está (para resolver los enlaces relativos). Cualquier
+    /// texto que se imprima puede traer un OSC 7, así que solo vale una carpeta que existe.
     public func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {
-        if let path = TerminalLink.directory(fromOSC7: directory) { reportedDirectory = path }
+        guard let path = TerminalLink.directory(fromOSC7: directory), TerminalLink.diskKind(path) == .folder else { return }
+        reportedDirectory = path
     }
 
     public func send(source: TerminalView, data: ArraySlice<UInt8>) {
@@ -386,11 +388,27 @@ public final class HiveTerminalView: TerminalView, TerminalViewDelegate, LocalPr
         case .url(let url):
             NSWorkspace.shared.open(url)
         case .folder(let path):
-            NSWorkspace.shared.open(URL(fileURLWithPath: path, isDirectory: true))
+            Self.showFolder(path)
         case .file(let path, let line, let column):
             // El proyecto se busca desde el archivo: puede estar fuera de la carpeta de la sesión.
             ExternalApps.openFile(path, line: line, column: column)
         }
+    }
+
+    /// Muestra una carpeta en Finder. Un paquete (una .app, aunque llegue por un enlace simbólico)
+    /// se marca en su carpeta: abrirlo lanzaría la app, y la ruta la pudo escribir cualquier programa.
+    static func showFolder(_ path: String) {
+        let url = URL(fileURLWithPath: path, isDirectory: true)
+        if revealsBySelecting(path) {
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        } else {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    /// Si la carpeta es un paquete que `NSWorkspace.open` ejecutaría en lugar de mostrar.
+    static func revealsBySelecting(_ path: String) -> Bool {
+        NSWorkspace.shared.isFilePackage(atPath: (path as NSString).resolvingSymlinksInPath)
     }
 
     /// La campana: SwiftTerm ya destella (bellStyle = .soundAndVisual). Si la terminal no está a
