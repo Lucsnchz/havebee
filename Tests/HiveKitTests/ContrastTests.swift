@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import HiveCore
 import SwiftUI
 import Testing
 @testable import HiveKit
@@ -102,6 +103,38 @@ struct ContrastTests {
         }
         // El gris terciario del sistema no llega: por eso los datos usan secondaryText.
         #expect(contrastRatio(.tertiaryLabelColor, .aqua) < 4.5)
+    }
+
+    @Test("Un proyecto apagado se sigue leyendo: las iniciales blancas sobre el ícono sin color, ≥ 2:1")
+    func dimmedProjectInitials() {
+        /// `.saturation(s)`: mezcla cada canal con la luma (Rec. 709) del color.
+        func desaturated(_ color: NSColor, _ s: Double) -> NSColor {
+            let c = color.usingColorSpace(.sRGB) ?? color
+            let luma = 0.2126 * c.redComponent + 0.7152 * c.greenComponent + 0.0722 * c.blueComponent
+            func mix(_ v: CGFloat) -> CGFloat { luma + CGFloat(s) * (v - luma) }
+            return NSColor(srgbRed: mix(c.redComponent), green: mix(c.greenComponent), blue: mix(c.blueComponent), alpha: 1)
+        }
+        for (appearance, scheme) in [(NSAppearance.Name.aqua, ColorScheme.light), (.darkAqua, .dark)] {
+            let window = HiveContrast.resolve(.windowBackgroundColor, in: appearance)
+            let opacity = DimmedProject.opacity(for: scheme)
+            // `.saturation` dibuja el ícono en una capa, y la opacidad se aplica a la capa entera (así
+            // salen las capturas): las iniciales quedan sobre el ícono, y los dos se mezclan con el fondo.
+            let initials = HiveContrast.composite(NSColor.white.withAlphaComponent(opacity), over: window)
+            for tint in TintColor.allCases {
+                let lit = HiveContrast.ratio(.white, on: tint.nsColor)
+                let tile = HiveContrast.composite(desaturated(tint.nsColor, DimmedProject.saturation).withAlphaComponent(opacity), over: window)
+                let dimmed = HiveContrast.ratio(initials, on: tile)
+                // 2:1 como mínimo; los tintes que ni encendidos llegan (miel, lima) pierden un 10 % como mucho.
+                #expect(dimmed >= min(2, lit * 0.9), "\(tint) en \(appearance.rawValue): \(dimmed) (encendido \(lit))")
+            }
+            // Los claros que más se usan, explícitos: naranja, rosa y celeste.
+            for tint in [TintColor.orange, .pink, .cyan] {
+                let tile = HiveContrast.composite(desaturated(tint.nsColor, DimmedProject.saturation).withAlphaComponent(opacity), over: window)
+                #expect(HiveContrast.ratio(initials, on: tile) >= 2, "\(tint) en \(appearance.rawValue)")
+            }
+        }
+        // Y se nota apagado: casi sin color.
+        #expect(DimmedProject.saturation <= 0.3)
     }
 
     @Test("El verde y el naranja quedan para las sesiones: comandos, errores y uso alto usan otros colores")

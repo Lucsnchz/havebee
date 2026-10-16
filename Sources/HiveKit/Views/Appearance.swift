@@ -85,14 +85,19 @@ struct ProjectTile: View {
     }
 }
 
-/// Un proyecto apagado (sin nada prendido ni usado hoy), en el riel y en el árbol: más transparente
-/// y con menos color, pero legible. En claro se atenúa menos: las iniciales blancas se perderían
-/// contra el fondo.
+/// Un proyecto apagado (sin nada prendido ni usado hoy), en el riel y en el árbol: casi sin color y
+/// un poco transparente, pero legible. Se apaga sobre todo sacándole el color: el gris conserva la
+/// luminancia del tinte, así las iniciales blancas siguen contrastando. Con mucha transparencia el
+/// relleno se iba hacia el fondo (en claro, las iniciales de un ícono naranja quedaban a 1,5:1).
 struct DimmedProject: ViewModifier {
     let dimmed: Bool
     @Environment(\.colorScheme) private var colorScheme
 
-    static func opacity(for scheme: ColorScheme) -> Double { scheme == .dark ? 0.5 : 0.6 }
+    /// Cuánto color le queda: un poco, para reconocerlo por el color sin que parezca prendido.
+    static let saturation = 0.3
+
+    /// En claro casi no se transparenta: el fondo es claro y aclararía el relleno hasta perder las iniciales.
+    static func opacity(for scheme: ColorScheme) -> Double { scheme == .dark ? 0.65 : 0.85 }
 
     /// Cuándo se atenúa, igual en el riel y en el árbol: sin actividad hoy, salvo que sea el
     /// proyecto abierto (o tenga elegida una rama o sesión suya) o que tenga el puntero encima.
@@ -102,7 +107,7 @@ struct DimmedProject: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .saturation(dimmed ? 0.5 : 1)
+            .saturation(dimmed ? Self.saturation : 1)
             .opacity(dimmed ? Self.opacity(for: colorScheme) : 1)
             .animation(.easeOut(duration: 0.2), value: dimmed)
     }
