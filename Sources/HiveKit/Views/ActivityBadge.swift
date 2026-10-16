@@ -3,17 +3,19 @@ import HiveCore
 import SwiftUI
 
 /// Globito con cuántas sesiones te esperan, el mismo en el Inicio y en los proyectos, en el riel y
-/// en el árbol: «!» delante si alguna necesita permiso (así no depende solo del color) y el fondo
-/// naranja de permiso o verde de «te espera».
+/// en el árbol. Si alguna necesita permiso es naranja y cuenta solo esas, con «!» delante (así no
+/// depende solo del color), como «Necesitan permiso» en el Inicio; si no, es verde y cuenta las que
+/// te esperan. El desglose completo va en el globo de ayuda y en VoiceOver.
 struct ActivityBadge: View {
     let activity: Activity
     /// Con un borde del color de la ventana, para despegarlo del ícono sobre el que se apoya.
     var outlined = false
 
-    /// «!2» si alguna de las dos pide permiso, «2» si solo te esperan; nil si no hay nada.
+    /// «!1» si una pide permiso (aunque otra te espere: el naranja es de permiso), «2» si dos te
+    /// esperan y ninguna pide permiso; nil si no hay nada.
     static func text(_ activity: Activity) -> String? {
         guard activity.waitingForYou > 0 else { return nil }
-        return (activity.attention > 0 ? "!" : "") + "\(activity.waitingForYou)"
+        return activity.attention > 0 ? "!\(activity.attention)" : "\(activity.waitingForYou)"
     }
 
     /// Lo mismo para VoiceOver y para el globo de ayuda: «Una sesión necesita permiso»,
@@ -41,31 +43,25 @@ struct ActivityBadge: View {
     }
 
     /// Lo que dice VoiceOver de un proyecto, igual en el riel y en el árbol: el nombre, si está
-    /// fijado y cuántas sesiones te esperan («ecommerce, fijado, 2 sesiones te esperan»), o
-    /// «bevo, sin actividad hoy». El detalle va en `projectAccessibilityValue`.
+    /// fijado y lo que te espera, con el permiso incluido (lo que el globito dice con el «!», así
+    /// no depende del color del aro): «ecommerce, fijado, una sesión necesita permiso», «bevo,
+    /// 3 sesiones te esperan, una necesita permiso» o «bevo, sin actividad hoy». Las que trabajan
+    /// van en `projectAccessibilityValue`.
     static func projectAccessibilityLabel(_ name: String, pinned: Bool, activity: Activity, isActive: Bool) -> String {
         var parts = [name]
         if pinned { parts.append("fijado") }
-        let waiting = activity.waitingForYou
-        if waiting > 0 {
-            parts.append(waiting == 1 ? "una sesión te espera" : "\(waiting) sesiones te esperan")
+        if let waiting = accessibilityPhrase(activity) {
+            parts.append(waiting)
         } else if !isActive && activity.working == 0 {
             parts.append("sin actividad hoy")
         }
         return parts.joined(separator: ", ")
     }
 
-    /// El detalle que VoiceOver lee después: cuántas piden permiso (lo que el globito dice con el
-    /// «!», así no depende del color del aro) y cuántas están trabajando. Vacío si no hay nada.
+    /// El detalle que VoiceOver lee después: cuántas sesiones están trabajando. Vacío si ninguna.
     static func projectAccessibilityValue(_ activity: Activity) -> String {
-        var parts: [String] = []
-        if activity.attention > 0 {
-            parts.append(activity.attention == 1 ? "una necesita permiso" : "\(activity.attention) necesitan permiso")
-        }
-        if activity.working > 0 {
-            parts.append(activity.working == 1 ? "una sesión trabajando" : "\(activity.working) sesiones trabajando")
-        }
-        return parts.joined(separator: ", ")
+        guard activity.working > 0 else { return "" }
+        return activity.working == 1 ? "una sesión trabajando" : "\(activity.working) sesiones trabajando"
     }
 
     var body: some View {

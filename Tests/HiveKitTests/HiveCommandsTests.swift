@@ -46,7 +46,7 @@ struct HiveCommandsTests {
         #expect(RailItem.accessibilityText(project: project, activity: Activity()) == "ecommerce")
         #expect(RailItem.accessibilityText(project: project, activity: Activity(pending: 1)) == "ecommerce, una sesión te espera")
         #expect(RailItem.accessibilityText(project: project, activity: Activity(pending: 1, attention: 1))
-            == "ecommerce, 2 sesiones te esperan")
+            == "ecommerce, 2 sesiones te esperan, una necesita permiso")
         #expect(HiveCommands.Shortcut.tab(0)?.description == "⌘1")
         #expect(HiveCommands.Shortcut.tab(9) == nil)
         #expect(HiveCommands.Shortcut.project(8)?.description == "⌃⌘9")

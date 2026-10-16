@@ -6,13 +6,17 @@ import Testing
 @MainActor
 @Suite("Globito de «te esperan»")
 struct ActivityBadgeTests {
-    @Test("El globito dice lo mismo en el sidebar y en el riel: «!» delante si algo pide permiso")
+    @Test("El globito dice lo mismo en el sidebar y en el riel: naranja con «!» cuenta solo los permisos")
     func badgeText() {
         #expect(ActivityBadge.text(Activity()) == nil)
         #expect(ActivityBadge.text(Activity(working: 3)) == nil)
         #expect(ActivityBadge.text(Activity(pending: 2)) == "2")
-        #expect(ActivityBadge.text(Activity(pending: 1, attention: 1)) == "!2")
+        // Uno pide permiso y otro te espera: «!1», como «Necesitan permiso 1» en el Inicio (no «!2»).
+        #expect(ActivityBadge.text(Activity(pending: 1, attention: 1)) == "!1")
         #expect(ActivityBadge.text(Activity(attention: 1)) == "!1")
+        #expect(ActivityBadge.text(Activity(pending: 3, attention: 2)) == "!2")
+        // El desglose completo queda en el globo de ayuda y en VoiceOver.
+        #expect(ActivityBadge.accessibilityText(Activity(pending: 1, attention: 1)) == "2 sesiones te esperan, una necesita permiso")
         #expect(ActivityBadge.accessibilityText(Activity()) == nil)
         #expect(ActivityBadge.accessibilityText(Activity(pending: 1)) == "Una sesión te espera")
         #expect(ActivityBadge.accessibilityText(Activity(pending: 3)) == "3 sesiones te esperan")
@@ -35,16 +39,19 @@ struct ActivityBadgeTests {
     func projectText() {
         let pinned = Project(name: "ecommerce", path: "/e", pinned: true)
         let permission = Activity(working: 1, attention: 1)
-        #expect(RailItem.accessibilityText(project: pinned, activity: permission) == "ecommerce, fijado, una sesión te espera")
+        // Una sola sesión pide permiso: se dice una vez, no «una te espera, una necesita permiso».
+        #expect(RailItem.accessibilityText(project: pinned, activity: permission) == "ecommerce, fijado, una sesión necesita permiso")
         #expect(ActivityBadge.projectAccessibilityLabel("Proyecto ecommerce", pinned: true, activity: permission, isActive: true)
-            == "Proyecto ecommerce, fijado, una sesión te espera")
-        #expect(ActivityBadge.projectAccessibilityValue(permission) == "una necesita permiso, una sesión trabajando")
-        #expect(ActivityBadge.projectAccessibilityValue(Activity(pending: 2, attention: 2)) == "2 necesitan permiso")
+            == "Proyecto ecommerce, fijado, una sesión necesita permiso")
+        #expect(ActivityBadge.projectAccessibilityValue(permission) == "una sesión trabajando")
+        #expect(ActivityBadge.projectAccessibilityValue(Activity(pending: 2, attention: 2)) == "")
         #expect(ActivityBadge.projectAccessibilityValue(Activity(working: 2)) == "2 sesiones trabajando")
         #expect(ActivityBadge.projectAccessibilityValue(Activity(pending: 3)) == "")
 
         let bevo = Project(name: "bevo", path: "/b")
-        #expect(RailItem.accessibilityText(project: bevo, activity: Activity(pending: 2, attention: 1)) == "bevo, 3 sesiones te esperan")
+        #expect(RailItem.accessibilityText(project: bevo, activity: Activity(pending: 2, attention: 1))
+            == "bevo, 3 sesiones te esperan, una necesita permiso")
+        #expect(RailItem.accessibilityText(project: bevo, activity: Activity(attention: 2)) == "bevo, 2 sesiones necesitan permiso")
         #expect(RailItem.accessibilityText(project: bevo, activity: Activity(working: 2)) == "bevo")
         #expect(RailItem.accessibilityText(project: bevo, activity: Activity(), isActive: false) == "bevo, sin actividad hoy")
     }

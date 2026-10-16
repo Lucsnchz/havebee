@@ -29,7 +29,7 @@ Se cambia con el botón de la izquierda de la barra de herramientas o desde *Vis
 
 En las dos, los proyectos van en el mismo orden (el mismo de ⌃⌘1…⌃⌘9): arriba los fijados (clic derecho → «Fijar arriba») y un divisor fino; después los activos, que tienen algo prendido (un agente trabajando o esperándote, un comando corriendo) o se usaron hoy (le escribiste a un agente o creaste una sesión: abrir un proyecto no cuenta, así no salta de lugar con el clic); después los apagados, atenuados; y al final «Terminales». Dentro de cada grupo manda el orden que elegís (arrastrando en el árbol o en el riel, o con «Subir» y «Bajar»), así un proyecto no salta de lugar por usarlo. Al cambiar el día, lo de ayer pasa solo a los apagados.
 
-El ícono de cada proyecto tiene un solo aro, y es de estado: un arco que gira si alguna sesión está trabajando, naranja si alguna necesita permiso y verde si alguna terminó y te espera. Un globito dice cuántas sesiones te esperan, con «!» delante si alguna pide permiso (es igual en el árbol y en la vista compacta).
+El ícono de cada proyecto tiene un solo aro, y es de estado: un arco que gira si alguna sesión está trabajando, naranja si alguna necesita permiso y verde si alguna terminó y te espera. Un globito dice cuántas sesiones te esperan; si alguna pide permiso es naranja y cuenta solo esas, con «!» delante (es igual en el árbol y en la vista compacta, y el detalle completo aparece al dejar el puntero encima).
 
 La vista de cada rama muestra botones para crear sesiones, una tarjeta por sesión (estado, hace cuánto se usó y lo último que respondió la IA), los cambios y los últimos commits.
 
