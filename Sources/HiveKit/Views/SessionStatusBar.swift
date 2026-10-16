@@ -63,9 +63,14 @@ struct SessionStatusBar: View {
                     Button {
                         sidePanel = sidePanel == "changes" ? "" : "changes"
                     } label: {
-                        Text(Self.changesLabel(status.changes.count))
-                            .monospacedDigit()
-                            .contentShape(Rectangle())
+                        // El mismo ± que en el sidebar, las tarjetas y el botón «Cambios» de arriba.
+                        HStack(spacing: 3) {
+                            Image(systemName: GitCounters.changesSymbol)
+                                .font(.system(size: 9, weight: .semibold))
+                            Text(Self.changesLabel(status.changes.count))
+                                .monospacedDigit()
+                        }
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .help("Ver los cambios de la rama")
