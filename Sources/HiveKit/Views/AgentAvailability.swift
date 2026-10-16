@@ -95,6 +95,22 @@ final class AgentAvailability {
         return isInstalled(kind)
     }
 
+    /// Hace `action` si el agente está instalado. Si figura como no instalado, vuelve a revisar
+    /// (quizás lo acabás de instalar) y, si sigue faltando, llama a `missing` en lugar de abrir una
+    /// sesión que no va a arrancar. Es la misma regla para ⌘T, el menú «Sesión», ⌘K, la barra de la
+    /// sesión y las tarjetas y píldoras de «Nueva sesión»; cada uno decide cómo avisar.
+    @discardableResult
+    func whenInstalled(_ kind: SessionKind, _ action: @escaping () -> Void,
+                       otherwise missing: @escaping () -> Void) -> Task<Void, Never>? {
+        guard !isInstalled(kind) else {
+            action()
+            return nil
+        }
+        return Task {
+            if await recheck(kind) { action() } else { missing() }
+        }
+    }
+
     private static func findMissing(_ kinds: [SessionKind], path: String, processes: ProcessStarting) async -> Set<SessionKind> {
         if processes is TerminalProcessStarter {
             return await Task.detached(priority: .utility) {

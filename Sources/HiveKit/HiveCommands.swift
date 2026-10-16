@@ -376,18 +376,11 @@ enum HiveNavigator {
     @discardableResult
     static func requestNewSession(_ store: AppStore, branchId: UUID, kind: SessionKind,
                                   availability: AgentAvailability? = nil) -> Task<Void, Never>? {
-        let availability = availability ?? .shared(for: store)
-        guard !availability.isInstalled(kind) else {
+        (availability ?? .shared(for: store)).whenInstalled(kind, {
             store.requestNewSession(branchId: branchId, kind: kind)
-            return nil
-        }
-        return Task {
-            if await availability.recheck(kind) {
-                store.requestNewSession(branchId: branchId, kind: kind)
-            } else {
-                store.alert = AgentAvailability.installAlert(for: kind)
-            }
-        }
+        }, otherwise: {
+            store.alert = AgentAvailability.installAlert(for: kind)
+        })
     }
 
     /// Qué hace ⌘W.

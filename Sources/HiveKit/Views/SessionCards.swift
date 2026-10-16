@@ -157,13 +157,7 @@ struct NewSessionCard: View {
         let availability = AgentAvailability.shared(for: store)
         let installed = availability.isInstalled(kind)
         Button {
-            if installed {
-                action()
-            } else {
-                Task {
-                    if await availability.recheck(kind) { action() } else { showsInstallHint = true }
-                }
-            }
+            availability.whenInstalled(kind, action, otherwise: { showsInstallHint = true })
         } label: {
             VStack(spacing: 6) {
                 AgentLogo(kind: kind, size: 26)
@@ -201,17 +195,8 @@ struct NewSessionPill: View {
         let availability = AgentAvailability.shared(for: store)
         let installed = availability.isInstalled(kind)
         Button {
-            if installed {
-                store.requestNewSession(branchId: branchId, kind: kind)
-            } else {
-                Task {
-                    if await availability.recheck(kind) {
-                        store.requestNewSession(branchId: branchId, kind: kind)
-                    } else {
-                        showsInstallHint = true
-                    }
-                }
-            }
+            availability.whenInstalled(kind, { store.requestNewSession(branchId: branchId, kind: kind) },
+                                       otherwise: { showsInstallHint = true })
         } label: {
             HStack(spacing: 5) {
                 AgentLogo(kind: kind, size: 14)

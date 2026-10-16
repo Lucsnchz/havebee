@@ -75,7 +75,8 @@ struct ActivityBadge: View {
                 .foregroundStyle(Theme.onAccent)
                 .padding(.horizontal, 4.5)
                 .frame(minWidth: 16, minHeight: 16)
-                .background(activity.ring.color ?? Theme.pending, in: Capsule())
+                // Con algo esperándote, el aro es de permiso o de «te espera»: el mismo color que el aro.
+                .background(StatusStyle.of(ring: activity.ring).color ?? .secondary, in: Capsule())
                 .overlay {
                     if outlined { Capsule().strokeBorder(Color(nsColor: .windowBackgroundColor), lineWidth: 2).padding(-2) }
                 }

@@ -129,21 +129,20 @@ struct StatusRing: View {
         let width = Self.lineWidth(for: size)
         let gap = max(2, size * 0.06)
         let shape = RoundedRectangle(cornerRadius: size * 0.27 + gap, style: .continuous)
+        // El color sale de `StatusStyle`, como el de las tarjetas, el Inicio, ⌘K y las pestañas.
+        let color = StatusStyle.of(ring: ring).color ?? .clear
         ZStack {
             switch ring {
             case .none:
                 EmptyView()
-            case .pending:
-                shape.strokeBorder(Theme.pending, lineWidth: width)
-                    .transition(.opacity)
-            case .attention:
-                shape.strokeBorder(Theme.attention, lineWidth: width)
+            case .pending, .attention:
+                shape.strokeBorder(color, lineWidth: width)
                     .transition(.opacity)
             case .working:
                 if reduceMotion {
-                    shape.strokeBorder(Theme.accent, lineWidth: width)
+                    shape.strokeBorder(color, lineWidth: width)
                 } else {
-                    SpinningGradient()
+                    SpinningGradient(color: color)
                         .mask(shape.strokeBorder(lineWidth: width))
                         .transition(.opacity)
                 }
@@ -159,10 +158,11 @@ struct StatusRing: View {
 /// Degradé angular fijo que gira con `rotationEffect`: lo interpola Core Animation, sin volver a
 /// armar la vista 30 veces por segundo como hacía el TimelineView.
 private struct SpinningGradient: View {
+    let color: Color
     @State private var spinning = false
 
     var body: some View {
-        AngularGradient(colors: [Theme.accent.opacity(0), Theme.accent.opacity(0.3), Theme.accent, Theme.accent.opacity(0)],
+        AngularGradient(colors: [color.opacity(0), color.opacity(0.3), color, color.opacity(0)],
                         center: .center)
             // Más grande que el aro: al girar, las esquinas siguen cubiertas.
             .scaleEffect(1.5)

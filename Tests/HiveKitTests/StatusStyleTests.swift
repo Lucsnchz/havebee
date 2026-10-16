@@ -140,17 +140,21 @@ struct StatusStyleTests {
         for rep in reps { #expect(Snapshot.distinctColors(rep) > 3) }
     }
 
-    @Test("Ring.color y el globito")
+    @Test("Ring.color: el aro del riel, el globito y los íconos de estado tienen el mismo color")
     func ringColors() {
         #expect(Activity.Ring.none.color == nil)
         #expect(statusStyleSame(Activity.Ring.working.color, Theme.accent))
         #expect(statusStyleSame(Activity.Ring.pending.color, Theme.pending))
         #expect(statusStyleSame(Activity.Ring.attention.color, Theme.attention))
-        #expect(Activity(pending: 2).badgeText == "2")
-        #expect(Activity(pending: 2, attention: 1).badgeText == "!")
-        #expect(Activity(pending: 1).badgeAccessibilityText == "Una sesión te espera")
-        #expect(Activity(pending: 3).badgeAccessibilityText == "3 sesiones te esperan")
-        #expect(Activity(pending: 2, attention: 1).badgeAccessibilityText == "Necesita permiso")
+        // StatusRing y ActivityBadge toman el color de StatusStyle.of(ring:); el texto del globito
+        // está en ActivityBadgeTests.
+        for ring in [Activity.Ring.none, .working, .pending, .attention] {
+            #expect(statusStyleSame(StatusStyle.of(ring: ring).color, ring.color))
+        }
+        // Una sesión sola y el grupo que la contiene se pintan igual.
+        #expect(statusStyleSame(StatusStyle.of(status: .attention, unseen: false, kind: .claude).color, Activity.Ring.attention.color))
+        #expect(statusStyleSame(StatusStyle.of(status: .waiting, unseen: true, kind: .claude).color, Activity.Ring.pending.color))
+        #expect(statusStyleSame(StatusStyle.of(status: .working, unseen: false, kind: .claude).color, Activity.Ring.working.color))
         #expect(Activity.Ring.attention.accessibilityText == "Necesita permiso")
         #expect(Activity.Ring.none.accessibilityText == nil)
     }

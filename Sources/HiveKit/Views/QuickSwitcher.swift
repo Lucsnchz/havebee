@@ -60,7 +60,8 @@ struct QuickSwitcher: View {
     private var search: some View {
         let historyText = SwitcherIndex.historyQuery(query)
         let found = historyText.map { SwitcherIndex.historyItems(historyHits, query: $0, in: store.projects) }
-            ?? SwitcherIndex.search(query, in: store.projects, includeArchived: true, includeActions: true,
+            // Los proyectos en el orden que se ve en el riel y en el árbol (fijados, activos, apagados).
+            ?? SwitcherIndex.search(query, in: HiveNavigator.orderedProjects(store), includeArchived: true, includeActions: true,
                                     compactLayout: layout == .compact, missingAgents: AgentAvailability.shared(for: store).missing)
         let groups = grouped(found)
         let results = groups.flatMap(\.items)

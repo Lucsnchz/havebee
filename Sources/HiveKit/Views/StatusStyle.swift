@@ -88,17 +88,6 @@ extension Activity.Ring {
     }
 }
 
-extension Activity {
-    /// Texto del globito: «!» si algo pide permiso, si no la cantidad que te espera.
-    var badgeText: String { attention > 0 ? "!" : "\(waitingForYou)" }
-
-    /// Lo mismo para VoiceOver: «Necesita permiso», «Una sesión te espera», «3 sesiones te esperan».
-    var badgeAccessibilityText: String {
-        if attention > 0 { return "Necesita permiso" }
-        return waitingForYou == 1 ? "Una sesión te espera" : "\(waitingForYou) sesiones te esperan"
-    }
-}
-
 extension SessionStatus {
     /// Color del estado de una sesión (gris si no hay nada que destacar). Es el de `StatusStyle`.
     func tint(unseen: Bool) -> Color {

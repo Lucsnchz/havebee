@@ -100,10 +100,10 @@ Las sesiones siguen corriendo aunque cambies de sesión o cierres la ventana. Al
 
 | Indicador | Significado |
 |---|---|
-| spinner | El agente está trabajando |
+| arco miel que gira | El agente está trabajando |
 | punto verde | Terminó su turno mientras no mirabas: te toca a vos |
 | aro verde | Terminó y ya lo viste |
-| ⚠︎ naranja | Necesita permiso o una respuesta |
+| «!» naranja | Necesita permiso o una respuesta |
 | punto gris | Terminal abierta |
 | ⏹ | El proceso terminó; «Reanudar conversación» lo vuelve a abrir |
 
