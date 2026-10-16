@@ -149,7 +149,7 @@ private struct StoreDialogs: ViewModifier {
                     }
                 case .session(let id):
                     if removal.offersArchive {
-                        Button("Archivar en su lugar") { store.archive(id) }
+                        Button("Archivarla") { store.archive(id) }
                     }
                     Button("Eliminar sesión", role: .destructive) { store.remove(removal.item) }
                 case .project:

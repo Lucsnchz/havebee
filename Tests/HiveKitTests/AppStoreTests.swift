@@ -319,7 +319,7 @@ struct AppStoreProjectTests {
         #expect(store.pendingRemoval?.message == "La rama de git no se borra.")
         store.requestRemoval(.project(project.id))
         #expect(store.pendingRemoval?.title == "¿Quitar «repo» de Hive?")
-        #expect(store.pendingRemoval?.message == "No se borra nada del disco.")
+        #expect(store.pendingRemoval?.message == "Sus ramas, sesiones y comandos se quitan de Hive. No se borra nada del disco: la carpeta y el repo quedan como están.")
 
         // Con cosas corriendo, dice qué se va a detener.
         store.requestNewSession(branchId: worktree.id, kind: .shell)
@@ -331,7 +331,7 @@ struct AppStoreProjectTests {
         store.requestRemoval(.branch(worktree.id))
         #expect(store.pendingRemoval?.message == "Se detienen 2 comandos y 1 sesión. La rama de git no se borra. Podés conservar el worktree en \(path) o borrarlo.")
         store.requestRemoval(.project(project.id))
-        #expect(store.pendingRemoval?.message == "Se detienen 2 comandos y 1 sesión. No se borra nada del disco.")
+        #expect(store.pendingRemoval?.message == "Se detienen 2 comandos y 1 sesión. Sus ramas, sesiones y comandos se quitan de Hive. No se borra nada del disco: la carpeta y el repo quedan como están.")
         #expect(AppStore.stoppingSummary(commands: 1, sessions: 0) == "Se detiene 1 comando.")
         #expect(AppStore.stoppingSummary(commands: 0, sessions: 3) == "Se detienen 3 sesiones.")
         #expect(AppStore.stoppingSummary(commands: 0, sessions: 0) == nil)
@@ -339,11 +339,11 @@ struct AppStoreProjectTests {
         // Eliminar una sesión avisa que se va su historial y sugiere archivarla.
         store.requestRemoval(.session(session.id))
         #expect(store.pendingRemoval?.title == "¿Eliminar «Terminal 1»?")
-        #expect(store.pendingRemoval?.message == "Se cierra su terminal. Si la querés conservar, archivala.")
+        #expect(store.pendingRemoval?.message == "Se cierra su terminal y se quita de Hive. Si la querés conservar, archivala.")
         store.requestNewSession(branchId: worktree.id, kind: .claude)
         let claude = try #require(store.project(project.id)?.branches.last?.sessions.last)
         store.requestRemoval(.session(claude.id))
-        #expect(store.pendingRemoval?.message == "También se borra su historial en Hive (todo lo anterior a cada /clear). Si lo querés conservar, archivala.")
+        #expect(store.pendingRemoval?.message == "Se cierra y se borra su historial en Hive (todo lo anterior a cada /clear). No se puede deshacer. Si lo querés conservar, archivala.")
     }
 
     @Test("Renombrar, colores, apariencia y orden")
