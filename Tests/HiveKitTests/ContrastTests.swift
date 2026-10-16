@@ -176,6 +176,20 @@ struct ContrastTests {
         #expect(found >= 5)
     }
 
+    @Test("Diff: las marcas de conflicto van en una franja gris, distinta del rojo de lo borrado")
+    func conflictMarkersAreNotRemovals() {
+        for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+            let base = contrastBackground(appearance).usingColorSpace(.sRGB) ?? .white
+            let marker = HiveContrast.composite(HiveContrast.resolve(NSColor(DiffLineColors.background(.conflictMarker)), in: appearance), over: base)
+            let removed = HiveContrast.composite(HiveContrast.resolve(NSColor(DiffLineColors.background(.removed)), in: appearance), over: base)
+            // Lo borrado tira a rojo; la marca es gris (sin tono) y se ve sobre el fondo.
+            #expect(removed.redComponent - removed.greenComponent > 0.05, "\(appearance.rawValue)")
+            #expect(abs(marker.redComponent - marker.greenComponent) < 0.02 && abs(marker.greenComponent - marker.blueComponent) < 0.02,
+                    "\(appearance.rawValue)")
+            #expect(abs(marker.redComponent - base.redComponent) > 0.03, "\(appearance.rawValue): \(marker) sobre \(base)")
+        }
+    }
+
     @Test("Color.honey es el acento del tema: cambia con la apariencia")
     func honeyIsAccent() {
         for appearance in [NSAppearance.Name.aqua, .darkAqua] {

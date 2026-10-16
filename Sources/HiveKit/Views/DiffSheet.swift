@@ -336,11 +336,19 @@ private struct DiffLineRow: View {
         }
     }
 
-    private var background: Color {
-        switch line.kind {
+    private var background: Color { DiffLineColors.background(line.kind) }
+}
+
+/// Fondo de cada línea del diff: verde lo agregado, rojo lo borrado y una franja gris en las marcas de
+/// conflicto (<<<<<<<, =======, >>>>>>>), con su «!» rojo: en rojo se confundían con lo borrado.
+enum DiffLineColors {
+    static let markerNSColor = Theme.dynamicNSColor(light: NSColor(white: 0, alpha: 0.08), dark: NSColor(white: 1, alpha: 0.1))
+
+    static func background(_ kind: DiffLine.Kind) -> Color {
+        switch kind {
         case .added: Color(red: 0.25, green: 0.75, blue: 0.45).opacity(0.16)
         case .removed: Color(red: 0.90, green: 0.30, blue: 0.30).opacity(0.16)
-        case .conflictMarker: ChangeColors.color(for: "!").opacity(0.2)
+        case .conflictMarker: Color(nsColor: markerNSColor)
         default: .clear
         }
     }
