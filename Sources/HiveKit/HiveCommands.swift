@@ -67,9 +67,8 @@ struct HiveCommands: Commands {
         .hiveShortcut(.newSession)
         .disabled(target == nil)
         Menu("Nueva sesión de…") {
-            // Como en NewSessionItems: un ítem deshabilitado no se puede tocar para volver a revisar,
-            // así que se revisa al armar el menú (como mucho cada 10 s).
-            let _ = availability.refreshIfStale()
+            // Un ítem deshabilitado no se puede tocar para volver a revisar: se revisa al volver a
+            // Hive (ver HiveApplication), que es cuando pudiste haberlo instalado.
             ForEach(SessionKind.allCases) { kind in
                 let installed = availability.isInstalled(kind)
                 Button {
@@ -150,8 +149,9 @@ struct HiveCommands: Commands {
             .hiveShortcut(.nextProject)
         Button("Proyecto anterior") { HiveNavigator.goToAdjacentProject(store, delta: -1) }
             .hiveShortcut(.previousProject)
-        // Los proyectos en el orden en que se ven en el riel y en el árbol (⌃⌘1…⌃⌘9).
-        ForEach(Array(HiveNavigator.orderedProjects(store).prefix(Shortcut.projects.count).enumerated()), id: \.element.id) { index, project in
+        // Los proyectos en el orden en que se ven en el riel y en el árbol (⌃⌘1…⌃⌘9). Con la copia del
+        // store: el orden en sí depende del estado de cada sesión, y el menú no se rearma por eso.
+        ForEach(Array(store.menuProjects.prefix(Shortcut.projects.count).enumerated()), id: \.element.id) { index, project in
             Button(project.name) { HiveNavigator.goToProject(store, index: index) }
                 .hiveShortcut(Shortcut.projects[index])
         }

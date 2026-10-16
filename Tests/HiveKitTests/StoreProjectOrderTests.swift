@@ -41,9 +41,9 @@ private final class ThreeRepos {
     let world = TestWorld()
     let repos = [GitRepo(name: "b"), GitRepo(name: "a"), GitRepo(name: "c")]
     let store: AppStore
-    var a: Project!
-    var b: Project!
-    var c: Project!
+    let a: Project
+    let b: Project
+    let c: Project
     var lastWeek: Date { world.now.addingTimeInterval(-7 * 86_400) }
 
     init() async throws {
@@ -155,7 +155,7 @@ struct StoreProjectOrderTests {
         #expect(store.activity(of: try #require(store.project(w.b.id))).ring == .none)
 
         // Tres días después, con Hive abierto todo el tiempo: «a» y «c» también se apagan.
-        for project in [w.a!, w.c!] { store.activate(try w.session(of: project)) }
+        for project in [w.a, w.c] { store.activate(try w.session(of: project)) }
         store.select(nil)
         w.world.advance(3 * 86_400)
         store.dayChanged()
@@ -219,6 +219,35 @@ struct StoreProjectOrderTests {
         #expect(store.visibleProjects.first { $0.id == w.today.id }?.group == .active)
         w.world.now = w.world.now.addingTimeInterval(2 * 86_400)
         #expect(store.visibleProjects.first { $0.id == w.today.id }?.group == .idle)
+    }
+
+    @Test("El menú Ir se entera solo cuando cambia el orden o un nombre, no con cada cambio de estado de una sesión")
+    func menuFollowsOrderOnly() async throws {
+        let w = try RielWorld()
+        let store = w.makeStore()
+        #expect(store.menuProjects.map(\.name) == ["fijado", "hoy", "viejo", "Terminales"])
+        let changed = RielFlag()
+        withObservationTracking { _ = store.menuProjects } onChange: { changed.value = true }
+
+        // «hoy» trabaja y termina: el orden es el mismo, y el menú (todo HiveCommands) no se rearma.
+        let busy = try #require(w.today.activeSessions.first)
+        store.runtimes[busy.id]?.status = .working
+        store.runtimes[busy.id]?.status = .waiting
+        try await Task.sleep(nanoseconds: 200_000_000)
+        #expect(!changed.value)
+        #expect(store.menuProjects.map(\.name) == ["fijado", "hoy", "viejo", "Terminales"])
+
+        // Algo de «viejo» te espera: sube a los activos, y el menú cambia igual que el riel.
+        let waiting = try #require(w.old.activeSessions.first)
+        store.runtimes[waiting.id]?.unseen = true
+        #expect(await waitUntil { changed.value })
+        #expect(await waitUntil { store.menuProjects.map(\.id) == store.visibleProjects.map(\.id) })
+        #expect(store.menuProjects.map(\.name) == ["fijado", "viejo", "hoy", "Terminales"])
+
+        // Un nombre nuevo también.
+        store.renameText = "viejo querido"
+        store.commitRename(RenameRequest(item: .project(w.old.id)))
+        #expect(await waitUntil { store.menuProjects.map(\.name) == ["fijado", "viejo querido", "hoy", "Terminales"] })
     }
 
     @Test("Fijar y desfijar se guardan, y el fijado queda último de los fijados")

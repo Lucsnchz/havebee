@@ -1,6 +1,12 @@
 import AppKit
 import HiveCore
 
+/// Un proyecto en el menú Ir: lo único que el menú necesita saber.
+public struct MenuProject: Identifiable, Equatable, Sendable {
+    public let id: UUID
+    public let name: String
+}
+
 /// El orden de los proyectos que comparten el riel, el árbol y ⌃⌘1…⌃⌘9 (lo decide
 /// `ProjectOrdering`): fijados, activos de hoy, apagados y «Terminales».
 extension AppStore {
@@ -51,6 +57,19 @@ extension AppStore {
         projects = moved
         scheduleSave()
         return true
+    }
+
+    /// Copia el orden a `menuProjects` y se queda mirando lo que lo decide. El orden depende del estado
+    /// de cada sesión: si el menú Ir lo leyera directo, todo `HiveCommands` se volvería a armar con cada
+    /// cambio de estado de cualquier sesión. Así, cuando algo cambia se recalcula en la próxima vuelta
+    /// del hilo principal y el menú se entera solo si cambiaron el orden o un nombre.
+    func trackMenuProjects() {
+        let items = withObservationTracking {
+            visibleProjects.map { MenuProject(id: $0.id, name: $0.project.name) }
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.trackMenuProjects() }
+        }
+        if items != menuProjects { menuProjects = items }
     }
 
     /// Cambió el día (pasó la medianoche, o la Mac se despertó al otro día): se recalcula el orden.

@@ -88,17 +88,19 @@ final class TestWorld {
         agents = AgentStorage(claudeConfigDir: dir.subdir("claude"), codexHome: dir.subdir("codex"), geminiHome: dir.subdir("gemini"))
     }
 
+    /// Con `weak` y no `unowned`: el store puede seguir vivo un rato después del test (una revisión de
+    /// git que todavía corre lo retiene) y, al terminarla, recalcular el orden de los proyectos con la hora.
     var environment: AppEnvironment {
         AppEnvironment(
             paths: paths, git: git, agents: agents, notifier: notifier, processes: processes,
-            settings: { [unowned self] in self.settings },
+            settings: { [weak self] in self?.settings ?? AppSettings() },
             inheritedEnvironment: ["HOME": home.path, "PATH": "/usr/bin:/bin", "CLAUDECODE": "1"],
             home: home, loginShell: "/bin/zsh", cachedLoginPATH: "/fake/bin:/usr/bin:/bin",
             resolveLoginPATH: { nil }, storeLoginPATH: { _ in },
             logos: { [logoTable] path in logoTable.value[path] ?? [] },
-            isAppActive: { [unowned self] in self.appActive },
-            setDockBadge: { [unowned self] in self.badge = $0 },
-            now: { [unowned self] in self.now },
+            isAppActive: { [weak self] in self?.appActive ?? false },
+            setDockBadge: { [weak self] in self?.badge = $0 },
+            now: { [weak self] in self?.now ?? .reference },
             saveDelay: 0,
             stopGrace: 0.2,
             launchesInBackground: launchesInBackground)

@@ -64,7 +64,11 @@ final class HiveAppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
     func applicationDidBecomeActive(_ notification: Notification) {
-        MainActor.assumeIsolated { AppStore.shared.appBecameActive() }
+        MainActor.assumeIsolated {
+            AppStore.shared.appBecameActive()
+            // Quizás instalaste un agente en la terminal: que el menú «Sesión» no lo siga dando por faltante.
+            AgentAvailability.shared(for: AppStore.shared).refreshIfStale()
+        }
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

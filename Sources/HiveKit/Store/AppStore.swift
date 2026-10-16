@@ -38,6 +38,9 @@ public final class AppStore {
     /// Sube cuando cambia el día: lo de ayer deja de contar como «usado hoy» y el orden de los
     /// proyectos se recalcula solo (ver `visibleProjects`).
     var dayStamp = 0
+    /// Los proyectos del menú Ir (⌃⌘1…⌃⌘9), en el orden en que se ven. Es una copia de
+    /// `visibleProjects` que cambia solo cuando cambian el orden o los nombres (ver `trackMenuProjects`).
+    public internal(set) var menuProjects: [MenuProject] = []
 
     // Diálogos y hojas abiertas.
     /// Alertas en cola: se muestran de a una y en orden.
@@ -124,6 +127,7 @@ public final class AppStore {
         history = HistoryStore(directory: environment.paths.historyDir)
         loginPATH = environment.cachedLoginPATH
         load()
+        trackMenuProjects()
     }
 
     /// Arranca lo que corre en segundo plano: eventos de los agentes, avisos, revisión de git.
