@@ -55,4 +55,17 @@ struct FlujosViewTests {
         let text = try String(contentsOfFile: f.repo.path + "/app/Order.php", encoding: .utf8)
         #expect(text.contains("<<<<<<<"))
     }
+
+    @Test("Publicando: junto al spinner hay una X para cancelar (un pre-push puede tardar minutos)")
+    func remoteBusyCanCancel() async throws {
+        let world = TestWorld()
+        let repo = GitRepo(name: "bevo")
+        // Remoto con forma de GitLab: el menú solo lee la URL, no se conecta.
+        repo.sh("git remote add origin git@gitlab.com:dizeg/bevo.git")
+        let store = world.makeStore()
+        await store.addProject(at: repo.path)
+        let project = try #require(store.repoProjects.first)
+        await check(RemoteActionsMenu(project: project, branch: project.branches[0], busy: "Publicando…").environment(store).padding(),
+                    size: CGSize(width: 220, height: 60), name: "flujos-03-remoto-publicando")
+    }
 }
