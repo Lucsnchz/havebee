@@ -26,9 +26,13 @@ struct BranchDetailView: View {
                     }
 
                     if store.isMissing(ctx.branch) {
+                        // Sin nada corriendo, la próxima revisión de git la saca sola: el aviso queda para
+                        // las que todavía tienen una sesión o un comando andando.
                         Callout(icon: "exclamationmark.triangle.fill", color: Theme.attention,
                                 title: "No encuentro la carpeta de este worktree",
-                                text: "Se borró o se movió por fuera de Hive. Si ya no la usás, quitá la rama de Hive (la rama de git no se borra).",
+                                text: store.hasRunningWork(ctx.branch)
+                                    ? "Se borró o se movió por fuera de Hive. Como todavía hay algo corriendo acá, la rama se va sola de Hive cuando termine. La rama de git no se borra."
+                                    : "Se borró o se movió por fuera de Hive. Si ya no la usás, quitá la rama de Hive (la rama de git no se borra).",
                                 action: ("Quitar de Hive…", { store.requestRemoval(.branch(branchId)) }))
                     }
 

@@ -88,14 +88,33 @@ extension AppStore {
         if r.ok { await addProject(at: path) } else { alert = AppAlert(title: "No se pudo inicializar git", message: r.errorMessage) }
     }
 
-    /// Suma los worktrees que existen en git pero no en Hive. Devuelve si cambió algo.
+    /// Suma los worktrees que existen en git pero no en Hive y saca los que se borraron por fuera
+    /// (salvo que tengan una sesión o un comando corriendo: esas quedan marcadas como faltantes
+    /// hasta que terminen). Devuelve si cambió algo.
     @discardableResult
     func syncWorktrees(_ projectId: UUID, _ worktrees: [GitWorktree]) -> Bool {
-        guard let project = project(projectId), let result = WorktreeSync.apply(worktrees, to: project) else { return false }
+        guard let project = project(projectId),
+              let result = WorktreeSync.apply(worktrees, to: project, isBusy: { hasRunningWork($0) }) else { return false }
+        let gone = project.branches.filter { result.removed.contains($0.id) }
+        let selectionWasInside = gone.contains { branch in
+            selection == .branch(branch.id) || branch.sessions.contains { selection == .session($0.id) }
+        }
+        terminate(gone.flatMap { $0.sessions.map(\.id) })
+        // Los comandos que quedan ya terminaron (si no, la rama no se iba): se cierran con su rama.
+        stopRuns { run in gone.contains { $0.id == run.branchId } }
         projects.updateProject(projectId) { $0 = result.project }
         expanded.formUnion(result.added)
+        expanded.subtract(result.removed)
+        missingWorktrees.subtract(gone.compactMap(\.worktreePath))
+        if selectionWasInside { select(.project(projectId)) }
         scheduleSave()
         return true
+    }
+
+    /// Hay una sesión o un comando corriendo en la rama: no se la saca de Hive por su cuenta.
+    func hasRunningWork(_ branch: Branch) -> Bool {
+        branch.sessions.contains { runtimes[$0.id]?.isRunning == true }
+            || commandRuns.contains { $0.branchId == branch.id && $0.running }
     }
 
     // MARK: - Ramas

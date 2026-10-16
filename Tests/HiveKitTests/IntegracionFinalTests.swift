@@ -420,7 +420,7 @@ struct IntegracionFinalTests {
         #expect(await store.createFirstCommit(projectId: UUID()) == "No encontré el proyecto.")
     }
 
-    @Test("Un worktree que ya no está se marca en la rama con «Quitar de Hive…»")
+    @Test("Un worktree borrado con algo corriendo queda marcado con «Quitar de Hive…» y se va solo cuando termina")
     func missingWorktreeCallout() async throws {
         let world = TestWorld()
         let repo = GitRepo(name: "tienda")
@@ -431,14 +431,25 @@ struct IntegracionFinalTests {
         #expect(await store.createBranch(NewBranchRequest(projectId: project.id, name: "vieja", isNew: true, mode: .worktree,
                                                           copyIgnored: false, setupCommand: nil)) == nil)
         let branch = try #require(store.project(project.id)?.branches.first { $0.name == "vieja" })
+        let runId = try #require(store.runScript(name: "Servidor", command: "php artisan serve", projectId: project.id, branchId: branch.id))
+        let run = try #require(store.commandRuns.first { $0.id == runId })
         repo.sh("git worktree remove --force \(shellQuote(try #require(branch.worktreePath)))")
         await store.refreshGitNow()
-        #expect(store.isMissing(branch))
+        // El comando sigue corriendo: la rama no se saca sola, se marca.
+        #expect(store.project(project.id)?.branches.contains { $0.id == branch.id } == true)
+        #expect(store.isMissing(branch) && store.hasRunningWork(branch))
         let drawn = await colors(NavigationStack { BranchDetailView(branchId: branch.id) }.environment(store),
                                  size: CGSize(width: 900, height: 360), name: "rama-worktree-faltante")
         #expect(drawn.allSatisfy { $0 > 3 })
         store.requestRemoval(.branch(branch.id))
         #expect(store.pendingRemoval?.isWorktree == true)
+        store.pendingRemoval = nil
+        // Cuando termina, la próxima revisión la saca de Hive y cierra el comando.
+        store.commandExited(runId, terminal: try #require(run.terminal), code: 0)
+        await store.refreshGitNow()
+        #expect(store.project(project.id)?.branches.map(\.name) == ["main"])
+        #expect(store.commandRuns.isEmpty)
+        #expect(!store.isMissing(branch))
     }
 
     @Test("Mientras se arma el lanzamiento, la sesión muestra «Abriendo…» en lugar de una terminal vacía")
