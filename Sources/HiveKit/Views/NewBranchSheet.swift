@@ -330,7 +330,8 @@ struct NewBranchSheet: View {
     private var includesCaption: String {
         guard let includeFiles else { return "Buscando archivos ignorados…" }
         if includeFiles.isEmpty { return "No hay archivos ignorados para copiar." }
-        return "Se copian: " + WorktreeIncludes.summary(includeFiles, shown: 3)
+        let found = WorktreeIncludes.summary(includeFiles, shown: 3)
+        return copyIgnored ? "Se copian: " + found : "No se copian (encontré " + found + ")."
     }
 
     // MARK: - Carga
