@@ -162,6 +162,9 @@ struct HistorialViewTests {
         await check(view, size: CGSize(width: 640, height: 540), name: "ah-07-buscar-todas-claro", dark: false, settle: 1.2)
         let hits = demo.store.history.search("validacion", sessionIds: [demo.claude.id, demo.codex.id])
         #expect(Set(hits.map(\.sessionId)) == [demo.claude.id, demo.codex.id])
+        // Leyendo una archivada desde la búsqueda: el panel no ofrece abrir otra búsqueda encima.
+        await check(HistoryPanel(session: demo.codex, showsGlobalSearch: false).environment(demo.store).defaultAppStorage(demo.defaults),
+                    size: CGSize(width: 420, height: 400), name: "ah-11-historial-archivada")
     }
 
     @Test("Uso: el monitor lee Claude y Codex y las vistas lo muestran")

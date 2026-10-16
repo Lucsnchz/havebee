@@ -8,6 +8,9 @@ import SwiftUI
 struct HistoryPanel: View {
     @Environment(AppStore.self) private var store
     let session: Session
+    /// Dentro de «Buscar en todas las sesiones» (leyendo una archivada) no se ofrece abrir otra búsqueda
+    /// encima: al elegir un resultado se cerraría solo la de adentro y la de afuera taparía la sesión.
+    var showsGlobalSearch = true
     @AppStorage("historyShowEverything") private var showEverything = true
     @State private var everything: [HistoryEntry] = []
     @State private var finals: [HistoryEntry] = []
@@ -70,8 +73,10 @@ struct HistoryPanel: View {
                     .transition(.opacity)
             }
             Spacer()
-            HistoryIconButton(symbol: "text.magnifyingglass", label: "Buscar en todas las sesiones") {
-                showGlobalSearch = true
+            if showsGlobalSearch {
+                HistoryIconButton(symbol: "text.magnifyingglass", label: "Buscar en todas las sesiones") {
+                    showGlobalSearch = true
+                }
             }
             HistoryIconButton(symbol: "doc.on.doc", label: "Copiar todo el historial") {
                 ExternalApps.copyToPasteboard(HistoryExport.plainText(shown, agent: session.kind.label))
