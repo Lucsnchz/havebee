@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SwiftUI
 import Testing
 @testable import HiveKit
 
@@ -24,6 +25,15 @@ struct ContrastTests {
         #expect(abs(HiveContrast.ratio(.white, on: .white) - 1) < 0.01)
         // #767676 es el gris más claro que da 4,5 sobre blanco.
         #expect(abs(HiveContrast.ratio(Theme.srgb(0x767676), on: .white) - 4.54) < 0.02)
+    }
+
+    @Test("Color.dynamic elige el valor según la apariencia")
+    func dynamicColor() {
+        let color = NSColor(Color.dynamic(light: Color(nsColor: Theme.srgb(0x9A6700)), dark: .white))
+        let light = HiveContrast.resolve(color, in: .aqua)
+        let dark = HiveContrast.resolve(color, in: .darkAqua)
+        #expect(abs(light.redComponent - 0x9A / 255.0) < 0.01 && abs(light.blueComponent) < 0.01)
+        #expect(abs(dark.redComponent - 1) < 0.01 && abs(dark.blueComponent - 1) < 0.01)
     }
 
     @Test("El acento: ≥ 4,5 sobre blanco en claro y sobre el fondo en oscuro")
