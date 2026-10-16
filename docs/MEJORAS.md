@@ -1,6 +1,6 @@
 # Mejoras de Hive · octubre 2026
 
-Qué se hizo en esta ronda, qué falta y cómo probarlo. Cubre todo lo que hay desde el commit `405d9ae` hasta la punta de la rama `ultra/integration`: más de 200 commits, sin push. Los tests pasaron de unos 200 a **833**, y la app compila con cero warnings.
+Qué se hizo en esta ronda, qué falta y cómo probarlo. Cubre todo lo que hay desde el commit `405d9ae` hasta la punta de la rama `ultra/integration`: más de 200 commits, sin push. Los tests pasaron de unos 200 a **847**, y la app compila con cero warnings.
 
 Para el uso diario está el [README](../README.md). Este archivo es el registro de la ronda.
 
@@ -14,6 +14,7 @@ Para el uso diario está el [README](../README.md). Este archivo es el registro 
 - **El historial es la conversación completa.** Queda guardado en Hive (sobrevive a `/clear` y a que Claude borre sus archivos), se ve con Markdown y se busca en todas las sesiones con ⌘K y `?`. Además ves cuánto te queda del límite de Claude y de Codex.
 - **Un reflejo ya no corta nada.** ⌘W, ⌘R, ⌘. y ⌘Q preguntan antes si un agente está trabajando o esperando permiso, o si una Terminal tiene algo corriendo. Los conflictos piden confirmación. Archivar, quitar un proyecto, borrar un comando y quitar un MCP se deshacen con ⌘Z.
 - **Los proyectos no saltan de lugar.** En el riel y en el árbol van primero los fijados, después lo activo de hoy, después lo apagado (atenuado) y al final «Terminales». Dentro de cada grupo manda tu orden. Hay un solo aro de estado y un solo globito, iguales en todos lados.
+- **Un workflow no te avisa antes de tiempo.** Si Claude termina su turno pero deja subagentes o un workflow trabajando, la sesión sigue en «En segundo plano…», sin aviso ni globito, y te avisa recién cuando Claude retoma y termina de verdad.
 - **Se ve bien en claro y en oscuro.** Hay un solo acento miel, el contraste está medido con tests, y el verde y el naranja quedan solo para el estado de las sesiones.
 - **Menos sustos.** git no pisa ni pierde estado. Un `.mcp.json` roto no se reescribe y un `state.json` ilegible no se pisa. Los worktrees borrados por fuera se van solos y Hive ya no se cae con datos raros de uso.
 
@@ -127,7 +128,14 @@ Todo lo de esta sección está en el código y en `git log 405d9ae..HEAD`.
   - un plan dice «Tiene un plan listo para que lo apruebes» y una pregunta, «Te hace una pregunta: …»;
   - Esc saca a un agente de «Necesita permiso» o de «Trabajando».
 - **Cortes con motivo.** Un `StopFailure` dice por qué se cortó: «Llegaste al límite de uso», «Anthropic está saturado», «/login»… En el historial queda «⚠︎ Se cortó: llegaste al límite de uso», con el código chiquito aparte.
-- **Subagentes y segundo plano.** Al terminar con tareas pendientes avisa «Terminó; quedan N tareas en segundo plano». Los avisos automáticos van como «Aviso automático» y no cuentan como mensaje tuyo.
+- **Subagentes, workflows y segundo plano.** El `Stop` de Claude trae `background_tasks`, con el tipo de cada tarea:
+  - con subagentes o un workflow andando, la sesión sigue trabajando («En segundo plano…» en la tarjeta y en la barra), sin aviso ni globito, aunque la terminal quede quieta: no aplican la regla del silencio ni el aviso de inactividad de Claude, y Esc no la saca;
+  - cuando terminan, Claude retoma solo, y su `Stop` sin tareas te deja el turno con el aviso de siempre;
+  - si lo que queda es un shell o un monitor (un `php artisan serve`, por ejemplo), te toca y avisa «Terminó; queda 1 tarea en segundo plano», porque puede no terminar nunca;
+  - de respaldo, si en 15 minutos no llega ningún evento de la sesión ni de sus subagentes, pasa a «Tu turno» y avisa.
+  
+  Antes, la sesión figuraba «Tu turno» mientras el workflow trabajaba y, al entrar, parecía volver sola a «Trabajando».
+- **Avisos automáticos.** Los mensajes que inyecta Claude (tareas en segundo plano, `/loop`, recordatorios) van como «Aviso automático» y no cuentan como mensaje tuyo.
 - **Codex:**
   - ignora los subagentes y los threads de VS Code;
   - elige su thread por la fecha de creación;
@@ -408,6 +416,7 @@ Esfuerzo: **S** chico, **M** mediano, **L** grande.
 | **Notificaciones con respuesta** | Con Hive.app: «Responder» a un aviso de turno → la sesión pasa a «Trabajando». Con la sesión pidiendo permiso → la abre y deja el texto en el portapapeles. Probá también el sonido. | Los tests nunca llaman al centro de avisos de macOS, y los avisos solo existen dentro de un `.app`. |
 | **Herd** | En un proyecto Laravel servido por Herd, una rama nueva «Junto al proyecto»: tiene que abrir `https://<repo>-<rama>.test`, con el `.env` y su `APP_URL`, «Preparar» (y `herd secure` si el principal tiene certificado) y «Abrir sitio». | Los tests usan una configuración de Herd falsa en una carpeta temporal. |
 | **Publicar a GitLab** | «Publicar rama», «Crear MR en GitLab» (abre el MR nuevo), «Traer cambios», y cancelar con la X durante un pre-push lento. | Los tests usan repos locales y un git falso lento, no GitLab. |
+| **Workflow en segundo plano** | Pedile a Claude algo que lance un workflow o subagentes en segundo plano y salí de la sesión: tiene que seguir en «En segundo plano…», sin globito, y avisarte recién cuando Claude cuente que terminó. | Los hooks están simulados con el formato que documenta Claude Code 2.1.301. |
 | **El riel con el cambio de día** | Dejá Hive abierta pasada la medianoche: lo que solo se usó ayer tiene que pasar a los apagados sin tocar nada. | El aviso del sistema se simula en el test. |
 | **Arrastrar en el riel** | Reordenar arrastrando dentro de un grupo, y soltar una carpeta sobre un ícono del riel. | Un arrastre real necesita mover el mouse. |
 | **Los apagados sin color** | Que los íconos apagados se vean casi grises pero reconocibles, en claro y en oscuro. | Las capturas no aplican el filtro de saturación: ahí se ven con todo el color. |
@@ -453,9 +462,9 @@ scripts/test.sh --snapshots /tmp/capturas    # además guarda capturas PNG en cl
 
 | Suite | Tests | Suites |
 |---|---|---|
-| HiveCoreTests | 459 | 64 |
-| HiveKitTests | 374 | 50 |
-| **Total** | **833** | |
+| HiveCoreTests | 467 | 65 |
+| HiveKitTests | 380 | 51 |
+| **Total** | **847** | |
 
 Al empezar la ronda había unos 200 tests (unos 145 en HiveCore y 57 en HiveKit). El build limpio con `--build-tests` da cero warnings. Ningún test lee tu estado real (`~/.claude`, `~/.codex`, `~/.gemini`, Herd o Application Support), usa `UserDefaults.standard` ni llama al centro de avisos de macOS.
 

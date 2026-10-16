@@ -182,7 +182,7 @@ Principios:
 ## Tests
 
 ```bash
-scripts/test.sh                              # todo (833 tests: 459 de HiveCore y 374 de HiveKit)
+scripts/test.sh                              # todo (847 tests: 467 de HiveCore y 380 de HiveKit)
 scripts/test.sh HiveCoreTests                # solo el core (unos 3 s)
 scripts/test.sh StoreProjectOrder            # cualquier filtro
 scripts/test.sh --snapshots /tmp/capturas    # además guarda capturas de cada vista, en claro y en oscuro
