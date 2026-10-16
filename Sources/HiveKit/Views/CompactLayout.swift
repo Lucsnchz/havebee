@@ -31,6 +31,8 @@ private struct ProjectRail: View {
     @State private var dropTargeted = false
     /// El proyecto que se está arrastrando para reordenar el riel.
     @State private var dragging: UUID?
+    /// Con «Reducir movimiento», los proyectos cambian de lugar sin deslizarse.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         // El mismo orden que el árbol y que ⌃⌘1…⌃⌘9: fijados, activos de hoy, apagados y «Terminales».
@@ -56,12 +58,13 @@ private struct ProjectRail: View {
                                     dragging = item.id
                                     return RailReorderDelegate.provider(for: item.id)
                                 }
-                                .onDrop(of: [RailReorderDelegate.type], delegate: RailReorderDelegate(target: item.id, dragging: $dragging, store: store))
+                                .onDrop(of: [RailReorderDelegate.type],
+                                        delegate: RailReorderDelegate(target: item.id, dragging: $dragging, store: store, animated: !reduceMotion))
                         }
                     }
                 }
                 .padding(.vertical, 14)
-                .animation(.snappy, value: items.map(\.id))
+                .animation(reduceMotion ? nil : .snappy, value: items.map(\.id))
             }
             Divider().padding(.horizontal, 16)
             if let index = items.firstIndex(where: { $0.group == .scratch }) {
@@ -152,7 +155,7 @@ private struct HomeRailItem: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .help("Inicio: lo que te espera en todos los proyectos (\(HiveCommands.Shortcut.home.description))")
-        .accessibilityLabel(ActivityBadge.accessibilityText(activity).map { "Inicio, \($0)" } ?? "Inicio")
+        .accessibilityLabel(ActivityBadge.homeAccessibilityText(activity))
     }
 }
 
@@ -189,7 +192,7 @@ struct RailItem: View {
             ZStack(alignment: .leading) {
                 RailIndicator(selected: selected, hovering: hovering)
                 ProjectTile(project: project, size: 40, activity: activity, showsBadge: true)
-                    .dimmedProject(!isActive && !selected && !hovering)
+                    .dimmedProject(DimmedProject.dims(isActive: isActive, isCurrent: selected, hovering: hovering))
                     .scaleEffect(hovering && !selected ? 1.04 : 1)
                     .frame(maxWidth: .infinity)
             }
@@ -200,6 +203,7 @@ struct RailItem: View {
         .onHover { hovering = $0 }
         .help(shortcut.map { "\(project.name) (\($0))" } ?? project.name)
         .accessibilityLabel(Self.accessibilityText(project: project, activity: activity, isActive: isActive))
+        .accessibilityValue(ActivityBadge.projectAccessibilityValue(activity))
         .contextMenu {
             if project.isScratch, let branch = project.branches.first {
                 ScratchMenu(project: project, branch: branch)
@@ -209,16 +213,10 @@ struct RailItem: View {
         }
     }
 
-    /// «ecommerce, fijado, 2 sesiones te esperan» o «bevo, sin actividad hoy».
+    /// «ecommerce, fijado, 2 sesiones te esperan» o «bevo, sin actividad hoy», como en el árbol. Si
+    /// alguna pide permiso o trabaja, lo dice después (`accessibilityValue`).
     static func accessibilityText(project: Project, activity: Activity, isActive: Bool = true) -> String {
-        var parts = [project.name]
-        if project.pinned { parts.append("fijado") }
-        if activity.waitingForYou > 0 {
-            parts.append(activity.waitingForYou == 1 ? "una sesión te espera" : "\(activity.waitingForYou) sesiones te esperan")
-        } else if !isActive {
-            parts.append("sin actividad hoy")
-        }
-        return parts.joined(separator: ", ")
+        ActivityBadge.projectAccessibilityLabel(project.name, pinned: project.pinned, activity: activity, isActive: isActive)
     }
 }
 
@@ -242,16 +240,20 @@ struct RailReorderDelegate: DropDelegate {
     let target: UUID
     @Binding var dragging: UUID?
     let store: AppStore
+    /// Deslizar al reordenar (no con «Reducir movimiento»).
+    var animated = true
 
     func validateDrop(info: DropInfo) -> Bool { dragging != nil }
 
     func dropEntered(info: DropInfo) {
         guard let dragging, dragging != target else { return }
-        withAnimation(.snappy) { _ = store.moveProject(dragging, onto: target) }
+        withAnimation(animated ? .snappy : nil) { _ = store.moveProject(dragging, onto: target) }
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
-        dragging == nil ? nil : DropProposal(operation: .move)
+        guard let dragging else { return nil }
+        // Sobre un proyecto de otro grupo no se puede soltar (fijar es con el menú): que se note.
+        return DropProposal(operation: store.canMoveProject(dragging, onto: target) ? .move : .forbidden)
     }
 
     func performDrop(info: DropInfo) -> Bool {

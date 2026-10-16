@@ -34,6 +34,12 @@ extension AppStore {
         scheduleSave()
     }
 
+    /// Si el proyecto arrastrado en el riel se puede soltar sobre `target` (del mismo grupo). Si no,
+    /// el puntero lo muestra como prohibido: fijar es con el menú.
+    public func canMoveProject(_ id: UUID, onto target: UUID) -> Bool {
+        projectOrdering.canDrag(id, onto: target, in: projects)
+    }
+
     /// Arrastrar un proyecto sobre otro en el riel: toma su lugar si son del mismo grupo.
     /// Devuelve si se movió.
     @discardableResult

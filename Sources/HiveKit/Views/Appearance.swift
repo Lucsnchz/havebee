@@ -94,6 +94,12 @@ struct DimmedProject: ViewModifier {
 
     static func opacity(for scheme: ColorScheme) -> Double { scheme == .dark ? 0.5 : 0.6 }
 
+    /// Cuándo se atenúa, igual en el riel y en el árbol: sin actividad hoy, salvo que sea el
+    /// proyecto abierto (o tenga elegida una rama o sesión suya) o que tenga el puntero encima.
+    static func dims(isActive: Bool, isCurrent: Bool, hovering: Bool) -> Bool {
+        !isActive && !isCurrent && !hovering
+    }
+
     func body(content: Content) -> some View {
         content
             .saturation(dimmed ? 0.5 : 1)

@@ -61,7 +61,7 @@ Todo Hive se maneja con el teclado. Los atajos están en los menús **Sesión** 
 | ⌘1 … ⌘9 | Pestaña 1 a 9 del proyecto abierto |
 | ⌃⌘1 … ⌃⌘9 | Proyecto 1 a 9, en el orden en que se ven (fijados, activos, apagados y «Terminales») |
 | ⇧⌘] / ⇧⌘[ | Sesión siguiente / anterior (da la vuelta) |
-| ⌥⌘↓ / ⌥⌘↑ | Proyecto siguiente / anterior |
+| ⌥⌘↓ / ⌥⌘↑ | Proyecto siguiente / anterior, en el mismo orden (da la vuelta) |
 | ⌘F, ⌘G, ⇧⌘G, ⌘E | Buscar en la terminal, siguiente, anterior y usar la selección |
 | ⌥⌘K | Limpiar la terminal (en los agentes se usa `/clear`) |
 | ⌘+ (o ⌘=), ⌘−, ⌘0 | Agrandar, achicar y volver al tamaño normal del texto de las terminales |

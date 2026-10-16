@@ -29,6 +29,11 @@ private final class RielWorld {
     func makeStore() -> AppStore { world.makeStore() }
 }
 
+/// Una marca que se puede prender desde el aviso de Observation.
+private final class RielFlag: @unchecked Sendable {
+    var value = false
+}
+
 @MainActor
 @Suite("Orden de los proyectos en el store")
 struct StoreProjectOrderTests {
@@ -83,6 +88,22 @@ struct StoreProjectOrderTests {
         store.observeDayChanges()
         NotificationCenter.default.post(name: .NSCalendarDayChanged, object: nil)
         #expect(await waitUntil { store.dayStamp > before })
+    }
+
+    @Test("Quien lee el orden (el riel, el árbol, el menú Ir) se entera solo del cambio de día")
+    func dayChangeInvalidatesReaders() throws {
+        let w = try RielWorld()
+        let store = w.makeStore()
+        let changed = RielFlag()
+        withObservationTracking { _ = store.visibleProjects } onChange: { changed.value = true }
+        #expect(!changed.value)
+        store.dayChanged()
+        #expect(changed.value)
+
+        // Y el orden nuevo sale de la hora actual: días después, «hoy» ya pasó a los apagados.
+        #expect(store.visibleProjects.first { $0.id == w.today.id }?.group == .active)
+        w.world.now = w.world.now.addingTimeInterval(2 * 86_400)
+        #expect(store.visibleProjects.first { $0.id == w.today.id }?.group == .idle)
     }
 
     @Test("Fijar y desfijar se guardan, y el fijado queda último de los fijados")
@@ -184,7 +205,9 @@ struct StoreProjectOrderTests {
         #expect(store.moveProject(w.old.id, onto: w.pinned.id))
         #expect(store.visibleProjects.map(\.project.name) == ["viejo", "fijado", "hoy", "Terminales"])
         #expect(w.makeStore().visibleProjects.map(\.project.name) == ["viejo", "fijado", "hoy", "Terminales"])
-        // «hoy» no es fijado: no se mete entre ellos.
+        // «hoy» no es fijado: no se mete entre ellos (y el riel no deja soltarlo ahí).
+        #expect(store.canMoveProject(w.old.id, onto: w.pinned.id))
+        #expect(!store.canMoveProject(w.today.id, onto: w.old.id))
         #expect(!store.moveProject(w.today.id, onto: w.old.id))
         #expect(store.visibleProjects.map(\.project.name) == ["viejo", "fijado", "hoy", "Terminales"])
     }

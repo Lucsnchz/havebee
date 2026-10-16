@@ -198,6 +198,14 @@ struct ProjectOrderingTests {
         #expect(order.moving(manual, dragging: a1.id, onto: a1.id) == nil)
         #expect(order.moving(manual, dragging: scratch.id, onto: i.id) == nil)
         #expect(order.moving(manual, dragging: UUID(), onto: a1.id) == nil)
+
+        // Lo mismo decide si el riel deja soltarlo (si no, el puntero lo muestra prohibido).
+        #expect(order.canDrag(a1.id, onto: a3.id, in: manual))
+        #expect(order.canDrag(a1.id, onto: a1.id, in: manual)) // sobre sí mismo, después de moverse
+        #expect(!order.canDrag(a1.id, onto: p.id, in: manual))
+        #expect(!order.canDrag(i.id, onto: a1.id, in: manual))
+        #expect(!order.canDrag(scratch.id, onto: scratch.id, in: manual))
+        #expect(!order.canDrag(a1.id, onto: UUID(), in: manual))
     }
 
     @Test("Fijar lo deja último de los fijados; desfijarlo, primero de su grupo")

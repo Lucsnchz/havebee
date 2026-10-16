@@ -180,12 +180,8 @@ private struct HomeRow: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .help("Las sesiones que te esperan, en todos los proyectos")
-        .accessibilityLabel(homeAccessibilityText(activity))
+        .accessibilityLabel(ActivityBadge.homeAccessibilityText(activity))
         .accessibilityAddTraits(selected ? .isSelected : [])
-    }
-
-    private func homeAccessibilityText(_ activity: Activity) -> String {
-        ActivityBadge.accessibilityText(activity).map { "Inicio, \($0)" } ?? "Inicio"
     }
 }
 
@@ -200,7 +196,8 @@ private struct ProjectRow: View {
         let activity = store.activity(of: project)
         // Con el proyecto abierto, cada sesión ya muestra su estado: el globito sería repetirlo.
         let showsBadge = !store.isExpanded(project.id) && activity.waitingForYou > 0
-        let dimmed = !isActive && !hovering && store.selection != .project(project.id)
+        // Como en el riel: no se atenúa si estás adentro (el proyecto, una rama o una sesión suya).
+        let dimmed = DimmedProject.dims(isActive: isActive, isCurrent: store.currentProjectId == project.id, hovering: hovering)
         HStack(spacing: 8) {
             HStack(spacing: 8) {
                 ProjectTile(project: project, size: 20, activity: activity)
@@ -230,17 +227,10 @@ private struct ProjectRow: View {
         .onHover { hovering = $0 }
         .help(project.path.tildePath)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilityText(activity))
-    }
-
-    private func accessibilityText(_ activity: Activity) -> String {
-        var parts = ["Proyecto \(project.name)"]
-        if project.pinned { parts.append("fijado") }
-        if !isActive && activity.waitingForYou == 0 && activity.working == 0 { parts.append("sin actividad hoy") }
-        if activity.attention > 0 { parts.append(activity.attention == 1 ? "una sesión necesita permiso" : "\(activity.attention) sesiones necesitan permiso") }
-        if activity.pending > 0 { parts.append(activity.pending == 1 ? "una sesión te espera" : "\(activity.pending) sesiones te esperan") }
-        if activity.working > 0 { parts.append(activity.working == 1 ? "una sesión trabajando" : "\(activity.working) sesiones trabajando") }
-        return parts.joined(separator: ", ")
+        // Lo mismo que dice el riel, con «Proyecto» delante: en el árbol también hay ramas y sesiones.
+        .accessibilityLabel(ActivityBadge.projectAccessibilityLabel("Proyecto \(project.name)", pinned: project.pinned,
+                                                                    activity: activity, isActive: isActive))
+        .accessibilityValue(ActivityBadge.projectAccessibilityValue(activity))
     }
 }
 
