@@ -29,6 +29,42 @@ struct UsageReaderTests {
         #expect(snapshot.contextPercent == 1)
         #expect(snapshot.limits.map(\.label) == ["5h", "sem"])
         #expect(snapshot.limits.first?.resetsAt == AgentTimestamp.parse("2026-10-12T11:05:00Z"))
+        // Una ventana con un número fuera de rango no hace caer a Hive: queda sin duración.
+        let huge = UsageReader.codexLimit(["used_percent": .number(5), "window_minutes": .number(1e300)], lineDate: .reference)
+        #expect(huge == UsageLimit(windowMinutes: nil, usedPercent: 5, resetsAt: nil))
+    }
+
+    @Test("Codex con una API key (sin rate_limits): con el contexto alcanza, no recorre todo el rollout")
+    func codexWithoutLimits() throws {
+        func tokenCount(_ total: Int, limits: String = "null") -> String {
+            #"{"timestamp":"2026-10-12T10:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"total_tokens":\#(total)},"model_context_window":100000},"rate_limits":\#(limits)}}"#
+        }
+        // Un límite muy viejo y después muchos turnos sin límites.
+        let old = tokenCount(1, limits: #"{"primary":{"used_percent":50,"window_minutes":300}}"#)
+        let recent = (1...UsageReader.CodexUsage.limitsLookback).map { tokenCount($0 * 1000) }
+        let snapshot = try #require(UsageReader.codexSnapshot(fromLines: ([old] + recent).joined(separator: "\n"), fallbackDate: .reference))
+        #expect(snapshot.contextPercent == 20) // el último: 20.000 de 100.000
+        #expect(snapshot.limits.isEmpty)
+        // Con menos turnos de por medio, el límite se sigue encontrando.
+        let near = try #require(UsageReader.codexSnapshot(fromLines: ([old] + recent.suffix(3)).joined(separator: "\n"), fallbackDate: .reference))
+        #expect(near.limits.map(\.usedPercent) == [50])
+        #expect(near.contextPercent == 20)
+
+        // En disco: un rollout grande sin límites se resuelve leyendo solo el final.
+        let dir = TempDir("hive-usage")
+        let filler = #"{"type":"response_item","payload":{"type":"function_call_output","call_id":"c","output":""# + String(repeating: "x", count: 2 << 20) + "\"}}\n"
+        let file = dir.write("rollout.jsonl", filler + filler + recent.joined(separator: "\n") + "\n")
+        var visited = 0
+        let handle = try FileHandle(forReadingFrom: file)
+        var usage = UsageReader.CodexUsage(fallbackDate: .reference)
+        ReverseLines.scan(handle, maxBytes: 64 << 20) { line in
+            visited += 1
+            if line.range(of: Data(#""token_count""#.utf8)) != nil { usage.add(line) }
+            return usage.isComplete
+        }
+        try handle.close()
+        #expect(visited == UsageReader.CodexUsage.limitsLookback) // nunca llegó a las salidas de 2 MB
+        #expect(UsageReader.codex(rolloutURL: file)?.contextPercent == 20)
     }
 
     @Test("Codex: lee solo el final de un rollout largo")
