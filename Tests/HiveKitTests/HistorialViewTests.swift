@@ -154,15 +154,26 @@ struct HistorialViewTests {
                     size: CGSize(width: 360, height: 300), name: "ah-05-historial-gemini")
     }
 
-    @Test("Buscar en todas las sesiones, también en las archivadas")
+    @Test("Buscar en todas las sesiones es ⌘K con «?», también en las archivadas")
     func globalSearch() async throws {
         let demo = try Demo()
-        let view = HistorySearchView(initialQuery: "validacion").environment(demo.store).defaultAppStorage(demo.defaults)
-        await check(view, size: CGSize(width: 640, height: 540), name: "ah-06-buscar-todas", settle: 1.2)
-        await check(view, size: CGSize(width: 640, height: 540), name: "ah-07-buscar-todas-claro", dark: false, settle: 1.2)
-        let hits = demo.store.history.search("validacion", sessionIds: [demo.claude.id, demo.codex.id])
+        // El botón del panel abre ⌘K con lo que escribiste en el campo, con «?» adelante.
+        #expect(!demo.store.showSwitcher)
+        demo.store.openSwitcher(query: SwitcherIndex.historySearch(" validacion "))
+        #expect(demo.store.showSwitcher)
+        #expect(demo.store.switcherQuery == "?validacion")
+        // Lo que muestra: los mensajes de las dos sesiones, la archivada marcada.
+        let query = try #require(SwitcherIndex.historyQuery(demo.store.switcherQuery))
+        let hits = demo.store.history.search(query, sessionIds: SwitcherIndex.historySessionIds(demo.store.projects),
+                                             limit: QuickSwitcher.historyLimit)
+        let items = SwitcherIndex.historyItems(hits, query: query, in: demo.store.projects)
         #expect(Set(hits.map(\.sessionId)) == [demo.claude.id, demo.codex.id])
-        // Leyendo una archivada desde la búsqueda: el panel no ofrece abrir otra búsqueda encima.
+        #expect(items.contains { $0.subtitle.contains("Login (archivada)") })
+        #expect(items.allSatisfy { !$0.title.contains("**") && !$0.title.contains("##") })
+        let view = QuickSwitcher(query: demo.store.switcherQuery).environment(demo.store).defaultAppStorage(demo.defaults)
+        await check(view, size: CGSize(width: 600, height: 520), name: "ah-06-buscar-todas", settle: 1.2)
+        await check(view, size: CGSize(width: 600, height: 520), name: "ah-07-buscar-todas-claro", dark: false, settle: 1.2)
+        // Leyendo una archivada dentro de ⌘K: el panel no ofrece abrir otro ⌘K encima.
         await check(HistoryPanel(session: demo.codex, showsGlobalSearch: false).environment(demo.store).defaultAppStorage(demo.defaults),
                     size: CGSize(width: 420, height: 400), name: "ah-11-historial-archivada")
     }

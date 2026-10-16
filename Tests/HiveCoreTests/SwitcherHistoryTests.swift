@@ -31,6 +31,30 @@ struct SwitcherHistoryTests {
         #expect(SwitcherIndex.highlights("?stock", in: "validación de stock") == [14..<19])
     }
 
+    @Test("El botón del panel de historial escribe la búsqueda con «?» adelante")
+    func historySearch() {
+        #expect(SwitcherIndex.historySearch("validación") == "?validación")
+        #expect(SwitcherIndex.historySearch("  validación de stock \n") == "?validación de stock")
+        #expect(SwitcherIndex.historySearch("") == "?") // sin nada escrito, ⌘K muestra la ayuda del historial
+        for text in ["migración", "stock al checkout", ""] {
+            #expect(SwitcherIndex.historyQuery(SwitcherIndex.historySearch(text)) == text)
+        }
+    }
+
+    @Test("Las filas del historial no muestran las marcas de Markdown", arguments: [
+        ("## Listo Agregué la **validación** de stock: - Si no alcanza, tira `OutOfStock`. - Los 12 tests pasan.",
+         "Listo Agregué la validación de stock: • Si no alcanza, tira OutOfStock. • Los 12 tests pasan."),
+        ("…cambié el ```php if ($item->stock < $qty) { ``` y listo", "…cambié el if ($item->stock < $qty) { y listo"),
+        ("…y después * otra viñeta", "…y después • otra viñeta"),
+        // Lo que no es Markdown queda igual.
+        ("Llegó un rate_limit en __construct", "Llegó un rate_limit en __construct"),
+        ("Arreglá el issue #123 en src/**/*.php", "Arreglá el issue #123 en src/**/*.php"),
+        ("Agregá validación de stock", "Agregá validación de stock"),
+    ])
+    func withoutMarkdown(snippet: String, expected: String) {
+        #expect(HistoryExport.withoutMarkdown(snippet) == expected)
+    }
+
     @Test("Busca en las sesiones de Claude y Codex, también las archivadas")
     func sessionIds() {
         let ids = SwitcherIndex.historySessionIds(projects)
@@ -75,6 +99,19 @@ struct SwitcherHistoryTests {
         #expect(title.contains("migración"))
         #expect(title.count < 90)
         #expect(title.hasPrefix("…") && title.hasSuffix("…"))
+    }
+
+    @Test("La fila de un mensaje con Markdown se lee limpia y con la coincidencia marcada")
+    func markdownTitle() throws {
+        let hit = HistoryStore.SearchHit(sessionId: claude.id, entryId: UUID(), role: .assistant, date: .reference,
+                                         snippet: "## Listo Agregué la **validación** de stock: - Si no alcanza, tira `OutOfStock`.")
+        let title = try #require(SwitcherIndex.historyItems([hit], query: "validacion", in: projects).first?.title)
+        #expect(!title.contains("**") && !title.contains("##") && !title.contains("`"))
+        #expect(title.contains("Agregué la validación de stock"))
+        let range = try #require(SwitcherIndex.highlights("?validacion", in: title).first)
+        let start = title.index(title.startIndex, offsetBy: range.lowerBound)
+        let end = title.index(title.startIndex, offsetBy: range.upperBound)
+        #expect(title[start..<end] == "validación")
     }
 
     @Test("De punta a punta: lo guardado en el historial aparece como resultado")

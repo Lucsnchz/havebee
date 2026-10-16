@@ -3,12 +3,15 @@ import SwiftUI
 
 /// Buscador rápido (⌘K): proyectos, ramas, sesiones, comandos y archivadas. Con «>» adelante
 /// muestra acciones (sesiones y ramas nuevas, agregar proyecto, cambiar de vista, ajustes) y con
-/// «?», lo que hablaste con Claude y Codex (el historial guardado de todas las sesiones).
+/// «?», lo que hablaste con Claude y Codex (el historial guardado de todas las sesiones). Es la única
+/// búsqueda en todas las sesiones: el botón del panel de historial abre esta misma con «?».
 struct QuickSwitcher: View {
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openSettings) private var openSettings
     @AppStorage("layout") private var layout: HiveLayout = .tree
+    /// El panel lateral de la sesión (lo lee SessionDetailView): al abrir un mensaje, el historial.
+    @AppStorage("sessionSidePanel") private var sidePanel = ""
     @State private var query: String
     @State private var index = 0
     /// Archivada elegida: la hoja muestra su historial en lugar de los resultados.
@@ -20,8 +23,8 @@ struct QuickSwitcher: View {
     @State private var searchingHistory = false
     @FocusState private var focused: Bool
 
-    /// Cuántos mensajes del historial muestra el buscador (la hoja «Buscar en todas las sesiones» muestra más).
-    static let historyLimit = 30
+    /// Cuántos mensajes del historial muestra el buscador como mucho (la lista es perezosa: no pesa).
+    static let historyLimit = 200
 
     init(query: String = "", archivedId: UUID? = nil) {
         _query = State(initialValue: query)
@@ -35,6 +38,8 @@ struct QuickSwitcher: View {
                     archivedId = nil
                     focused = true
                 } onRestore: {
+                    // Si se llegó desde un mensaje encontrado con «?», la sesión abre con el historial en ese mensaje.
+                    if HistoryJumpRequest.shared.pending?.sessionId == id { sidePanel = "history" }
                     dismiss()
                     store.unarchive(id)
                     HiveNavigator.reveal(store, session: id)
@@ -78,6 +83,12 @@ struct QuickSwitcher: View {
                     .onExitCommand { dismiss() }
                 if searchingHistory {
                     ProgressView().controlSize(.small)
+                } else if let historyText, historyText.count >= 2, !results.isEmpty {
+                    Text(historyHits.count >= Self.historyLimit ? "\(Self.historyLimit)+ resultados"
+                         : results.count == 1 ? "1 resultado" : "\(results.count) resultados")
+                        .font(.system(size: 11).monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .fixedSize()
                 }
             }
             .padding(16)
@@ -422,7 +433,8 @@ private struct ArchivedSessionView: View {
             }
             .padding(12)
             Divider()
-            HistoryPanel(session: session)
+            // Ya estás en ⌘K: el panel no ofrece abrirlo otra vez encima.
+            HistoryPanel(session: session, showsGlobalSearch: false)
                 .frame(height: 440)
         }
     }

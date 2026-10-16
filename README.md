@@ -33,7 +33,7 @@ La vista de cada rama muestra botones para crear sesiones, una tarjeta por sesi�
 
 ## Más funciones
 
-- **Buscador (⌘K o la lupa)**: escribí parte del nombre de un proyecto, rama, sesión o comando y abrilo con Enter. También encuentra las sesiones archivadas (al final): al elegir una ves su historial y la podés restaurar. Empezá con `>` para ver acciones: `>nueva claude` crea una sesión de Claude en la rama que elijas, y también hay «Nueva rama en…», «Agregar proyecto…», «Cambiar a vista compacta» y «Ajustes…».
+- **Buscador (⌘K o la lupa)**: escribí parte del nombre de un proyecto, rama, sesión o comando y abrilo con Enter. También encuentra las sesiones archivadas (al final): al elegir una ves su historial y la podés restaurar. Empezá con `>` para ver acciones: `>nueva claude` crea una sesión de Claude en la rama que elijas, y también hay «Nueva rama en…», «Agregar proyecto…», «Cambiar a vista compacta» y «Ajustes…». Empezá con `?` para buscar en lo que hablaste con Claude y Codex en todas las sesiones (también las archivadas): `?migración` y Enter abre la sesión con el historial en ese mensaje.
 - **Responder desde el aviso**: cuando Claude o Codex terminan su turno, la notificación tiene «Responder». Lo que escribís va directo a la sesión, como si lo tipearas, y la sesión pasa a «Trabajando». Si la sesión no está corriendo (o si mientras tanto pasó a pedir permiso, para no aprobar nada sin querer), Hive la abre y deja tu respuesta en el portapapeles. Los avisos de permiso solo tienen «Abrir».
 - **Terminales**: abajo de todo, un «proyecto» con terminales y agentes sueltos que arrancan en tu carpeta personal, fuera de cualquier repo.
 - **Comandos por proyecto**: en el Resumen del proyecto guardás comandos como `npm run dev` o `php artisan serve` (Hive sugiere los del `package.json`, `artisan`, `composer.json` y `docker-compose`). Corren en la rama abierta y aparecen en la esquina de abajo a la derecha, donde ves su salida, los detenés (Ctrl+C) o los reiniciás.
@@ -54,7 +54,7 @@ Todo Hive se maneja con el teclado. Los atajos están en los menús **Sesión** 
 | ⇧⌘W | Cerrar la ventana |
 | ⌥⌘1 / ⌥⌘2 | Mostrar u ocultar el Historial / los Cambios |
 | ⇧⌘H | Inicio |
-| ⌘K | Buscar (con `>`, acciones) |
+| ⌘K | Buscar (con `>`, acciones; con `?`, en el historial de todas las sesiones) |
 | ⌘J | Siguiente que te espera: primero la que pide permiso, después la que terminó hace más |
 | ⌘1 … ⌘9 | Pestaña 1 a 9 del proyecto abierto |
 | ⌃⌘1 … ⌃⌘9 | Proyecto 1 a 9 |
@@ -70,7 +70,7 @@ Al saltar a una sesión con el teclado, el árbol se despliega hasta ella. En la
 ## Historial que sobrevive a /clear
 
 - **En la terminal**: Claude corre en la terminal normal (no en su pantalla completa), así que después de `/clear` lo anterior sigue arriba en el scroll para leerlo y copiarlo. Para los otros agentes, si borran pantalla y scroll justo después de un Enter, Hive manda lo que se veía al scroll con una línea divisoria. Cada terminal guarda 10.000 líneas.
-- **Panel «Historial»** (botón del reloj en la sesión): todo lo que hablaste con Claude o Codex, con buscador y botón para copiar, marcando cada `/clear`.
+- **Panel «Historial»** (botón del reloj en la sesión): todo lo que hablaste con Claude o Codex, con buscador y botón para copiar, marcando cada `/clear` y cada corte (por ejemplo, «Se cortó: llegaste al límite de uso»). El botón de los globitos busca lo mismo en todas las sesiones: abre ⌘K con `?` y lo que escribiste.
 - **La IA también lo puede leer**: al arrancar, Hive le dice a Claude (`--append-system-prompt`) y a Codex (`developer_instructions`) dónde está el historial en Markdown. Lo consultan solo si mencionás algo que ya no está en su contexto.
 - Se configura en *Hive → Ajustes*. Gemini no avisa sus mensajes, así que no tiene panel de historial (sí el scroll).
 

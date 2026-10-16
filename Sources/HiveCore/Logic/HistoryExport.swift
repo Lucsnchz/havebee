@@ -45,6 +45,17 @@ public enum HistoryExport {
         return (start > text.startIndex ? "…" : "") + flat + (end < text.endIndex ? "…" : "")
     }
 
+    /// Un fragmento en una línea sin las marcas de Markdown que se verían crudas: títulos («## »),
+    /// viñetas (pasan a «• »), negritas («**así**») y código («`así`» y «```php»). Lo demás queda
+    /// igual: los «_» son parte de nombres como `rate_limit` o `__construct`.
+    public static func withoutMarkdown(_ line: String) -> String {
+        line.replacingOccurrences(of: #"(^|[\s…])#{1,6}\s+"#, with: "$1", options: .regularExpression)
+            .replacingOccurrences(of: #"(^|[\s…])[-*+]\s+"#, with: "$1• ", options: .regularExpression)
+            .replacingOccurrences(of: #"\*\*(\S(?:.*?\S)?)\*\*"#, with: "$1", options: .regularExpression)
+            .replacingOccurrences(of: #"```[A-Za-z0-9_+-]*\s*"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: "`", with: "")
+    }
+
     /// Junta la copia completa (textos intermedios de los transcripts) con el registro de Hive:
     /// del registro quedan los marcadores, los avisos y lo que la copia no tenga (lo anterior a ella).
     public static func timeline(log: [HistoryEntry], full: [HistoryEntry]) -> [HistoryEntry] {
