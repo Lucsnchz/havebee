@@ -14,11 +14,15 @@ struct DiffSheet: View {
     @State private var resolving = false
     /// Error al resolver: se muestra en la barra, porque una alerta no aparece encima de esta hoja.
     @State private var resolveError: String?
+    /// Lo que tocaste en la barra de conflicto y espera tu confirmación (pisar un archivo no se deshace).
+    @State private var pendingChoice: ConflictChoice?
     @State private var copied = false
 
-    init(target: DiffTarget) {
+    /// `pendingChoice`: para mostrar la confirmación ya abierta (las capturas de los tests).
+    init(target: DiffTarget, pendingChoice: ConflictChoice? = nil) {
         self.target = target
         _selected = State(initialValue: target.selected)
+        _pendingChoice = State(initialValue: pendingChoice)
     }
 
     var body: some View {
@@ -39,6 +43,7 @@ struct DiffSheet: View {
             resolveError = nil
             await load()
         }
+        .onChange(of: selected) { pendingChoice = nil }
         .background {
             // Flechas para pasar de archivo, Esc para cerrar.
             Group {
@@ -138,35 +143,53 @@ struct DiffSheet: View {
         }
     }
 
-    /// Barra para resolver un conflicto sin salir de la hoja.
+    /// Barra para resolver un conflicto sin salir de la hoja. «Usar la mía» y «Usar la de ellos» (y
+    /// «Marcar resuelto» con marcadores todavía) piden confirmación en la misma barra: la hoja no
+    /// puede mostrar alertas.
     private func conflictBar(_ file: DiffTarget.File) -> some View {
         let operation = store.dirStatus[target.directory]?.operation
         let done = resolved[file.change.path]
+        let prompt = done == nil ? pendingChoice.flatMap { prompt(for: $0, file: file, operation: operation) } : nil
         return HStack(spacing: 8) {
             Image(systemName: done == nil ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
                 .foregroundStyle(done == nil ? Theme.attention : Theme.pending)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(done ?? "Archivo en conflicto" + (operation.map { " · \($0.label)" } ?? ""))
+            if let prompt, let choice = pendingChoice {
+                Text(prompt.message)
                     .font(.system(size: 12, weight: .medium))
-                    .lineLimit(1)
-                if done == nil, let resolveError {
-                    Text(resolveError)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.red)
-                        .lineLimit(2)
-                        .textSelection(.enabled)
-                        .help(resolveError)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .help(prompt.message)
+                Spacer(minLength: 8)
+                Button("Cancelar") { pendingChoice = nil }
+                Button(prompt.confirmTitle, role: .destructive) {
+                    pendingChoice = nil
+                    perform(choice, file: file, operation: operation)
                 }
-            }
-            Spacer()
-            if done == nil {
-                if resolving { ProgressView().controlSize(.small) }
-                Button("Usar la mía") { resolve(file, mine: true, operation: operation) }
-                    .help(operation == .rebase ? "Quedarte con tu versión (en un rebase, «theirs»)" : "Quedarte con la versión de HEAD (--ours)")
-                Button("Usar la de ellos") { resolve(file, mine: false, operation: operation) }
-                    .help(operation == .rebase ? "Quedarte con la versión de la rama de destino (en un rebase, «ours»)" : "Quedarte con la versión que se está trayendo (--theirs)")
-                Button("Marcar resuelto") { resolve(file, resolution: .markResolved, message: "Marcado como resuelto: quedó preparado para el commit.") }
-                    .help("Ya lo arreglaste a mano: git add")
+                .foregroundStyle(.red)
+            } else {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(done ?? "Archivo en conflicto" + (operation.map { " · \($0.label)" } ?? ""))
+                        .font(.system(size: 12, weight: .medium))
+                        .lineLimit(1)
+                    if done == nil, let resolveError {
+                        Text(resolveError)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.red)
+                            .lineLimit(2)
+                            .textSelection(.enabled)
+                            .help(resolveError)
+                    }
+                }
+                Spacer()
+                if done == nil {
+                    if resolving { ProgressView().controlSize(.small) }
+                    Button("Usar la mía") { ask(.mine, file: file, operation: operation) }
+                        .help(operation == .rebase ? "Quedarte con tu versión (en un rebase, «theirs»)" : "Quedarte con la versión de HEAD (--ours)")
+                    Button("Usar la de ellos") { ask(.theirs, file: file, operation: operation) }
+                        .help(operation == .rebase ? "Quedarte con la versión de la rama de destino (en un rebase, «ours»)" : "Quedarte con la versión que se está trayendo (--theirs)")
+                    Button("Marcar resuelto") { ask(.markResolved, file: file, operation: operation) }
+                        .help("Ya lo arreglaste a mano: git add")
+                }
             }
         }
         .font(.system(size: 12))
@@ -174,6 +197,20 @@ struct DiffSheet: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 7)
         .background(Theme.attention.opacity(done == nil ? 0.12 : 0.04))
+    }
+
+    private func prompt(for choice: ConflictChoice, file: DiffTarget.File, operation: GitOperation?) -> ConflictPrompt? {
+        ConflictPrompt.make(choice, fileName: file.change.fileName, code: file.change.code,
+                            swapsOursAndTheirs: operation?.swapsOursAndTheirs == true, hasMarkers: ConflictPrompt.hasMarkers(diff))
+    }
+
+    /// Pide confirmación si hace falta; si no (marcar resuelto sin marcadores), lo hace directo.
+    private func ask(_ choice: ConflictChoice, file: DiffTarget.File, operation: GitOperation?) {
+        if prompt(for: choice, file: file, operation: operation) == nil {
+            perform(choice, file: file, operation: operation)
+        } else {
+            pendingChoice = choice
+        }
     }
 
     @ViewBuilder private var content: some View {
@@ -228,11 +265,14 @@ struct DiffSheet: View {
         if target.files.indices.contains(next) { selected = next }
     }
 
-    private func resolve(_ file: DiffTarget.File, mine: Bool, operation: GitOperation?) {
-        // En un rebase, «ours» es la rama de destino y «theirs» tu commit.
-        let swapped = operation?.swapsOursAndTheirs == true
-        let resolution: ConflictResolution = mine != swapped ? .ours : .theirs
-        resolve(file, resolution: resolution, message: mine ? "Te quedaste con tu versión." : "Te quedaste con la versión de ellos.")
+    private func perform(_ choice: ConflictChoice, file: DiffTarget.File, operation: GitOperation?) {
+        let resolution = ConflictPrompt.resolution(for: choice, swapsOursAndTheirs: operation?.swapsOursAndTheirs == true)
+        let message = switch choice {
+        case .mine: "Te quedaste con tu versión."
+        case .theirs: "Te quedaste con la versión de ellos."
+        case .markResolved: "Marcado como resuelto: quedó preparado para el commit."
+        }
+        resolve(file, resolution: resolution, message: message)
     }
 
     private func resolve(_ file: DiffTarget.File, resolution: ConflictResolution, message: String) {
