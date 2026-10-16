@@ -115,6 +115,14 @@ struct AgentHooksTests {
         #expect(o.notification == text)
     }
 
+    @Test("Un background_tasks con un número absurdo no hace caer a Hive")
+    func backgroundTasksOutOfRange() {
+        #expect(AgentEventInterpreter.backgroundTaskCount(.number(1e300)) == 10_000)
+        #expect(AgentEventInterpreter.backgroundTaskCount(.number(-3)) == 0)
+        #expect(AgentEventInterpreter.backgroundTaskCount(.number(2.9)) == 2)
+        #expect(run("Stop", ["background_tasks": .number(1e300)]).status == .waiting)
+    }
+
     @Test("Un prompt automático (source ≠ user) trabaja pero no cuenta como tuyo", arguments: [
         "system", "loop_wakeup", "schedule_wakeup", "poll_event", "sdk",
     ])

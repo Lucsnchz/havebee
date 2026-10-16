@@ -199,7 +199,8 @@ public enum AgentEventInterpreter {
         switch value {
         case .array(let tasks)?: tasks.count
         case .object(let tasks)?: tasks.count
-        case .number(let n)?: max(Int(n), 0)
+        // Int(n) se cae con un número fuera de rango: el payload viene de afuera.
+        case .number(let n)?: n.isFinite ? Int(min(max(n, 0), 10_000)) : 0
         default: 0
         }
     }
