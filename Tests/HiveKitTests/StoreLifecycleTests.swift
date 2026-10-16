@@ -293,6 +293,19 @@ struct HomeAndWelcomeTests {
         #expect(HomeSessionGroups.build(projects: [], status: { _ in nil }).isEmpty)
     }
 
+    @Test("La línea de resumen del Inicio arranca en mayúscula y concuerda", arguments: [
+        (0, 0, "Nada te espera por ahora."),
+        (1, 0, "Una sesión te espera."),
+        (3, 0, "3 sesiones te esperan."),
+        (0, 1, "Una sesión está trabajando."),
+        (0, 2, "2 sesiones están trabajando."),
+        (2, 1, "2 sesiones te esperan y una está trabajando."),
+        (1, 4, "Una sesión te espera y 4 están trabajando."),
+    ])
+    func summary(waiting: Int, working: Int, expected: String) {
+        #expect(HomeSessionGroups.summary(waiting: waiting, working: working) == expected)
+    }
+
     @Test("Sin selección se ve el Inicio en las dos vistas; sin proyectos, la bienvenida")
     func emptyDetail() async throws {
         let demo = try await Demo()

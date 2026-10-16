@@ -42,6 +42,18 @@ struct HomeSessionGroups {
             Group(title: "Recientes", symbol: "clock", tint: .secondary, items: recent),
         ].filter { !$0.items.isEmpty }
     }
+
+    /// La línea de arriba del Inicio: «2 sesiones te esperan y una está trabajando.»
+    static func summary(waiting: Int, working: Int) -> String {
+        switch (waiting, working) {
+        case (0, 0): return "Nada te espera por ahora."
+        case (_, 0): return waiting == 1 ? "Una sesión te espera." : "\(waiting) sesiones te esperan."
+        case (0, _): return working == 1 ? "Una sesión está trabajando." : "\(working) sesiones están trabajando."
+        default:
+            let first = waiting == 1 ? "Una sesión te espera" : "\(waiting) sesiones te esperan"
+            return first + (working == 1 ? " y una está trabajando." : " y \(working) están trabajando.")
+        }
+    }
 }
 
 /// Inicio: lo que te espera en todos tus proyectos, sin tener que recorrer el árbol.
@@ -75,18 +87,10 @@ struct HomeView: View {
         return VStack(alignment: .leading, spacing: 4) {
             Text("Inicio")
                 .font(.system(size: 26, weight: .bold))
-            Text(summary(waiting: waiting, working: working))
+            Text(HomeSessionGroups.summary(waiting: waiting, working: working))
                 .font(.title3)
                 .foregroundStyle(.secondary)
         }
-    }
-
-    private func summary(waiting: Int, working: Int) -> String {
-        var parts: [String] = []
-        if waiting > 0 { parts.append(waiting == 1 ? "Una sesión te espera" : "\(waiting) sesiones te esperan") }
-        if working > 0 { parts.append(working == 1 ? "una está trabajando" : "\(working) están trabajando") }
-        if parts.isEmpty { return "Nada te espera por ahora." }
-        return parts.joined(separator: " y ") + "."
     }
 
     private var emptyState: some View {
