@@ -56,7 +56,7 @@ private struct DockChip: View {
         } label: {
             HStack(spacing: 7) {
                 Circle()
-                    .fill(running > 0 ? Color.green : Color.secondary)
+                    .fill(running > 0 ? Theme.running : Color.secondary)
                     .frame(width: 7, height: 7)
                 Image(systemName: "terminal")
                 Text(title)
@@ -87,7 +87,6 @@ struct CommandRunPanel: View {
     var showsTabs = false
     /// Si se pasa, muestra el botón para ocultar el panel.
     var onHide: (() -> Void)? = nil
-    @State private var copied = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -119,38 +118,47 @@ struct CommandRunPanel: View {
         }
     }
 
+    /// Pocas acciones a la vista: lo de todos los días (reiniciar, detener) y el resto en «…». La X
+    /// solo aparece cuando el comando terminó: mientras corre, cerrar también lo corta, y eso queda
+    /// en el menú con su nombre («Detener y cerrar»), lejos del ⏹.
     private var actions: some View {
         HStack(spacing: 10) {
-            Button {
-                ExternalApps.copyToPasteboard(run.terminal?.fullText() ?? "")
-                copied = true
+            Menu {
+                Button {
+                    ExternalApps.copyToPasteboard(run.terminal?.fullText() ?? "")
+                } label: {
+                    Label("Copiar la salida", systemImage: "doc.on.doc")
+                }
+                .disabled(run.terminal == nil)
+                Button { run.terminal?.clearTerminal(nil) } label: { Label("Limpiar la salida", systemImage: "eraser") }
+                    .disabled(run.terminal == nil)
+                Divider()
+                Button(role: .destructive) { store.closeRun(run.id) } label: {
+                    Label(run.running ? "Detener y cerrar" : "Cerrar", systemImage: "xmark")
+                }
             } label: {
-                Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                Image(systemName: "ellipsis.circle")
             }
-            .help(copied ? "Copiado" : "Copiar salida")
-            .accessibilityLabel("Copiar salida")
-            .task(id: copied) {
-                guard copied else { return }
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
-                copied = false
-            }
-            Button { run.terminal?.clearTerminal(nil) } label: { Image(systemName: "eraser") }
-                .help("Limpiar")
-                .accessibilityLabel("Limpiar la salida")
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Más acciones de \(run.name)")
+            .accessibilityLabel("Más acciones de \(run.name)")
             Button { store.restartRun(run.id) } label: { Image(systemName: "arrow.counterclockwise") }
                 .help("Reiniciar")
                 .accessibilityLabel("Reiniciar \(run.name)")
             if run.running {
                 Button { store.stopRun(run.id) } label: {
                     Image(systemName: "stop.circle.fill")
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Theme.danger)
                 }
                 .help("Detener (Ctrl+C)")
                 .accessibilityLabel("Detener \(run.name)")
+            } else {
+                Button { store.closeRun(run.id) } label: { Image(systemName: "xmark") }
+                    .help("Cerrar")
+                    .accessibilityLabel("Cerrar \(run.name)")
             }
-            Button { store.closeRun(run.id) } label: { Image(systemName: "xmark") }
-                .help("Cerrar")
-                .accessibilityLabel("Cerrar \(run.name)")
             if let onHide {
                 Button(action: onHide) { Image(systemName: "chevron.down") }
                     .help("Ocultar")
@@ -169,7 +177,7 @@ struct CommandRunPanel: View {
             }
             Text(run.command)
                 .font(.caption.monospaced())
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(Theme.secondaryText)
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer()
@@ -182,7 +190,8 @@ struct CommandRunPanel: View {
     }
 }
 
-/// Punto de color con el estado de un comando: verde si corre, gris si terminó bien, rojo si falló.
+/// Punto de color con el estado de un comando: azul si corre, gris si terminó bien, rojo si falló.
+/// (El verde y el naranja son de las sesiones: un comando corriendo no «te espera».)
 struct CommandRunDot: View {
     let run: CommandRun
     var size: CGFloat = 7
@@ -194,7 +203,7 @@ struct CommandRunDot: View {
     }
 
     static func color(_ run: CommandRun) -> Color {
-        run.running ? .green : ((run.exitCode ?? 0) == 0 ? .secondary : .red)
+        run.running ? Theme.running : ((run.exitCode ?? 0) == 0 ? .secondary : Theme.danger)
     }
 
     static func label(_ run: CommandRun) -> String {
@@ -321,9 +330,9 @@ private struct CommandRow: View {
             } label: {
                 Image(systemName: running == nil ? "play.fill" : "stop.fill")
                     .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(running == nil ? Color.green : Color.red)
+                    .foregroundStyle(running == nil ? Theme.running : Theme.danger)
                     .frame(width: 28, height: 28)
-                    .background((running == nil ? Color.green : Color.red).opacity(0.14), in: Circle())
+                    .background((running == nil ? Theme.running : Theme.danger).opacity(0.14), in: Circle())
             }
             .buttonStyle(.plain)
             .help(running == nil ? "Ejecutar en \(target?.name ?? "")" : "Detener")
@@ -345,11 +354,11 @@ private struct CommandRow: View {
             if let running {
                 Text("corriendo en \(running.branchName)")
                     .font(.caption)
-                    .foregroundStyle(Theme.pending)
+                    .foregroundStyle(Theme.running)
             } else if let target {
                 Text("en \(target.name)")
                     .font(.caption)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Theme.secondaryText)
             }
         }
         .padding(.horizontal, 12)
@@ -393,7 +402,7 @@ struct CommandEditorSheet: View {
                         dismiss()
                     } label: {
                         Text("Eliminar")
-                            .foregroundStyle(.red)
+                            .foregroundStyle(Theme.danger)
                     }
                 }
                 Spacer()

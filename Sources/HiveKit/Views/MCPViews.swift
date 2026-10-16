@@ -163,7 +163,7 @@ private struct MCPInvalidFileNotice: View {
         HStack(spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.title3)
-                .foregroundStyle(Theme.attention)
+                .foregroundStyle(Theme.danger)
             VStack(alignment: .leading, spacing: 2) {
                 Text(".mcp.json tiene un error de sintaxis")
                     .font(.system(size: 13, weight: .semibold))
@@ -180,8 +180,8 @@ private struct MCPInvalidFileNotice: View {
             .help(error.path)
         }
         .padding(12)
-        .background(Theme.attention.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Theme.attention.opacity(0.3)))
+        .background(Theme.danger.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Theme.danger.opacity(0.3)))
     }
 }
 
@@ -201,13 +201,13 @@ private struct MCPRow: View {
                 Text(server.name).font(.system(size: 13, weight: .medium))
                 Text(server.summary)
                     .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.secondaryText)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 if let brokenPath {
                     Label("La ruta no existe en esta Mac: \(brokenPath)", systemImage: "exclamationmark.triangle.fill")
                         .font(.caption)
-                        .foregroundStyle(Theme.attention)
+                        .foregroundStyle(Theme.danger)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
@@ -339,7 +339,7 @@ private struct GlobalMCPs: View {
                     if groups.isEmpty {
                         Text("No hay MCP globales configurados.")
                             .font(.caption)
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(Theme.secondaryText)
                     } else {
                         ForEach(groups) { group in
                             VStack(alignment: .leading, spacing: 4) {
@@ -349,7 +349,7 @@ private struct GlobalMCPs: View {
                                         Text(server.name).font(.caption)
                                         Text(server.summary)
                                             .font(.caption.monospaced())
-                                            .foregroundStyle(.tertiary)
+                                            .foregroundStyle(Theme.secondaryText)
                                             .lineLimit(1)
                                             .truncationMode(.middle)
                                     }
@@ -361,7 +361,7 @@ private struct GlobalMCPs: View {
                         }
                         Text("Se configuran con cada agente (por ejemplo `claude mcp add` o `codex mcp add`). Hive solo los muestra.")
                             .font(.caption)
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(Theme.secondaryText)
                     }
                 } else {
                     ProgressView().controlSize(.small)
@@ -425,7 +425,7 @@ struct MCPEditorSheet: View {
             if let message = problem {
                 Label(message, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
-                    .foregroundStyle(Theme.attention)
+                    .foregroundStyle(Theme.danger)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Text("Se guarda en .mcp.json del repo. Claude lo lee directo; Hive se lo pasa a Codex y Gemini al abrir cada sesión.")
@@ -438,7 +438,7 @@ struct MCPEditorSheet: View {
                         store.removeMCP(serverName, projectId: target.projectId)
                         dismiss()
                     }
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Theme.danger)
                     .disabled(loadError != nil)
                 }
                 Spacer()
@@ -585,7 +585,7 @@ private struct MCPTypePicker: View {
                 .foregroundStyle(selected ? Color.primary : Color.secondary)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
-                .background(selected ? Theme.accent.opacity(0.18) : Color.primary.opacity(0.05),
+                .background(selected ? Theme.accentFill.opacity(0.25) : Color.primary.opacity(0.05),
                             in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .strokeBorder(selected ? Theme.accent.opacity(0.8) : Color.primary.opacity(0.1)))

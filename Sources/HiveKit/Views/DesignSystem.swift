@@ -5,14 +5,29 @@ import SwiftUI
 
 /// Colores de Hive. Hay un solo acento: miel en oscuro y un ámbar más oscuro en claro, para que
 /// el texto en acento se lea (contraste ≥ 4,5) sobre blanco y también sobre las tarjetas, con el
-/// mouse encima incluido.
+/// mouse encima incluido. Los rellenos usan `accentFill`, que es miel en las dos apariencias.
+///
+/// El naranja (`attention`) y el verde (`pending`) son solo de los estados de las sesiones. Para lo
+/// demás hay tokens propios: `running` (un comando corriendo), `danger` (errores, fallas, detener),
+/// `info` (avisos neutros) y `secondaryText` (datos en gris que hay que poder leer).
 enum Theme {
-    /// Acento como NSColor dinámico (cambia solo con la apariencia).
+    /// Acento como NSColor dinámico (cambia solo con la apariencia). Es para texto, bordes y trazos.
     static let accentNSColor = dynamicNSColor(light: srgb(0x8F5F00),
                                               dark: NSColor(srgbRed: 0.96, green: 0.72, blue: 0.24, alpha: 1))
     static let accent = Color(nsColor: accentNSColor)
 
-    /// Texto sobre el acento o sobre un globito de estado: negro suave en oscuro, blanco en claro.
+    /// Relleno con el acento (botón principal, círculos de pasos, selección): miel también en claro,
+    /// donde el ámbar de texto se veía marrón.
+    static let accentFillNSColor = dynamicNSColor(light: srgb(0xE8A92A),
+                                                  dark: NSColor(srgbRed: 0.96, green: 0.72, blue: 0.24, alpha: 1))
+    static let accentFill = Color(nsColor: accentFillNSColor)
+
+    /// Texto sobre `accentFill`: negro suave en las dos apariencias (más de 8:1).
+    static let onAccentFillNSColor = NSColor(white: 0, alpha: 0.85)
+    static let onAccentFill = Color(nsColor: onAccentFillNSColor)
+
+    /// Texto sobre un globito de estado (naranja, verde o el acento de texto): negro suave en oscuro,
+    /// blanco en claro.
     static let onAccentNSColor = dynamicNSColor(light: .white, dark: NSColor(white: 0, alpha: 0.85))
     static let onAccent = Color(nsColor: onAccentNSColor)
 
@@ -23,6 +38,24 @@ enum Theme {
     /// Te espera y no la viste: verde (más oscuro en claro, para que se lea también sobre una tarjeta).
     static let pendingNSColor = dynamicNSColor(light: srgb(0x187A34), dark: .systemGreen)
     static let pending = Color(nsColor: pendingNSColor)
+
+    /// Avisos neutros (información, sin nada urgente): azul que se lee en claro y en oscuro.
+    static let infoNSColor = dynamicNSColor(light: srgb(0x1A5FB4), dark: srgb(0x4DA3FF))
+    static let info = Color(nsColor: infoNSColor)
+
+    /// Un comando corriendo (servidor, tests…). Azul, para no confundirlo con el verde de «te espera».
+    static let runningNSColor = infoNSColor
+    static let running = Color(nsColor: runningNSColor)
+
+    /// Errores, fallas y detener: rojo oscurecido en claro (como el naranja) y más suave en oscuro.
+    static let dangerNSColor = dynamicNSColor(light: srgb(0xB42318), dark: srgb(0xFF6961))
+    static let danger = Color(nsColor: dangerNSColor)
+
+    /// Texto secundario que da un dato (fechas, rutas, rama, autor, comando): como el gris
+    /// secundario del sistema, pero un poco más oscuro en claro para llegar a 4,5 sobre las tarjetas.
+    /// `.tertiary` queda para separadores e íconos de adorno.
+    static let secondaryTextNSColor = dynamicNSColor(light: NSColor(white: 0, alpha: 0.58), dark: NSColor(white: 1, alpha: 0.55))
+    static let secondaryText = Color(nsColor: secondaryTextNSColor)
 
     /// Un NSColor que elige el valor según la apariencia (claro u oscuro, también en alto contraste).
     static func dynamicNSColor(light: NSColor, dark: NSColor) -> NSColor {
@@ -145,7 +178,7 @@ extension View {
 
 // MARK: - Botones
 
-/// Botón principal con el acento: texto negro suave sobre miel en oscuro y blanco sobre ámbar en claro.
+/// Botón principal con el acento: texto negro suave sobre miel, en claro y en oscuro.
 struct HiveProminentButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         HiveProminentLabel(configuration: configuration)
@@ -161,10 +194,10 @@ private struct HiveProminentLabel: View {
         let small = controlSize == .small || controlSize == .mini
         configuration.label
             .font(.system(size: small ? 11 : 13, weight: .semibold))
-            .foregroundStyle(Theme.onAccent)
+            .foregroundStyle(Theme.onAccentFill)
             .padding(.horizontal, small ? 8 : 12)
             .padding(.vertical, small ? 3 : 5)
-            .background(Theme.accent.opacity(configuration.isPressed ? 0.8 : 1),
+            .background(Theme.accentFill.opacity(configuration.isPressed ? 0.8 : 1),
                         in: RoundedRectangle(cornerRadius: small ? 5 : 7, style: .continuous))
             .opacity(isEnabled ? 1 : 0.45)
             .contentShape(Rectangle())
@@ -305,7 +338,7 @@ struct CopyablePath: View {
         HStack(spacing: 6) {
             Text(path.tildePath)
                 .font(HiveFont.mono)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(Theme.secondaryText)
                 .lineLimit(1)
                 .truncationMode(.head)
                 .textSelection(.enabled)

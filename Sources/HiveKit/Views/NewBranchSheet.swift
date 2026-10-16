@@ -77,7 +77,7 @@ struct NewBranchSheet: View {
 
                 if let error {
                     Text(error)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Theme.danger)
                         .font(.callout)
                         .textSelection(.enabled)
                 }
@@ -121,7 +121,7 @@ struct NewBranchSheet: View {
             if let nameError {
                 Text(nameError)
                     .font(.caption)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Theme.danger)
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
@@ -163,8 +163,8 @@ struct NewBranchSheet: View {
 
     @ViewBuilder private var noCommitsRow: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Este repo todavía no tiene commits", systemImage: "exclamationmark.triangle.fill")
-                .foregroundStyle(Theme.attention)
+            Label("Este repo todavía no tiene commits", systemImage: "info.circle.fill")
+                .foregroundStyle(Theme.info)
                 .font(.callout.weight(.semibold))
             Text("Git necesita un primer commit para crear ramas. Podés crear uno vacío y seguir.")
                 .font(.callout)
@@ -503,7 +503,7 @@ private struct SessionChoiceChip: View {
             }
             .padding(.horizontal, 9)
             .padding(.vertical, 5)
-            .background(selected ? Theme.accent.opacity(0.18) : Color.primary.opacity(hovering ? 0.08 : 0.04), in: Capsule())
+            .background(selected ? Theme.accentFill.opacity(0.25) : Color.primary.opacity(hovering ? 0.08 : 0.04), in: Capsule())
             .overlay(Capsule().strokeBorder(selected ? Theme.accent.opacity(0.8) : Color.primary.opacity(0.1)))
             .contentShape(Capsule())
         }

@@ -69,6 +69,63 @@ struct ContrastTests {
         }
     }
 
+    @Test("Relleno del acento: miel también en claro (no marrón) y su texto se lee (≥ 4,5)")
+    func accentFill() {
+        for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+            let fill = HiveContrast.resolve(Theme.accentFillNSColor, in: appearance)
+            let text = HiveContrast.resolve(Theme.onAccentFillNSColor, in: appearance)
+            #expect(HiveContrast.ratio(text, on: fill) >= 4.5, "\(appearance.rawValue)")
+            // Miel: mucho rojo y verde, poco azul (el ámbar de texto en claro tiene rojo < 0,6).
+            #expect(fill.redComponent > 0.85 && fill.greenComponent > 0.6 && fill.blueComponent < 0.3, "\(appearance.rawValue)")
+        }
+        // En oscuro, el relleno y el acento son el mismo miel.
+        let fill = HiveContrast.resolve(Theme.accentFillNSColor, in: .darkAqua)
+        let accent = HiveContrast.resolve(Theme.accentNSColor, in: .darkAqua)
+        #expect(abs(fill.redComponent - accent.redComponent) < 0.01 && abs(fill.greenComponent - accent.greenComponent) < 0.01)
+    }
+
+    @Test("Texto secundario con datos, rojo, azul y «corriendo»: ≥ 4,5 sobre el fondo y sobre las tarjetas")
+    func readableTokens() {
+        let tokens: [(String, NSColor)] = [("secondaryText", Theme.secondaryTextNSColor), ("danger", Theme.dangerNSColor),
+                                           ("info", Theme.infoNSColor), ("running", Theme.runningNSColor)]
+        for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+            let base = contrastBackground(appearance)
+            // La tarjeta: el fondo con Color.primary al 4,5 % (7,5 % con el mouse encima).
+            let primary: NSColor = appearance == .aqua ? .black : .white
+            let backgrounds = [base] + [0.045, 0.075].map { HiveContrast.composite(primary.withAlphaComponent($0), over: base) }
+            for (name, token) in tokens {
+                for background in backgrounds {
+                    let ratio = HiveContrast.ratio(HiveContrast.resolve(token, in: appearance), on: background)
+                    #expect(ratio >= 4.5, "\(name) en \(appearance.rawValue): \(ratio)")
+                }
+            }
+        }
+        // El gris terciario del sistema no llega: por eso los datos usan secondaryText.
+        #expect(contrastRatio(.tertiaryLabelColor, .aqua) < 4.5)
+    }
+
+    @Test("El verde y el naranja quedan para las sesiones: comandos, errores y uso alto usan otros colores")
+    func reservedStatusColors() {
+        func same(_ a: NSColor, _ b: NSColor, _ appearance: NSAppearance.Name) -> Bool {
+            let x = HiveContrast.resolve(a, in: appearance), y = HiveContrast.resolve(b, in: appearance)
+            return abs(x.redComponent - y.redComponent) < 0.08 && abs(x.greenComponent - y.greenComponent) < 0.08
+                && abs(x.blueComponent - y.blueComponent) < 0.08
+        }
+        for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+            for other in [Theme.runningNSColor, Theme.dangerNSColor, Theme.infoNSColor] {
+                #expect(!same(other, Theme.pendingNSColor, appearance), "\(other) parece el verde de «te espera»")
+                #expect(!same(other, Theme.attentionNSColor, appearance), "\(other) parece el naranja de permiso")
+            }
+            // El uso alto: miel hasta 95 % y rojo después, nunca el naranja de permiso.
+            for percent in [50.0, 85, 97] {
+                let color = NSColor(UsageMonitor.color(percent))
+                #expect(!same(color, Theme.attentionNSColor, appearance), "\(percent) %")
+            }
+            #expect(same(NSColor(UsageMonitor.color(85)), Theme.accentNSColor, appearance))
+            #expect(same(NSColor(UsageMonitor.color(97)), Theme.dangerNSColor, appearance))
+        }
+    }
+
     @Test("Color.honey es el acento del tema: cambia con la apariencia")
     func honeyIsAccent() {
         for appearance in [NSAppearance.Name.aqua, .darkAqua] {

@@ -264,7 +264,7 @@ private struct HistorySearchRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             Text("\(HistoryExport.dayLabel(hit.date)) · \(hit.date.formatted(date: .omitted, time: .shortened))")
                 .font(.system(size: 11).monospacedDigit())
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(Theme.secondaryText)
                 .fixedSize()
         }
         .padding(.vertical, 3)

@@ -254,7 +254,7 @@ private struct BranchRow: View {
             Spacer(minLength: 4)
             if missing {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(Theme.attention)
+                    .foregroundStyle(Theme.danger)
             }
             if hovering {
                 Menu {

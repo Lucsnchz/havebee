@@ -409,7 +409,7 @@ private struct HistoryRow: View {
                     .font(.system(size: 11, weight: .semibold))
                 Text(time)
                     .font(.system(size: 11))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Theme.secondaryText)
                 Spacer()
                 HistoryCopyButton(text: entry.text)
             }
@@ -432,7 +432,7 @@ private struct HistoryRow: View {
                     .font(.system(size: 11, weight: .semibold))
                 Text(time)
                     .font(.system(size: 11))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Theme.secondaryText)
                 Spacer()
                 HistoryCopyButton(text: entry.text)
             }
@@ -444,7 +444,7 @@ private struct HistoryRow: View {
         }
         .padding(.horizontal, 11)
         .padding(.vertical, 9)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.accent.opacity(0.12)))
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.accentFill.opacity(0.16)))
         .padding(.leading, 24)
     }
 
@@ -457,7 +457,7 @@ private struct HistoryRow: View {
                     .foregroundStyle(.secondary)
                 Text(time)
                     .font(.system(size: 11))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Theme.secondaryText)
                 Spacer()
                 HistoryCopyButton(text: entry.text)
             }
@@ -606,7 +606,7 @@ enum HistoryMarkdown {
             let length = plain.distance(from: found.lowerBound, to: found.upperBound)
             let start = text.characters.index(text.startIndex, offsetBy: lower)
             let end = text.characters.index(start, offsetBy: length)
-            text[start..<end].backgroundColor = Theme.accent.opacity(0.35)
+            text[start..<end].backgroundColor = Theme.accentFill.opacity(0.4)
             searchStart = found.upperBound
         }
     }

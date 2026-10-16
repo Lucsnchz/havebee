@@ -28,7 +28,7 @@ struct BranchDetailView: View {
                     if store.isMissing(ctx.branch) {
                         // Sin nada corriendo, la próxima revisión de git la saca sola: el aviso queda para
                         // las que todavía tienen una sesión o un comando andando.
-                        Callout(icon: "exclamationmark.triangle.fill", color: Theme.attention,
+                        Callout(icon: "exclamationmark.triangle.fill", color: Theme.danger,
                                 title: "No encuentro la carpeta de este worktree",
                                 text: store.hasRunningWork(ctx.branch)
                                     ? "Se borró o se movió por fuera de Hive. Como todavía hay algo corriendo acá, la rama se va sola de Hive cuando termine. La rama de git no se borra."
@@ -40,11 +40,11 @@ struct BranchDetailView: View {
                         let head = store.mainHeads[ctx.project.id] ?? ""
                         if let operation = mainStatus?.operation {
                             // Con un rebase o un merge a medias, git no deja cambiar de rama.
-                            Callout(icon: "pause.circle.fill", color: Theme.attention,
+                            Callout(icon: "pause.circle.fill", color: Theme.danger,
                                     title: "Rama inactiva",
                                     text: "La carpeta principal está en «\(head)» con un \(operation.noun) a medias. Terminalo o cancelalo antes de hacer checkout.")
                         } else {
-                            Callout(icon: "pause.circle.fill", color: Theme.attention,
+                            Callout(icon: "pause.circle.fill", color: Theme.info,
                                     title: "Rama inactiva",
                                     text: "La carpeta principal está en «\(head)». Para trabajar acá hay que hacer checkout.",
                                     action: ("Hacer checkout", { store.requestCheckout(branchId: branchId) }))
@@ -52,7 +52,7 @@ struct BranchDetailView: View {
                     }
 
                     if status?.isUnborn == true {
-                        Callout(icon: "sparkles", color: .blue,
+                        Callout(icon: "sparkles", color: Theme.info,
                                 title: "Este repo todavía no tiene commits",
                                 text: "Git necesita un primer commit para crear ramas y mostrar el historial. Podés crear uno vacío y seguir.",
                                 action: ("Crear primer commit", { Task { await store.createFirstCommit(projectId: ctx.project.id) } }))
@@ -211,7 +211,7 @@ private struct BranchHeader: View {
                     Chip(text: branch.mode == .worktree ? "Worktree" : "Carpeta principal")
                     ForEach(BranchGitBadges.make(status), id: \.text) { badge in
                         Chip(text: badge.text, help: badge.help)
-                            .foregroundStyle(badge.warning ? AnyShapeStyle(Theme.attention) : AnyShapeStyle(.primary))
+                            .foregroundStyle(badge.warning ? AnyShapeStyle(Theme.danger) : AnyShapeStyle(.primary))
                     }
                 }
                 CopyablePath(path: directory)
@@ -229,7 +229,7 @@ enum BranchGitBadges {
     struct Badge: Equatable {
         let text: String
         let help: String
-        /// Se muestra en naranja: hay algo que resolver.
+        /// Se muestra en rojo: hay algo que resolver.
         var warning = false
     }
 

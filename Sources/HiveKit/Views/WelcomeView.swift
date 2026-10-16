@@ -48,7 +48,7 @@ struct WelcomeView: View {
         }
         .padding(.vertical, 28)
         .frame(maxWidth: 520)
-        .background(dropTargeted ? Theme.accent.opacity(0.08) : Color.primary.opacity(0.03),
+        .background(dropTargeted ? Theme.accentFill.opacity(0.12) : Color.primary.opacity(0.03),
                     in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
             .strokeBorder(dropTargeted ? Theme.accent : Color.primary.opacity(0.22), style: StrokeStyle(lineWidth: 1.5, dash: [7, 5])))
@@ -75,9 +75,9 @@ private struct WelcomeStep: View {
         HStack(spacing: 12) {
             Text("\(number)")
                 .font(.system(size: 13, weight: .bold, design: .rounded))
-                .foregroundStyle(Theme.onAccent)
+                .foregroundStyle(Theme.onAccentFill)
                 .frame(width: 24, height: 24)
-                .background(Theme.accent, in: Circle())
+                .background(Theme.accentFill, in: Circle())
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
                     .font(.system(size: 14, weight: .semibold))

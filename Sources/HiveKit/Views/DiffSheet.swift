@@ -86,7 +86,7 @@ struct DiffSheet: View {
                         }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 4)
-                        .background(index == selected ? Theme.accent.opacity(0.18) : .clear)
+                        .background(index == selected ? Theme.accentFill.opacity(0.22) : .clear)
                         .contentShape(Rectangle())
                         .onTapGesture { selected = index }
                         .id(index)
@@ -144,7 +144,7 @@ struct DiffSheet: View {
         let done = resolved[file.change.path]
         return HStack(spacing: 8) {
             Image(systemName: done == nil ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
-                .foregroundStyle(done == nil ? Theme.attention : Theme.pending)
+                .foregroundStyle(done == nil ? Theme.danger : ChangeColors.color(for: "A"))
             VStack(alignment: .leading, spacing: 1) {
                 Text(done ?? "Archivo en conflicto" + (operation.map { " · \($0.label)" } ?? ""))
                     .font(.system(size: 12, weight: .medium))
@@ -152,7 +152,7 @@ struct DiffSheet: View {
                 if done == nil, let resolveError {
                     Text(resolveError)
                         .font(.system(size: 11))
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Theme.danger)
                         .lineLimit(2)
                         .textSelection(.enabled)
                         .help(resolveError)
@@ -173,7 +173,7 @@ struct DiffSheet: View {
         .disabled(resolving)
         .padding(.horizontal, 14)
         .padding(.vertical, 7)
-        .background(Theme.attention.opacity(done == nil ? 0.12 : 0.04))
+        .background(Theme.danger.opacity(done == nil ? 0.1 : 0.03))
     }
 
     @ViewBuilder private var content: some View {
@@ -294,10 +294,10 @@ private struct DiffLineRow: View {
             HStack(alignment: .top, spacing: 0) {
                 Text(line.oldNumber.map(String.init) ?? "")
                     .frame(width: 46, alignment: .trailing)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Theme.secondaryText)
                 Text(line.newNumber.map(String.init) ?? "")
                     .frame(width: 46, alignment: .trailing)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Theme.secondaryText)
                 Text(prefix)
                     .frame(width: 22)
                     .foregroundStyle(prefixColor)
@@ -324,7 +324,7 @@ private struct DiffLineRow: View {
     private var prefixColor: Color {
         switch line.kind {
         case .added: ChangeColors.color(for: "A")
-        case .conflictMarker: .orange
+        case .conflictMarker: ChangeColors.color(for: "!")
         default: ChangeColors.color(for: "D")
         }
     }
@@ -333,7 +333,7 @@ private struct DiffLineRow: View {
         switch line.kind {
         case .added: Color(red: 0.25, green: 0.75, blue: 0.45).opacity(0.16)
         case .removed: Color(red: 0.90, green: 0.30, blue: 0.30).opacity(0.16)
-        case .conflictMarker: Color.orange.opacity(0.28)
+        case .conflictMarker: ChangeColors.color(for: "!").opacity(0.2)
         default: .clear
         }
     }

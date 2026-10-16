@@ -91,13 +91,24 @@ final class UsageMonitor {
         snapshots.values.filter { $0.agent == kind && !$0.limits.isEmpty }.max { $0.updatedAt < $1.updatedAt }
     }
 
-    /// Miel, naranja desde 80 % y rojo desde 95 %.
+    /// Miel y rojo desde 95 %. (El naranja es de «necesita permiso»: un «87%» naranja en el riel
+    /// parecía un pedido de permiso.)
     static func color(_ percent: Double) -> Color {
-        percent >= 95 ? .red : (percent >= 80 ? Theme.attention : Theme.accent)
+        percent >= 95 ? Theme.danger : Theme.accent
+    }
+
+    /// Desde acá el número se destaca: en miel, y en rojo desde 95 %.
+    static let highPercent: Double = 80
+
+    /// Color del número: gris hasta 80 %, después el de la barra.
+    static func textStyle(_ percent: Double) -> AnyShapeStyle {
+        percent >= highPercent ? AnyShapeStyle(color(percent)) : AnyShapeStyle(Theme.secondaryText)
     }
 }
 
-/// «ctx 72%»: cuánto contexto ocupa la conversación. En naranja desde 80 %, con la ayuda «Conviene /compact».
+/// Cuánto contexto ocupa la conversación: un anillito que se llena y «72%». En miel desde 80 % (con
+/// la ayuda «Conviene usar /compact») y en rojo desde 95 %. Sin datos no dibuja nada: quien lo pone
+/// en la barra lo pone solo si hay datos, para no dejar una cápsula vacía.
 struct UsageBadge: View {
     @Environment(AppStore.self) private var store
     let sessionId: UUID
@@ -110,20 +121,34 @@ struct UsageBadge: View {
     @ViewBuilder private var content: some View {
         if let percent = monitor.sessions[sessionId]?.contextPercent {
             let value = Int(percent.rounded())
-            let high = percent >= 80
-            Text("ctx \(value)%")
-                .font(.system(size: 10.5, weight: .medium).monospacedDigit())
-                .lineLimit(1)
-                .fixedSize()
-                .foregroundStyle(high ? AnyShapeStyle(Theme.attention) : AnyShapeStyle(.secondary))
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(Capsule().fill(high ? Theme.attention.opacity(0.14) : Color.primary.opacity(0.06)))
-                .help(high ? "Contexto ocupado: \(value) %. Conviene /compact" : "Contexto ocupado: \(value) %")
-                .accessibilityLabel("Contexto ocupado: \(value) por ciento")
-        } else {
-            Color.clear.frame(width: 0, height: 0)
+            HStack(spacing: 4) {
+                ZStack {
+                    Circle().stroke(Color.primary.opacity(0.15), lineWidth: 2)
+                    Circle()
+                        .trim(from: 0, to: min(max(percent, 0), 100) / 100)
+                        .stroke(UsageMonitor.color(percent), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                }
+                .frame(width: 10, height: 10)
+                Text("\(value)%")
+                    .font(.system(size: 11, weight: .medium).monospacedDigit())
+                    .foregroundStyle(UsageMonitor.textStyle(percent))
+            }
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, 4)
+            .help(Self.helpText(percent))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(value) % del contexto ocupado")
         }
+    }
+
+    /// «72 % del contexto ocupado», y desde 80 % «… Conviene usar /compact.».
+    static func helpText(_ percent: Double) -> String {
+        let value = Int(percent.rounded())
+        return percent >= UsageMonitor.highPercent
+            ? "\(value) % del contexto ocupado. Conviene usar /compact."
+            : "\(value) % del contexto ocupado"
     }
 }
 
@@ -169,7 +194,7 @@ struct UsageRailRow: View {
                 AgentLogo(kind: snapshot.agent, size: 11)
                 Text("\(Int(percent.rounded()))%")
                     .font(.system(size: 10, weight: .medium).monospacedDigit())
-                    .foregroundStyle(percent >= 80 ? AnyShapeStyle(UsageMonitor.color(percent)) : AnyShapeStyle(.secondary))
+                    .foregroundStyle(UsageMonitor.textStyle(percent))
                     .fixedSize()
             }
             ZStack(alignment: .leading) {
@@ -195,7 +220,7 @@ struct UsageRailRow: View {
     }
 }
 
-private struct UsageAccountRow: View {
+struct UsageAccountRow: View {
     let snapshot: UsageSnapshot
     let now: Date
 
@@ -208,15 +233,27 @@ private struct UsageAccountRow: View {
                 line(limits, showName: true)
                 line(limits, showName: false)
             }
+            // El porcentaje ya está arriba: abajo solo cuándo se reinicia el límite más usado.
             if let top, top.usedPercent >= 50, let resets = top.resetsAt {
-                Text("\(top.label) \(Int(top.usedPercent.rounded()))% · \(UsageReader.resetText(resets, now: now))")
+                Text(Self.resetLine(top, resets: resets, now: now))
                     .font(.system(size: 10.5))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Theme.secondaryText)
                     .padding(.leading, 20)
                     .lineLimit(1)
             }
         }
         .accessibilityElement(children: .combine)
+    }
+
+    /// «La semanal se reinicia el dom 21:11», «La de 5 horas se reinicia hoy 14:13».
+    static func resetLine(_ limit: UsageLimit, resets: Date, now: Date) -> String {
+        let name = switch limit.windowMinutes {
+        case 10080?: "La semanal"
+        case 60?: "La de una hora"
+        case let minutes? where minutes > 60 && minutes % 60 == 0: "La de \(minutes / 60) horas"
+        default: "El límite de \(limit.longLabel)"
+        }
+        return "\(name) \(UsageReader.resetText(resets, now: now))"
     }
 
     private func line(_ limits: [UsageLimit], showName: Bool) -> some View {
@@ -256,7 +293,7 @@ private struct UsageLimitBar: View {
             .frame(width: 22, height: 4)
             Text("\(Int(percent.rounded()))%")
                 .font(.system(size: 10.5, weight: .medium).monospacedDigit())
-                .foregroundStyle(percent >= 80 ? AnyShapeStyle(UsageMonitor.color(percent)) : AnyShapeStyle(.secondary))
+                .foregroundStyle(UsageMonitor.textStyle(percent))
                 .fixedSize()
         }
         .help(helpText(percent))
