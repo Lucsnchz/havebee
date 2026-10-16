@@ -114,6 +114,18 @@ struct GitEdgeCasesTests {
         try FileManager.default.removeItem(atPath: missing)
         #expect(repo.git.removeWorktree(missing, force: false, in: repo.path).ok)
         #expect(!repo.git.worktrees(repo.path).contains { $0.branch == "desaparecida" })
+
+        // Bloqueado y sin carpeta (un disco desconectado): prune no lo toca, así que sin forzar avisa y
+        // con «Borrar igual» se olvida de verdad.
+        let unplugged = repo.dir.url.path + "/desenchufado"
+        repo.sh("git worktree add -q -b desenchufada \(shellQuote(unplugged)) && git worktree lock \(shellQuote(unplugged))")
+        try FileManager.default.removeItem(atPath: unplugged)
+        let refused = repo.git.removeWorktree(unplugged, force: false, in: repo.path)
+        #expect(!refused.ok && refused.errorMessage.contains("bloqueado"))
+        #expect(repo.git.worktrees(repo.path).contains { $0.branch == "desenchufada" })
+        let gone = repo.git.removeWorktree(unplugged, force: true, in: repo.path)
+        #expect(gone.ok, "\(gone.errorMessage)")
+        #expect(!repo.git.worktrees(repo.path).contains { $0.branch == "desenchufada" })
     }
 
     @Test("Durante un rebase: la rama sale de head-name, operation es .rebase y el UU se lee")
@@ -163,9 +175,24 @@ struct GitEdgeCasesTests {
         }
         #expect(error == .noCommits)
         #expect(git.status(dir.path)?.isUnborn == true)
+        // Un archivo preparado no entra en el primer commit, que es vacío, y sigue preparado.
+        dir.write("preparado.txt", "x\n")
+        #expect(git.run(["add", "preparado.txt"], in: dir.path).ok)
         #expect(git.commitAllowEmpty(message: "Primer commit", in: dir.path).ok)
         #expect(git.status(dir.path)?.isUnborn == false)
+        #expect(git.run(["ls-tree", "-r", "--name-only", "HEAD"], in: dir.path).output.isEmpty)
+        #expect(git.status(dir.path)?.changes.map(\.code) == ["A "])
         #expect((try? BranchPlanner.prepare(request, project: p, git: git).get())?.mode == .worktree)
+    }
+
+    @Test("HEAD desacoplado y sin ramas locales no es un repo sin commits: la rama se crea desde HEAD")
+    func detachedWithoutLocalBranches() throws {
+        let repo = GitRepo()
+        repo.sh("git checkout -q --detach && git branch -q -D main")
+        #expect(repo.git.localBranches(repo.path).isEmpty)
+        let created = try BranchPlanner.prepare(NewBranchRequest(projectId: UUID(), name: "desde-head", isNew: true, mode: .worktree),
+                                                project: project(repo), git: repo.git).get()
+        #expect(repo.git.currentBranch(try #require(created.worktreePath)) == "desde-head")
     }
 
     @Test("git checkout -b dentro de un worktree renombra la rama en Hive sin duplicarla")

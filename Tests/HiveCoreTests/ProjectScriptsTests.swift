@@ -66,6 +66,14 @@ struct ProjectScriptsTests {
         #expect(alone.setup == .init(command: "herd secure 'con espacio'", origin: .suggested))
     }
 
+    @Test("herd secure solo para la carpeta hermana que Herd sirve, si el principal tiene HTTPS")
+    func securesOnlyServedWorktrees() {
+        #expect(ProjectScripts.securesWorktree(location: .sibling, herdServesParent: true, mainHasCert: true))
+        #expect(!ProjectScripts.securesWorktree(location: .nested, herdServesParent: true, mainHasCert: true))
+        #expect(!ProjectScripts.securesWorktree(location: .sibling, herdServesParent: false, mainHasCert: true))
+        #expect(!ProjectScripts.securesWorktree(location: .sibling, herdServesParent: true, mainHasCert: false))
+    }
+
     @Test("Variables para los scripts, con los alias de Conductor")
     func environment() {
         let env = ProjectScripts.environment(rootPath: "/Herd/app", worktreePath: "/Herd/app-x", branch: "feature/x")

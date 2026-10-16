@@ -65,6 +65,13 @@ public enum ProjectScripts {
         return resolved
     }
 
+    /// Si al worktree nuevo le hace falta `herd secure`: el principal tiene HTTPS y Herd va a servir el
+    /// worktree (carpeta hermana de un proyecto que está en una carpeta «parked»). En `.worktrees` Herd no
+    /// lo sirve, y `herd secure <carpeta>` le crearía el certificado a otro sitio (checkout.test).
+    public static func securesWorktree(location: WorktreeLocation, herdServesParent: Bool, mainHasCert: Bool) -> Bool {
+        mainHasCert && herdServesParent && location == .sibling
+    }
+
     /// Un script puede ser un texto o una lista de comandos (se unen con &&).
     static func command(_ value: JSONValue?) -> String? {
         let text: String?

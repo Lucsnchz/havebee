@@ -32,6 +32,20 @@ private func gitHerdRender<V: View>(_ view: V, size: CGSize, name: String, dark:
     return rep
 }
 
+/// Cuántos colores distintos hay en una grilla de puntos (una captura vacía tiene uno o dos).
+@MainActor
+private func gitHerdDistinctColors(_ rep: NSBitmapImageRep) -> Int {
+    var colors = Set<String>()
+    for x in stride(from: 0, to: rep.pixelsWide, by: max(rep.pixelsWide / 40, 1)) {
+        for y in stride(from: 0, to: rep.pixelsHigh, by: max(rep.pixelsHigh / 40, 1)) {
+            if let c = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) {
+                colors.insert(String(format: "%.2f-%.2f-%.2f", c.redComponent, c.greenComponent, c.blueComponent))
+            }
+        }
+    }
+    return colors.count
+}
+
 /// Herd falso dentro del home del mundo de prueba: sirve la carpeta padre del repo y el principal tiene HTTPS.
 @MainActor
 private func gitHerdFakeHerd(home: URL, parked: String, secured: [String]) throws {
@@ -56,6 +70,7 @@ struct GitHerdViewTests {
         defer { defaults.removePersistentDomain(forName: suite) }
         let rep = await gitHerdRender(view.defaultAppStorage(defaults), size: size, name: name, dark: dark)
         #expect(rep != nil, "No se pudo dibujar \(name)")
+        if let rep { #expect(gitHerdDistinctColors(rep) > 3, "\(name) parece vacía") }
     }
 
     @Test("Crear un worktree desde el store: carpeta hermana, solo los .env ignorados y APP_URL reescrito")
@@ -86,6 +101,10 @@ struct GitHerdViewTests {
         let url = try #require(remote.newMergeRequestURL(source: "feature/x", target: "main"))
         #expect(BrowserLink.url(url) != nil)
         #expect(BrowserLink.url("https://ecommerce.test")?.host == "ecommerce.test")
+        // Nunca un archivo (un .command se ejecutaría), una app ni otro esquema.
+        #expect(BrowserLink.url("file:///Users/x/repo/instalar.command") == nil)
+        #expect(BrowserLink.url("x-apple.systempreferences:com.apple.preference.security") == nil)
+        #expect(BrowserLink.url("javascript:alert(1)") == nil)
     }
 
     @Test("Nueva rama con Herd: carpeta hermana, copia, preparación y chips de la primera sesión")

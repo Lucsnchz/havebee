@@ -330,7 +330,8 @@ struct NewBranchSheet: View {
     private var includesCaption: String {
         guard let includeFiles else { return "Buscando archivos ignorados…" }
         if includeFiles.isEmpty { return "No hay archivos ignorados para copiar." }
-        return "Se copian: " + WorktreeIncludes.summary(includeFiles, shown: 3)
+        let found = WorktreeIncludes.summary(includeFiles, shown: 3)
+        return copyIgnored ? "Se copian: " + found : "No se copian (encontré " + found + ")."
     }
 
     // MARK: - Carga
@@ -398,8 +399,8 @@ struct NewBranchSheet: View {
         let localSet = Set(localBranches)
         let hive = inHive
         let checkName = isNew && !candidate.isEmpty
-        let hasCert = mainHasCert
         let currentLocation = location
+        let hasCert = ProjectScripts.securesWorktree(location: currentLocation, herdServesParent: herdServesParent, mainHasCert: mainHasCert)
         let derived = await Task.detached(priority: .userInitiated) { () -> (error: String?, sibling: String, nested: String, setup: ProjectScripts.Script?) in
             var error: String?
             if checkName {

@@ -30,6 +30,20 @@ struct SiteURLTests {
         #expect(SiteURL.url(for: "/otro/lado", projectPath: "/otro/lado", herd: nil, read: { _ in "{}" }) == nil)
     }
 
+    @Test("Un polyscope.json que no apunta a una página web se ignora: no se abre un archivo ni una app")
+    func onlyWebPages() {
+        for template in ["file:///Users/x/Herd/app/instalar.command", "file:///Applications/Calculator.app",
+                         "x-apple.systempreferences:com.apple.preference.security", "javascript:alert(1)", "/ruta/local", "https://"] {
+            let files = ["/Users/x/Herd/app/polyscope.json": #"{"preview": {"url": "\#(template)"}}"#]
+            // Se ignora y se usa Herd, como si no estuviera.
+            #expect(SiteURL.url(for: "/Users/x/Herd/app", projectPath: "/Users/x/Herd/app", herd: herd, read: { files[$0] }) == "https://app.test",
+                    "\(template)")
+            #expect(SiteURL.url(for: "/Users/x/Herd/app", projectPath: "/Users/x/Herd/app", herd: nil, read: { files[$0] }) == nil)
+        }
+        #expect(SiteURL.isWebURL("HTTPS://App.test/login") && SiteURL.isWebURL("http://localhost:8000"))
+        #expect(!SiteURL.isWebURL("file:///etc/hosts") && !SiteURL.isWebURL("ftp://x.test") && !SiteURL.isWebURL("http:///sin-host"))
+    }
+
     @Test("Plantillas")
     func fill() {
         #expect(SiteURL.fill("https://{{folder}}.test", folder: "a-b") == "https://a-b.test")

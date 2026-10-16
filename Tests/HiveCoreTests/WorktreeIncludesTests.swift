@@ -86,7 +86,22 @@ struct WorktreeIncludesTests {
         #expect(!all.contains { $0.hasPrefix("enlace") })
     }
 
-    @Test("Repo real con un submódulo: una ruta adentro del submódulo no deja afuera al .env de la raíz")
+    @Test("Repo real: no se copia nada de otro worktree adentro del proyecto (.claude/worktrees de Claude Code)")
+    func skipsNestedWorktrees() throws {
+        let repo = GitRepo()
+        repo.write(".gitignore", ".env\n")
+        repo.commit("Ignorar")
+        repo.write(".env", "APP_URL=https://repo.test\n")
+        let nested = repo.path + "/.claude/worktrees/otra"
+        let added = repo.sh("git worktree add -q -b otra \(shellQuote(nested))")
+        #expect(added.ok, "\(added.errorMessage)")
+        try "APP_URL=https://otra.test\n".write(toFile: nested + "/.env", atomically: true, encoding: .utf8)
+        // git lo da por ignorado (coincide con .env), pero es de otro worktree: no se busca adentro.
+        #expect(repo.git.ignored(paths: [".claude/worktrees/otra/.env"], in: repo.path) == [".claude/worktrees/otra/.env"])
+        #expect(WorktreeIncludes.files(in: repo.path, git: repo.git) == [".env"])
+    }
+
+    @Test("Repo real con un submódulo: no se busca adentro, y una ruta del submódulo no deja afuera al .env de la raíz")
     func submoduleDoesNotBreakTheRest() throws {
         let library = GitRepo(name: "libreria")
         library.write(".env.example", "X=1\n")
@@ -97,9 +112,11 @@ struct WorktreeIncludesTests {
         let added = repo.sh("git -c protocol.file.allow=always submodule add -q \(shellQuote(library.path)) libreria && git commit -q -m submodulo")
         #expect(added.ok, "\(added.errorMessage)")
         repo.write(".env", "APP_URL=https://repo.test\n")
-        // git check-ignore falla entero («Pathspec … is in submodule») si una ruta está en el submódulo.
-        #expect(WorktreeIncludes.candidates(root: repo.path, patterns: WorktreeIncludes.defaultPatterns).contains("libreria/.env.example"))
+        // El submódulo es otro repo: no se busca adentro.
+        #expect(!WorktreeIncludes.candidates(root: repo.path, patterns: WorktreeIncludes.defaultPatterns).contains { $0.hasPrefix("libreria/") })
         #expect(WorktreeIncludes.files(in: repo.path, git: repo.git) == [".env"])
+        // git check-ignore falla entero («Pathspec … is in submodule») si una ruta está en el submódulo: el resto vuelve igual.
+        #expect(repo.git.ignored(paths: [".env", "libreria/.env.example"], in: repo.path) == [".env"])
     }
 
     @Test("Con un sistema de archivos falso: lee, filtra y copia por la interfaz inyectada")
