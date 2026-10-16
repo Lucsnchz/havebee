@@ -200,7 +200,7 @@ public struct AndroidApp: Equatable, Sendable {
 /// Un build.gradle(.kts) con los comentarios y el contenido de las cadenas tapados, para encontrar los
 /// bloques `nombre { … }` sin que los confunda un `"{"`, un `${…}` o un `// }`.
 /// Trabaja con los bytes UTF-8: todos los delimitadores son ASCII y un carácter de varios bytes nunca
-/// contiene uno, así que las posiciones de llaves y comillas son exactas (y es rápido: corre al dibujar).
+/// contiene uno, así que las posiciones de llaves y comillas son exactas (y recorrer bytes es rápido).
 struct GradleText {
     let bytes: [UInt8]
     /// Igual que `bytes`, con comentarios y cadenas en blanco (mismas posiciones).

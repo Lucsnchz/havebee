@@ -147,6 +147,16 @@ struct MCPSectionViewTests {
         #expect(data.suggestions.map(\.name).contains("context7"))
     }
 
+    @Test("Sugeridos: abiertos sin MCP, cerrados con MCP, y no se cierran después de agregar uno desde ahí")
+    func suggestionsExpandedRule() {
+        #expect(MCPSectionData.suggestionsExpanded(saved: "", hasServers: false, addedFromSuggestions: false))
+        #expect(!MCPSectionData.suggestionsExpanded(saved: "", hasServers: true, addedFromSuggestions: false))
+        #expect(MCPSectionData.suggestionsExpanded(saved: "", hasServers: true, addedFromSuggestions: true))
+        // Lo que eligió el usuario manda.
+        #expect(MCPSectionData.suggestionsExpanded(saved: "open", hasServers: true, addedFromSuggestions: false))
+        #expect(!MCPSectionData.suggestionsExpanded(saved: "closed", hasServers: false, addedFromSuggestions: true))
+    }
+
     @Test("Sin .mcp.json: sin servidores, sin error y con sugeridos")
     func scanMissingFile() {
         let repo = TempDir()

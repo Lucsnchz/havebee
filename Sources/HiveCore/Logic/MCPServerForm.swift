@@ -45,8 +45,10 @@ public struct MCPServerForm: Equatable, Sendable {
         return !(MCPConfig.splitCommandLine(commandLine).first ?? "").isEmpty
     }
 
-    /// Una URL http o https con servidor (`https://ejemplo.com/mcp`).
+    /// Una URL http o https con servidor (`https://ejemplo.com/mcp`). Si usa variables de entorno
+    /// (`${API_URL}/mcp`, que Claude expande al leer el `.mcp.json`), no se puede validar: se acepta.
     public var isValidURL: Bool {
+        if trimmedURL.contains("${") { return true }
         guard let parsed = URL(string: trimmedURL), let scheme = parsed.scheme?.lowercased() else { return false }
         return (scheme == "http" || scheme == "https") && !(parsed.host ?? "").isEmpty
     }

@@ -31,6 +31,8 @@ private struct MCPSectionContent: View {
     @State private var reloadToken = 0
     /// Si el usuario abrió o cerró los sugeridos: "" (todavía no eligió), "open" o "closed".
     @AppStorage private var suggestionsState: String
+    /// Se agregó un sugerido desde acá: siguen abiertos aunque el proyecto ya tenga un MCP.
+    @State private var addedSuggestion = false
 
     init(project: Project, showsAddButton: Bool) {
         self.project = project
@@ -83,6 +85,7 @@ private struct MCPSectionContent: View {
                     MCPChipFlow(spacing: 6) {
                         ForEach(suggestions) { item in
                             MCPSuggestionChip(item: item) {
+                                addedSuggestion = true
                                 store.saveMCP(MCPServer(name: item.name, config: item.config), replacing: nil, projectId: project.id)
                             }
                         }
@@ -114,7 +117,10 @@ private struct MCPSectionContent: View {
     /// Cerrados si el proyecto ya tiene algún MCP, salvo que el usuario los haya abierto.
     private var suggestionsExpanded: Binding<Bool> {
         Binding(
-            get: { suggestionsState.isEmpty ? servers.isEmpty : suggestionsState == "open" },
+            get: {
+                MCPSectionData.suggestionsExpanded(saved: suggestionsState, hasServers: !servers.isEmpty,
+                                                   addedFromSuggestions: addedSuggestion)
+            },
             set: { suggestionsState = $0 ? "open" : "closed" })
     }
 }
@@ -126,6 +132,13 @@ struct MCPSectionData: Sendable {
     var suggestions: [MCPCatalog.Item]
     /// Rutas de comandos que no existen en esta Mac, por nombre de servidor.
     var brokenPaths: [String: String]
+
+    /// Si los sugeridos se ven abiertos. `saved` es lo que eligió el usuario ("", "open" o "closed"). Sin
+    /// elección, abiertos si el proyecto no tiene MCP o si se acaba de agregar uno desde ahí: así no se
+    /// cierran de golpe después del primer clic.
+    static func suggestionsExpanded(saved: String, hasServers: Bool, addedFromSuggestions: Bool) -> Bool {
+        saved.isEmpty ? (!hasServers || addedFromSuggestions) : saved == "open"
+    }
 
     static func scan(projectPath: String, home: URL) -> MCPSectionData {
         let file = MCPConfig.url(in: projectPath)
@@ -476,7 +489,7 @@ struct MCPEditorSheet: View {
         if loadError != nil { return ".mcp.json tiene un error de sintaxis: corregilo antes de editar los MCP." }
         if nameIsTaken { return "Ya hay un MCP con ese nombre en este proyecto." }
         if form.remote && !form.url.trimmingCharacters(in: .whitespaces).isEmpty && !form.isValidURL {
-            return "La URL tiene que empezar con http:// o https://."
+            return "Escribí una URL completa, como https://ejemplo.com/mcp."
         }
         return nil
     }
