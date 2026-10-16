@@ -36,4 +36,18 @@ struct BranchSituationTests {
         #expect(situation.offersRemoteActions == remote) // publicar y el MR
         #expect(situation.isWarning == warning)
     }
+
+    @Test("Sin checkout no se ofrece lanzar comandos, pero los que siguen corriendo se ven para detenerlos")
+    func commands() {
+        let serve = ProjectCommand(name: "Servidor", command: "php artisan serve")
+        let queue = ProjectCommand(name: "Cola", command: "php artisan queue:work")
+        let all = [serve, queue]
+        let running: (ProjectCommand) -> Bool = { $0.id == queue.id }
+        #expect(BranchSituation.worktree.shownCommands(all, isRunning: running) == all)
+        #expect(BranchSituation.main.shownCommands(all, isRunning: running) == all)
+        for situation in [BranchSituation.inactive, .blocked, .missing] {
+            #expect(situation.shownCommands(all, isRunning: running) == [queue])
+            #expect(situation.shownCommands(all) { _ in false }.isEmpty) // sin nada corriendo, no hay sección
+        }
+    }
 }

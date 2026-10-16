@@ -41,6 +41,13 @@ public enum BranchSituation: Equatable, Sendable {
     /// Tiene la rama en disco: los comandos, el sitio y los cambios son de esta rama.
     public var hasCheckout: Bool { self == .worktree || self == .main }
 
+    /// Qué comandos muestra la vista de rama: con checkout, todos (para lanzarlos). Sin él no se puede
+    /// lanzar ninguno (correría en otra rama o en una carpeta que no está), pero los que siguen corriendo
+    /// se ven, para mirar su salida y detenerlos: el aviso de una rama sin carpeta dice que hay algo andando.
+    public func shownCommands(_ commands: [ProjectCommand], isRunning: (ProjectCommand) -> Bool) -> [ProjectCommand] {
+        hasCheckout ? commands : commands.filter(isRunning)
+    }
+
     /// Se le pueden crear sesiones (en una inactiva, Hive pide el checkout primero).
     public var canStartSessions: Bool { self != .blocked && self != .missing }
 

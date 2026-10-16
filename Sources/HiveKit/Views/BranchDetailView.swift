@@ -93,10 +93,12 @@ struct BranchDetailView: View {
                         }
                     }
 
-                    // Sin checkout, un comando correría en la carpeta principal con otra rama (o en ninguna).
-                    if !ctx.project.commands.isEmpty && !ctx.project.isScratch && situation.hasCheckout {
+                    // Sin checkout, un comando correría en la carpeta principal con otra rama (o en ninguna): no se
+                    // ofrece lanzarlos, pero los que siguen corriendo acá se ven, con su salida y para detenerlos.
+                    let commands = situation.shownCommands(ctx.project.commands) { store.runningRun(commandId: $0.id, branchId: branchId) != nil }
+                    if !commands.isEmpty && !ctx.project.isScratch {
                         DetailSection("Comandos") {
-                            CommandsSection(project: ctx.project, branch: ctx.branch, editable: false)
+                            CommandsSection(project: ctx.project, branch: ctx.branch, editable: false, commands: commands)
                         }
                     }
 
