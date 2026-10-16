@@ -80,7 +80,7 @@ extension HiveTerminalView {
 
     @objc func revealDirectoryFromMenu(_ sender: Any?) {
         guard let directory = workingDirectory else { return }
-        ExternalApps.revealInFinder(directory)
+        HiveTerminalView.showFolder(directory)
     }
 
     /// Agranda la letra de todas las terminales (es el mismo ajuste que ⌘+).

@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import HiveCore
+import SwiftTerm
 import Testing
 @testable import HiveKit
 
@@ -8,6 +9,11 @@ import Testing
 private final class ScratchPasteboard {
     let board = NSPasteboard(name: NSPasteboard.Name("hive-drop-\(UUID().uuidString)"))
     deinit { board.releaseGlobally() }
+}
+
+/// Para un `Terminal` de SwiftTerm sin vista (solo interesa qué toma como enlace).
+private final class SilentTerminalDelegate: TerminalDelegate {
+    func send(source: Terminal, data: ArraySlice<UInt8>) {}
 }
 
 /// Una imagen PNG chiquita.
@@ -132,6 +138,42 @@ struct TerminalDropTests {
         view.requestOpenLink(source: view, link: "https://laravel.com/docs", params: [:])
         #expect(opened == [.file(path: dir.path + "/app/Http/Controllers/X.php", line: 42, column: nil),
                            .url(URL(string: "https://laravel.com/docs")!)])
+    }
+
+    @Test("SwiftTerm le pasa al ⌘clic la ruta entera, con su línea")
+    func swiftTermFindsPathWithLine() {
+        let delegate = SilentTerminalDelegate()
+        let terminal = Terminal(delegate: delegate, options: TerminalOptions(cols: 80, rows: 5))
+        terminal.feed(text: "  ERROR en app/Http/Controllers/X.php:42 (revisá el método)\r\n")
+        // Un clic en «Controllers», en el medio de la ruta.
+        let link = terminal.terminalLock.withLock {
+            terminal.link(at: .screen(Position(col: 22, row: 0)), mode: .explicitAndImplicit)
+        }
+        #expect(link == "app/Http/Controllers/X.php:42")
+    }
+
+    @Test("OSC 7 solo cambia la carpeta si es una carpeta que existe")
+    func osc7OnlyFolders() {
+        let dir = TempDir("hive-osc7")
+        let file = dir.write("instalar.command", "#!/bin/sh\n")
+        let (view, _) = makeTerminal(agent: false)
+        view.hostCurrentDirectoryUpdate(source: view, directory: URL(fileURLWithPath: dir.path).absoluteString)
+        #expect(view.workingDirectory == dir.path)
+        // Cualquier texto impreso puede traer un OSC 7: ni un archivo ni una ruta inventada.
+        view.hostCurrentDirectoryUpdate(source: view, directory: file.path)
+        view.hostCurrentDirectoryUpdate(source: view, directory: dir.path + "/no-existe")
+        #expect(view.workingDirectory == dir.path)
+    }
+
+    @Test("Una .app (también detrás de un enlace simbólico) se marca en Finder en lugar de abrirse")
+    func packagesAreRevealed() throws {
+        let dir = TempDir("hive-package")
+        let app = dir.subdir("Trampa.app").path
+        let alias = dir.path + "/atajo"
+        try FileManager.default.createSymbolicLink(atPath: alias, withDestinationPath: app)
+        #expect(HiveTerminalView.revealsBySelecting(app))
+        #expect(HiveTerminalView.revealsBySelecting(alias))
+        #expect(!HiveTerminalView.revealsBySelecting(dir.subdir("app/Http").path))
     }
 
     @Test("Menú del clic derecho: en castellano, sin Limpiar en los agentes y con el enlace de abajo del mouse")

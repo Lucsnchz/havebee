@@ -121,6 +121,22 @@ struct TerminalKeyboardTests {
         #expect(h.enters == 0)
     }
 
+    @Test("Shift+Enter no prepara el /clear de un agente; un Enter de verdad sí")
+    func shiftEnterDoesNotArmClear() {
+        let h = KeyboardHarness(agent: true)
+        defer { h.close() }
+        h.view.receive(Array("charla vieja\r\n".utf8)[...])
+        h.key(kReturn, "\r", [.shift])
+        h.view.receive(Array("\u{1B}[2J\u{1B}[3J\u{1B}[Hnueva".utf8)[...])
+        // Sin un Enter que mande, el borrado es del programa: no se guarda nada.
+        #expect(!h.view.fullText().contains("charla vieja"))
+
+        h.view.receive(Array("\r\notra charla\r\n".utf8)[...])
+        h.key(kReturn, "\r")
+        h.view.receive(Array("\u{1B}[2J\u{1B}[3J\u{1B}[Hdespués".utf8)[...])
+        #expect(h.view.fullText().contains("otra charla"))
+    }
+
     @Test("Enter solo manda CR y cuenta como Enter")
     func plainEnter() {
         let h = KeyboardHarness(agent: true)
