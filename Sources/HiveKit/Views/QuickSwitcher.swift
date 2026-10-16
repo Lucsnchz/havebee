@@ -470,8 +470,9 @@ private struct CaretAtEnd: NSViewRepresentable {
         // Solo al tomar el foco: después, lo que selecciones vos queda como lo dejaste.
         guard focused, !coordinator.wasFocused else { return }
         Task { @MainActor [weak view] in
-            // SwiftUI le da el foco al campo un instante después: se espera a que tenga su editor.
-            for _ in 0..<50 {
+            // SwiftUI le da el foco al campo un instante después: se espera a que tenga su editor
+            // (hasta 2 s, por si la máquina está cargada).
+            for _ in 0..<200 {
                 if let editor = view?.window?.firstResponder as? NSTextView {
                     editor.setSelectedRange(NSRange(location: (editor.string as NSString).length, length: 0))
                     return

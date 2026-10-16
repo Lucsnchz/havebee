@@ -223,13 +223,14 @@ struct HistorialViewTests {
         defer { window.close() }
         // Al enfocar un campo, macOS selecciona todo su texto: con «?validacion» seleccionado, la primera
         // tecla lo reemplazaría entero y ⌘K dejaría de buscar en el historial.
+        // Con margen: con la suite entera corriendo en paralelo, el foco puede tardar varios segundos.
         let editor = await { () -> NSTextView? in
-            _ = await waitUntil(timeout: 5) { (window.firstResponder as? NSTextView)?.string == query }
+            _ = await waitUntil { (window.firstResponder as? NSTextView)?.string == query }
             return window.firstResponder as? NSTextView
         }()
         let field = try #require(editor)
         let end = (query as NSString).length
-        #expect(await waitUntil(timeout: 5) { field.selectedRange() == NSRange(location: end, length: 0) },
+        #expect(await waitUntil { field.selectedRange() == NSRange(location: end, length: 0) },
                 "Quedó seleccionado \(field.selectedRange()) en «\(query)»")
     }
 
