@@ -126,6 +126,38 @@ struct ContrastTests {
         }
     }
 
+    /// Los archivos de HiveKit que dibujan estados de sesión (o definen los colores): los únicos que
+    /// pueden usar el naranja de permiso y el verde de «te espera».
+    static let statusColorFiles: Set<String> = ["DesignSystem.swift", "StatusStyle.swift", "SessionCards.swift",
+                                                "SidebarView.swift", "CompactLayout.swift", "Appearance.swift"]
+
+    @Test("En el código, el naranja y el verde de estado solo aparecen donde se dibujan sesiones, y no quedan colores del sistema")
+    func reservedStatusColorsInSource() throws {
+        // Tests/HiveKitTests/ContrastTests.swift → la raíz del paquete.
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let views = root.appendingPathComponent("Sources/HiveKit")
+        let files = try #require(FileManager.default.enumerator(at: views, includingPropertiesForKeys: nil)?
+            .compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" && $0.lastPathComponent != "LogoAssets.swift" })
+        #expect(files.count > 20)
+        let status = try NSRegularExpression(pattern: #"Theme\.(attention|pending)"#)
+        // `.red`, `Color.green`, `NSColor.systemOrange`…: no se adaptan al modo claro y se confunden con los estados.
+        let system = try NSRegularExpression(pattern: #"(Color\.|\(\.|: \.|\? \.)(red|green|blue|orange|yellow)\b|\.system(Red|Green|Blue|Orange|Yellow)\b"#)
+        for file in files {
+            let name = file.lastPathComponent
+            let lines = try String(contentsOf: file, encoding: .utf8).components(separatedBy: "\n")
+            for (index, line) in lines.enumerated() where !line.trimmingCharacters(in: .whitespaces).hasPrefix("//") {
+                let range = NSRange(line.startIndex..., in: line)
+                if !Self.statusColorFiles.contains(name) {
+                    #expect(status.firstMatch(in: line, range: range) == nil,
+                            "\(name):\(index + 1) usa el color de un estado de sesión (Theme.attention o Theme.pending): usá danger, info, running o el acento")
+                }
+                if name != "DesignSystem.swift" {
+                    #expect(system.firstMatch(in: line, range: range) == nil, "\(name):\(index + 1) usa un color del sistema: usá un token de Theme")
+                }
+            }
+        }
+    }
+
     @Test("Color.honey es el acento del tema: cambia con la apariencia")
     func honeyIsAccent() {
         for appearance in [NSAppearance.Name.aqua, .darkAqua] {

@@ -395,14 +395,15 @@ private struct HistoryRow: View {
     private var time: String { entry.date.formatted(date: .omitted, time: .shortened) }
 
     private var marker: some View {
+        // «Se cortó» es una falla: va en rojo (el naranja es solo de «necesita permiso»).
         let failed = entry.text.hasPrefix(AgentEventInterpreter.stopFailureMarker)
         return HStack(spacing: 8) {
-            Rectangle().fill((failed ? Theme.attention : Color.primary).opacity(0.2)).frame(height: 1)
+            Rectangle().fill((failed ? Theme.danger : Color.primary).opacity(0.2)).frame(height: 1)
             Text("\(entry.text) · \(time)")
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(failed ? AnyShapeStyle(Theme.attention) : AnyShapeStyle(.secondary))
+                .foregroundStyle(failed ? AnyShapeStyle(Theme.danger) : AnyShapeStyle(.secondary))
                 .fixedSize()
-            Rectangle().fill((failed ? Theme.attention : Color.primary).opacity(0.2)).frame(height: 1)
+            Rectangle().fill((failed ? Theme.danger : Color.primary).opacity(0.2)).frame(height: 1)
         }
         .padding(.vertical, 4)
         .help(HistoryStore.markerMeaning(entry.text))

@@ -208,7 +208,7 @@ struct HistorialViewTests {
         .padding(14)
         .frame(width: 300, alignment: .topLeading)
         .environment(store)
-        // 300 de ancho: el estado y los dos «ctx» entran en una línea, como en la barra de la sesión.
+        // 300 de ancho: el estado y los dos porcentajes de contexto entran en una línea, como en la barra de la sesión.
         await check(view, size: CGSize(width: 300, height: 150), name: "ah-08-uso")
         await check(view, size: CGSize(width: 300, height: 150), name: "ah-09-uso-claro", dark: false)
     }

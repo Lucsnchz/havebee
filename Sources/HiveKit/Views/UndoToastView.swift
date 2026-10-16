@@ -1,7 +1,7 @@
 import HiveCore
 import SwiftUI
 
-/// Cápsula abajo al centro para deshacer lo último: «Archivaste «Claude 2» · Deshacer».
+/// Cápsula abajo al centro para deshacer lo último (por ejemplo: Archivaste «Claude 2» · Deshacer).
 /// Se va sola a los pocos segundos; ⌘Z hace lo mismo.
 struct UndoToastView: View {
     @Environment(AppStore.self) private var store

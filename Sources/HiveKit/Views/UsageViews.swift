@@ -100,15 +100,43 @@ final class UsageMonitor {
     /// Desde acá el número se destaca: en miel, y en rojo desde 95 %.
     static let highPercent: Double = 80
 
+    /// El color con el que se destaca un porcentaje: nil (va en gris) hasta 80 %, después el de la barra.
+    static func highlight(_ percent: Double) -> Color? {
+        percent >= highPercent ? color(percent) : nil
+    }
+
     /// Color del número: gris hasta 80 %, después el de la barra.
     static func textStyle(_ percent: Double) -> AnyShapeStyle {
-        percent >= highPercent ? AnyShapeStyle(color(percent)) : AnyShapeStyle(Theme.secondaryText)
+        highlight(percent).map { AnyShapeStyle($0) } ?? AnyShapeStyle(Theme.secondaryText)
     }
 }
 
-/// Cuánto contexto ocupa la conversación: un anillito que se llena y «72%». En miel desde 80 % (con
-/// la ayuda «Conviene usar /compact») y en rojo desde 95 %. Sin datos no dibuja nada: quien lo pone
-/// en la barra lo pone solo si hay datos, para no dejar una cápsula vacía.
+/// Una porción de torta que empieza a las 12 y crece en el sentido de las agujas del reloj.
+struct ContextPie: Shape {
+    /// De 0 a 1 (lo de afuera se acota).
+    var fraction: Double
+
+    func path(in rect: CGRect) -> Path {
+        let fraction = fraction.isFinite ? min(max(fraction, 0), 1) : 0
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let radius = min(rect.width, rect.height) / 2
+        var path = Path()
+        if fraction >= 1 {
+            path.addEllipse(in: CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2))
+        } else if fraction > 0 {
+            path.move(to: center)
+            path.addArc(center: center, radius: radius, startAngle: .degrees(-90), endAngle: .degrees(-90 + 360 * fraction),
+                        clockwise: false)
+            path.closeSubpath()
+        }
+        return path
+    }
+}
+
+/// Cuánto contexto ocupa la conversación: una tortita que se llena y «72%». En gris hasta 80 %, en
+/// miel desde 80 % (con la ayuda «Conviene usar /compact») y en rojo desde 95 %. Es una torta y no un
+/// arco porque el arco miel es el de «trabajando», que va justo al lado en la barra. Sin datos no
+/// dibuja nada: quien lo pone en la barra lo pone solo si hay datos, para no dejar una cápsula vacía.
 struct UsageBadge: View {
     @Environment(AppStore.self) private var store
     let sessionId: UUID
@@ -123,11 +151,9 @@ struct UsageBadge: View {
             let value = Int(percent.rounded())
             HStack(spacing: 4) {
                 ZStack {
-                    Circle().stroke(Color.primary.opacity(0.15), lineWidth: 2)
-                    Circle()
-                        .trim(from: 0, to: min(max(percent, 0), 100) / 100)
-                        .stroke(UsageMonitor.color(percent), style: StrokeStyle(lineWidth: 2, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
+                    Circle().fill(Color.primary.opacity(0.12))
+                    ContextPie(fraction: percent / 100)
+                        .fill(UsageMonitor.highlight(percent) ?? Theme.secondaryText)
                 }
                 .frame(width: 10, height: 10)
                 Text("\(value)%")
@@ -152,7 +178,8 @@ struct UsageBadge: View {
     }
 }
 
-/// Barritas con los límites de las cuentas: «Claude 5h · sem» y «Codex sem 80% · se reinicia el jue 14:00».
+/// Barritas con los límites de las cuentas («Claude 5h 23% · sem 87%») y, abajo, cuándo se reinicia el
+/// más usado («La semanal se reinicia el jue 14:00»).
 /// No muestra nada mientras no haya datos. `compact`: para el riel angosto de la vista compacta, un logo
 /// con el límite más usado de cada cuenta. `insets` solo se suman si hay algo que mostrar.
 struct UsageSummary: View {
@@ -247,13 +274,22 @@ struct UsageAccountRow: View {
 
     /// «La semanal se reinicia el dom 21:11», «La de 5 horas se reinicia hoy 14:13».
     static func resetLine(_ limit: UsageLimit, resets: Date, now: Date) -> String {
-        let name = switch limit.windowMinutes {
+        "\(windowName(limit.windowMinutes)) \(UsageReader.resetText(resets, now: now))"
+    }
+
+    /// El nombre de un límite según su ventana: «La semanal», «La diaria», «La de 5 horas»… Sin
+    /// ventana conocida (Codex no siempre la manda), «El límite».
+    static func windowName(_ minutes: Int?) -> String {
+        switch minutes {
         case 10080?: "La semanal"
+        case 1440?: "La diaria"
         case 60?: "La de una hora"
+        case 1?: "La de un minuto"
+        case let minutes? where minutes > 0 && minutes % 1440 == 0: "La de \(minutes / 1440) días"
         case let minutes? where minutes > 60 && minutes % 60 == 0: "La de \(minutes / 60) horas"
-        default: "El límite de \(limit.longLabel)"
+        case let minutes? where minutes > 0: "La de \(minutes) minutos"
+        default: "El límite"
         }
-        return "\(name) \(UsageReader.resetText(resets, now: now))"
     }
 
     private func line(_ limits: [UsageLimit], showName: Bool) -> some View {
