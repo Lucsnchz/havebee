@@ -119,9 +119,11 @@ public enum MCPConfig {
             if let servers = root["mcpServers"], servers != .null, servers.object == nil { throw MCPConfigError.invalidJSON(path) }
             return root
         }
-        // Sin ninguna cadena entre comillas no puede haber servidores ni otros datos (vacío, `{roto`, `null`):
-        // se trata como un archivo vacío. Con datos adentro, mejor no tocarlo.
-        if !data.contains(UInt8(ascii: "\"")) { return [:] }
+        // Sin comillas ni `:` no puede haber servidores ni otros datos (vacío, `{roto`, `null`, `[]`): se trata
+        // como un archivo vacío. Con algo que parezca `clave: valor` (aunque sea sin comillas o con comillas
+        // simples, como `{ mcpServers: { … } }`), mejor no tocarlo.
+        let markers: Set<UInt8> = [UInt8(ascii: "\""), UInt8(ascii: "'"), UInt8(ascii: ":")]
+        if !data.contains(where: markers.contains) { return [:] }
         throw MCPConfigError.invalidJSON(path)
     }
 

@@ -115,6 +115,20 @@ struct MCPSafetyTests {
         #expect(MCPConfig.load(dir: dir.path).map(\.name) == ["a"])
     }
 
+    @Test("Un archivo con servidores escritos sin comillas o con comillas simples tampoco se reescribe", arguments: [
+        "{ mcpServers: { herd: { command: php } } }",
+        "{'mcpServers': {'herd': {'command': 'php'}}}",
+    ])
+    func looseSyntaxKeepsFile(content: String) throws {
+        let dir = TempDir()
+        dir.write(".mcp.json", content)
+        let before = try #require(bytes(dir))
+        #expect(throws: MCPConfigError.self) { try MCPConfig.loadResult(dir: dir.path).get() }
+        #expect(throws: MCPConfigError.self) { try MCPConfig.upsert(MCPServer(name: "a", config: ["command": "x"]), dir: dir.path) }
+        #expect(throws: MCPConfigError.self) { try MCPConfig.remove("herd", dir: dir.path) }
+        #expect(bytes(dir) == before)
+    }
+
     @Test("El error se explica en castellano y nombra el archivo")
     func message() {
         let error = MCPConfigError.invalidJSON("/code/x/.mcp.json")
