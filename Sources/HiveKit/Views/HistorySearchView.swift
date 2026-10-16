@@ -39,7 +39,7 @@ struct HistorySearchView: View {
             if let session = reading {
                 readingBar(session)
                 Divider()
-                HistoryPanel(session: session)
+                HistoryPanel(session: session, showsGlobalSearch: false)
             } else {
                 searchBar
                 Divider()

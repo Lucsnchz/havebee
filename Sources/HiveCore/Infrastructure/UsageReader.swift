@@ -91,16 +91,23 @@ public enum UsageReader {
         var context: Double?
         var limits: [UsageLimit]?
         var updatedAt: Date?
+        /// Cuántos token_count se miraron.
+        var examined = 0
+
+        /// Sin límites en los últimos token_count (con una API key, `rate_limits` viene siempre en null)
+        /// no tiene sentido seguir hasta el principio de un rollout de decenas de MB cada 30 s.
+        static let limitsLookback = 20
 
         init(fallbackDate: Date) {
             self.fallbackDate = fallbackDate
         }
 
-        var isComplete: Bool { context != nil && limits != nil }
+        var isComplete: Bool { context != nil && (limits != nil || examined >= Self.limitsLookback) }
 
         mutating func add(_ line: Data) {
             guard let json = JSONValue.parse(line), json["type"]?.string == "event_msg",
                   let payload = json["payload"], payload["type"]?.string == "token_count" else { return }
+            examined += 1
             let lineDate = json["timestamp"]?.string.flatMap(AgentTimestamp.parse)
             if context == nil, let info = payload["info"], let window = info["model_context_window"]?.asDouble, window > 0,
                let used = info["last_token_usage"]?["total_tokens"]?.asDouble {
@@ -124,7 +131,8 @@ public enum UsageReader {
 
     static func codexLimit(_ value: JSONValue?, lineDate: Date) -> UsageLimit? {
         guard let value, let used = value["used_percent"]?.asDouble else { return nil }
-        let window = value["window_minutes"]?.asDouble.map { Int($0) }
+        // Int(_:) se cae con un número fuera de rango: lo que no es una duración razonable se ignora.
+        let window = value["window_minutes"]?.asDouble.flatMap { $0.isFinite && $0 >= 0 && $0 < 1e9 ? Int($0) : nil }
         var resets = date(value["resets_at"])
         if resets == nil, let seconds = value["resets_in_seconds"]?.asDouble { resets = lineDate.addingTimeInterval(seconds) }
         return UsageLimit(windowMinutes: window, usedPercent: used, resetsAt: resets)

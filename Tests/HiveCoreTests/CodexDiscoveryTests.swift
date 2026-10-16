@@ -72,6 +72,38 @@ struct CodexDiscoveryTests {
         #expect(storage.codexRolloutURL("019a-archivado") != nil)
     }
 
+    /// Un UUID v7 como los de Codex: los primeros 48 bits son los milisegundos de `date`.
+    func uuidV7(_ date: Date, node: String = "000000000001") -> String {
+        let hex = String(format: "%012llx", UInt64(date.timeIntervalSince1970 * 1000))
+        return "\(hex.prefix(8))-\(hex.suffix(4))-7000-8000-\(node)"
+    }
+
+    @Test("Un thread con UUID v7 se busca en la carpeta de su día, sin recorrer sessions/ entero")
+    func rolloutByDate() throws {
+        let created = now.addingTimeInterval(-3 * 86_400)
+        let id = uuidV7(created)
+        let decoded = try #require(AgentStorage.uuidV7Date(id))
+        #expect(abs(decoded.timeIntervalSince(created)) < 0.01)
+        #expect(AgentStorage.uuidV7Date("019a12e6-0000-7000-8000-000000000001") == Date(timeIntervalSince1970: 0x019a_12e6_0000 / 1000))
+        #expect(AgentStorage.uuidV7Date("6f1c3a2e-9b1d-4c5e-8f00-000000000001") == nil) // v4
+        #expect(AgentStorage.uuidV7Date("t-1") == nil)
+
+        let own = try rollout(id, created: created)
+        // Otro archivo con el mismo thread en una carpeta vieja: recorriendo todo podría ganar ese.
+        codex.write("sessions/2020/01/01/rollout-2020-01-01T00-00-00-\(id).jsonl", "{}")
+        #expect(storage.codexRolloutURL(id)?.path == own.path)
+        #expect(!storage.isCodexSubagentThread(id))
+
+        // Si no está en la carpeta de su día (lo movieron), se busca igual en todo sessions/.
+        let moved = uuidV7(now, node: "000000000002")
+        let elsewhere = codex.write("sessions/2019/05/05/rollout-2019-05-05T00-00-00-\(moved).jsonl", "{}")
+        #expect(storage.codexRolloutURL(moved)?.path == elsewhere.path)
+        // Y en los archivados.
+        let archived = uuidV7(now, node: "000000000003")
+        let file = codex.write("archived_sessions/rollout-2026-01-01T00-00-00-\(archived).jsonl", "{}")
+        #expect(storage.codexRolloutURL(archived)?.path == file.path)
+    }
+
     @Test("Un aviso de un thread de subagente no cambia el id ni el historial")
     func subagentEventIgnored() {
         let event = HiveEvent(sessionId: UUID(), source: "codex", name: "notify", payload: [

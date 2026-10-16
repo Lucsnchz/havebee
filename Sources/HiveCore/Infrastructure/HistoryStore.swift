@@ -161,8 +161,8 @@ public struct HistoryStore: Sendable {
     /// conversación que la última, solo actualiza la ruta.
     public func recordTranscript(sessionId: UUID, agent: SessionKind, conversationId: String, path: String, now: Date = Date()) {
         guard !conversationId.isEmpty, !path.isEmpty, !isDeleted(sessionId) else { return }
-        Self.writeLock.lock()
-        defer { Self.writeLock.unlock() }
+        Self.segmentsLock.lock()
+        defer { Self.segmentsLock.unlock() }
         var segments = transcriptSegments(sessionId)
         if let index = segments.lastIndex(where: { $0.conversationId == conversationId && $0.agent == agent }) {
             guard segments[index].path != path else { return }
@@ -184,8 +184,8 @@ public struct HistoryStore: Sendable {
         guard !isDeleted(sessionId) else { return 0 }
         let messages = TranscriptReader.read(URL(fileURLWithPath: path), agent: agent)
         guard !messages.isEmpty else { return 0 }
-        Self.writeLock.lock()
-        defer { Self.writeLock.unlock() }
+        Self.archiveLock.lock()
+        defer { Self.archiveLock.unlock() }
         let known = Set(loadArchived(sessionId).map { $0.conversationId + "|" + $0.key })
         var data = Data()
         var added = 0
@@ -251,9 +251,12 @@ public struct HistoryStore: Sendable {
                            bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]))
     }
 
-    /// Las escrituras de la copia completa y de los segmentos corren en tareas en segundo plano:
-    /// el candado evita duplicados si dos llegan juntas.
-    private static let writeLock = NSLock()
+    /// La copia completa se escribe en tareas en segundo plano: el candado evita duplicados si dos
+    /// llegan juntas. Mientras lo tiene, `archiveTranscript` decodifica toda la copia anterior.
+    private static let archiveLock = NSLock()
+    /// Los segmentos tienen su propio candado: `recordTranscript` corre en el hilo principal y no
+    /// tiene que esperar a que termine una copia completa (son archivos distintos).
+    private static let segmentsLock = NSLock()
 
     /// Las sesiones eliminadas (carpeta del historial + id), con su propio candado.
     private static let tombstones = Tombstones()

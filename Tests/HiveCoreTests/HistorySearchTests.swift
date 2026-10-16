@@ -80,6 +80,23 @@ struct HistorySearchTests {
         #expect(FileManager.default.fileExists(atPath: store.segmentsURL(id).path))
     }
 
+    @Test("Copias completas y segmentos a la vez no duplican ni pierden nada")
+    func concurrentWrites() throws {
+        let id = UUID()
+        let transcript = dir.write("c-1.jsonl", AHFixtures.claudeTranscript)
+        let store = self.store
+        DispatchQueue.concurrentPerform(iterations: 8) { i in
+            if i.isMultiple(of: 2) {
+                store.archiveTranscript(sessionId: id, agent: .claude, path: transcript.path)
+            } else {
+                store.recordTranscript(sessionId: id, agent: .claude, conversationId: "c-\(i % 3)", path: "/p/\(i).jsonl")
+            }
+        }
+        let lines = try String(contentsOf: store.fullURL(id), encoding: .utf8).split(separator: "\n")
+        #expect(lines.count == 7)
+        #expect(store.transcriptSegments(id).map(\.conversationId).sorted() == ["c-0", "c-1", "c-2"])
+    }
+
     @Test("Buscar «validacion» encuentra «validación», sin distinguir mayúsculas")
     func search() throws {
         let a = UUID(), b = UUID()
@@ -149,6 +166,15 @@ struct HistorySearchTests {
         // Lo eliminado ya no aparece en la búsqueda.
         #expect(store.search("hola").isEmpty)
         #expect(store.search("otra").count == 1)
+        // Una copia del transcript que termina después de eliminarla (corre en segundo plano) no la revive.
+        let late = dir.write("c-late.jsonl", AHFixtures.claudeTranscript)
+        #expect(store.archiveTranscript(sessionId: id, agent: .claude, path: late.path) == 0)
+        store.recordTranscript(sessionId: id, agent: .claude, conversationId: "c-late", path: late.path)
+        #expect(!FileManager.default.fileExists(atPath: store.fullURL(id).path))
+        #expect(!FileManager.default.fileExists(atPath: store.segmentsURL(id).path))
+        #expect(store.search("validacion").isEmpty)
+        // Las otras sesiones siguen guardando su copia.
+        #expect(store.archiveTranscript(sessionId: other, agent: .claude, path: late.path) == 7)
 
         store.purge(olderThan: 30 * 86_400, now: .reference.addingTimeInterval(29 * 86_400))
         #expect(try FileManager.default.contentsOfDirectory(atPath: store.deletedDirectory.path).count == 4)

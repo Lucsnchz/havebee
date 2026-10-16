@@ -8,6 +8,9 @@ import SwiftUI
 struct HistoryPanel: View {
     @Environment(AppStore.self) private var store
     let session: Session
+    /// Dentro de «Buscar en todas las sesiones» (leyendo una archivada) no se ofrece abrir otra búsqueda
+    /// encima: al elegir un resultado se cerraría solo la de adentro y la de afuera taparía la sesión.
+    var showsGlobalSearch = true
     @AppStorage("historyShowEverything") private var showEverything = true
     @State private var everything: [HistoryEntry] = []
     @State private var finals: [HistoryEntry] = []
@@ -70,8 +73,10 @@ struct HistoryPanel: View {
                     .transition(.opacity)
             }
             Spacer()
-            HistoryIconButton(symbol: "text.magnifyingglass", label: "Buscar en todas las sesiones") {
-                showGlobalSearch = true
+            if showsGlobalSearch {
+                HistoryIconButton(symbol: "text.magnifyingglass", label: "Buscar en todas las sesiones") {
+                    showGlobalSearch = true
+                }
             }
             HistoryIconButton(symbol: "doc.on.doc", label: "Copiar todo el historial") {
                 ExternalApps.copyToPasteboard(HistoryExport.plainText(shown, agent: session.kind.label))
@@ -130,6 +135,8 @@ struct HistoryPanel: View {
     private func timeline(_ shown: [HistoryEntry], found: [UUID]) -> some View {
         let items = HistoryTimelineItem.build(shown)
         let matchSet = Set(found)
+        // Una sola vez: `currentMatch` vuelve a buscar en todas las entradas y acá se usa en cada fila.
+        let current = found.isEmpty ? nil : found[min(matchIndex, found.count - 1)]
         return ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 14) {
@@ -139,7 +146,7 @@ struct HistoryPanel: View {
                             HistoryDaySeparator(label: label)
                         case .entry(let entry):
                             HistoryRow(entry: entry, agent: session.kind, query: matchSet.contains(entry.id) ? query : "",
-                                       isCurrentMatch: entry.id == currentMatch)
+                                       isCurrentMatch: entry.id == current)
                                 .id(entry.id)
                         }
                     }
