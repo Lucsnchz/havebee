@@ -83,8 +83,11 @@ public struct HistoryStore: Sendable {
     /// Quedan ahí hasta que `purge(olderThan:)` los borra.
     public func delete(_ sessionId: UUID, now: Date = Date()) {
         let fm = FileManager.default
-        let files = [jsonlURL(sessionId), markdownURL(sessionId), fullURL(sessionId), segmentsURL(sessionId)]
-            .filter { fm.fileExists(atPath: $0.path) }
+        // Con el candado: una copia del transcript que esté terminando en segundo plano espera, y
+        // después ve que la sesión se eliminó (no vuelve a crear sus archivos).
+        Self.writeLock.lock()
+        defer { Self.writeLock.unlock() }
+        let files = sessionFiles(sessionId).filter { fm.fileExists(atPath: $0.path) }
         guard !files.isEmpty else { return }
         try? fm.createDirectory(at: deletedDirectory, withIntermediateDirectories: true)
         for file in files {
@@ -97,6 +100,17 @@ public struct HistoryStore: Sendable {
             } catch {
                 try? fm.removeItem(at: file)
             }
+        }
+    }
+
+    private func sessionFiles(_ sessionId: UUID) -> [URL] {
+        [jsonlURL(sessionId), markdownURL(sessionId), fullURL(sessionId), segmentsURL(sessionId)]
+    }
+
+    /// Si la sesión se eliminó (sus archivos están en history/deleted/).
+    func isDeleted(_ sessionId: UUID) -> Bool {
+        sessionFiles(sessionId).contains {
+            FileManager.default.fileExists(atPath: deletedDirectory.appendingPathComponent($0.lastPathComponent).path)
         }
     }
 
@@ -138,6 +152,7 @@ public struct HistoryStore: Sendable {
         guard !conversationId.isEmpty, !path.isEmpty else { return }
         Self.writeLock.lock()
         defer { Self.writeLock.unlock() }
+        guard !isDeleted(sessionId) else { return }
         var segments = transcriptSegments(sessionId)
         if let index = segments.lastIndex(where: { $0.conversationId == conversationId && $0.agent == agent }) {
             guard segments[index].path != path else { return }
@@ -157,6 +172,8 @@ public struct HistoryStore: Sendable {
         guard !messages.isEmpty else { return 0 }
         Self.writeLock.lock()
         defer { Self.writeLock.unlock() }
+        // Si la eliminaron mientras se leía el transcript, no se vuelve a crear su copia.
+        guard !isDeleted(sessionId) else { return 0 }
         let known = Set(loadArchived(sessionId).map { $0.conversationId + "|" + $0.key })
         var data = Data()
         var added = 0
