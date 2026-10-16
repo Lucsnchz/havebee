@@ -19,6 +19,8 @@ final class AgentAvailability {
     /// aparecería como «No instalado». Se pide una sola vez y cada revisión lo espera.
     @ObservationIgnored private let loginPATH: Task<String?, Never>?
     @ObservationIgnored private var refreshing: Task<Void, Never>?
+    /// Cuándo arrancó la última revisión (para no repetirla cada vez que se arma un menú).
+    @ObservationIgnored private var lastRefresh: Date?
 
     init(processes: ProcessStarting, path: String, resolveLoginPATH: (@Sendable () -> String?)? = nil) {
         self.processes = processes
@@ -44,6 +46,7 @@ final class AgentAvailability {
     @discardableResult
     func refresh() -> Task<Void, Never> {
         refreshing?.cancel()
+        lastRefresh = Date()
         let kinds = SessionKind.allCases.filter { $0.binary != nil }
         let fallback = self.path
         let loginPATH = self.loginPATH
@@ -54,15 +57,32 @@ final class AgentAvailability {
             let missing = await Self.findMissing(kinds, path: path, processes: processes)
             guard !Task.isCancelled, let self else { return }
             if self.missing != missing { self.missing = missing }
-            self.checked = true
+            if !self.checked { self.checked = true }
         }
         refreshing = task
         return task
     }
 
-    /// Vuelve a revisar antes de decir que falta (quizás lo acabás de instalar).
+    /// Vuelve a revisar si la última revisión arrancó hace más de `maxAge` segundos. La usan los
+    /// menús de «Nueva sesión»: sus ítems de un agente sin instalar están deshabilitados y no hay
+    /// clic que vuelva a revisar, así que sin esto un agente que instalaste con Hive abierto
+    /// seguía «(no instalado)» hasta pasar por la vista de una rama.
+    @discardableResult
+    func refreshIfStale(maxAge: TimeInterval = 10, now: Date = Date()) -> Task<Void, Never>? {
+        if let lastRefresh, now.timeIntervalSince(lastRefresh) < maxAge { return nil }
+        return refresh()
+    }
+
+    /// Vuelve a revisar antes de decir que falta (quizás lo acabás de instalar). Si mientras
+    /// tanto arranca otra revisión (al volver a Hive, o desde otra vista), la nuestra se cancela
+    /// sin actualizar nada: se espera a la última para no contestar con lo de antes.
     func recheck(_ kind: SessionKind) async -> Bool {
-        await refresh().value
+        var task = refresh()
+        await task.value
+        while let latest = refreshing, latest != task {
+            task = latest
+            await task.value
+        }
         return isInstalled(kind)
     }
 

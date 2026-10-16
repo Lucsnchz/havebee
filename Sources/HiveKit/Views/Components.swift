@@ -72,7 +72,10 @@ struct StatusPill: View {
 
     var body: some View {
         HStack(spacing: 6) {
+            // `unseen: true` es solo para dibujar el punto lleno; para VoiceOver alcanza con el
+            // texto (si no, diría «Trabajando…, sin ver, Trabajando…»).
             StatusIndicator(status: status, unseen: true, kind: kind)
+                .accessibilityHidden(true)
             Text(status.label(for: kind))
                 .font(HiveFont.body)
                 .foregroundStyle(.secondary)
