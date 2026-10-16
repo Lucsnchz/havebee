@@ -265,7 +265,7 @@ struct HistorialViewTests {
 
         let view = VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
-                StatusPill(status: .working, kind: .claude)
+                StatusPill(status: .working, unseen: false, kind: .claude)
                 UsageBadge(sessionId: demo.claude.id, monitor: monitor)
                 UsageBadge(sessionId: codexActive.id, monitor: monitor)
             }

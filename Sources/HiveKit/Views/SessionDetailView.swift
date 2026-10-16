@@ -71,7 +71,7 @@ struct SessionDetailView: View {
                     }
                 }
                 ToolbarItemGroup {
-                    StatusPill(status: rt.status, kind: ctx.session.kind)
+                    StatusPill(status: rt.status, unseen: rt.unseen, kind: ctx.session.kind)
                     // Cuánto contexto ocupa, en Claude y Codex (nada mientras no informen).
                     if ctx.session.kind == .claude || ctx.session.kind == .codex, usage.sessions[sessionId]?.contextPercent != nil {
                         UsageBadge(sessionId: sessionId, monitor: usage)

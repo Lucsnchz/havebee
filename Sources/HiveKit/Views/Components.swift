@@ -10,8 +10,11 @@ struct StatusIndicator: View {
     let kind: SessionKind
     var size: CGFloat = 10
 
+    /// La forma y el color, los mismos que en la píldora de la barra (`StatusPill`).
+    var style: StatusStyle { StatusStyle.of(status: status, unseen: unseen, kind: kind) }
+
     var body: some View {
-        let style = StatusStyle.of(status: status, unseen: unseen, kind: kind)
+        let style = self.style
         ZStack {
             StatusGlyphView(glyph: style.glyph, size: size)
                 .id(style.glyph)
@@ -44,16 +47,19 @@ struct AggregateIndicator: View {
     }
 }
 
-/// Píldora con el estado, para la barra de herramientas.
+/// Píldora con el estado, para la barra de herramientas. El ícono es el mismo de la fila del árbol
+/// y de la pestaña: «Tu turno» ya vista es el aro hueco, y el punto lleno queda para la que no viste.
 struct StatusPill: View {
     let status: SessionStatus
+    let unseen: Bool
     let kind: SessionKind
+
+    var indicator: StatusIndicator { StatusIndicator(status: status, unseen: unseen, kind: kind) }
 
     var body: some View {
         HStack(spacing: 6) {
-            // `unseen: true` es solo para dibujar el punto lleno; para VoiceOver alcanza con el
-            // texto (si no, diría «Trabajando…, sin ver, Trabajando…»).
-            StatusIndicator(status: status, unseen: true, kind: kind)
+            // Para VoiceOver alcanza con el texto (si no, diría «Trabajando…, sin ver, Trabajando…»).
+            indicator
                 .accessibilityHidden(true)
             Text(status.label(for: kind))
                 .font(HiveFont.body)

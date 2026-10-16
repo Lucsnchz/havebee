@@ -124,7 +124,7 @@ struct StatusStyleTests {
             ForEach(Array(statuses.enumerated()), id: \.offset) { _, item in
                 HStack(spacing: 12) {
                     StatusIndicator(status: item.0, unseen: item.1, kind: .claude)
-                    StatusPill(status: item.0, kind: .claude)
+                    StatusPill(status: item.0, unseen: item.1, kind: .claude)
                     Text(StatusStyle.of(status: item.0, unseen: item.1, kind: .claude).text)
                         .foregroundStyle(StatusStyle.of(status: item.0, unseen: item.1, kind: .claude).color ?? .secondary)
                 }
@@ -134,6 +134,13 @@ struct StatusStyleTests {
             }
         }
         .padding(16)
+        // La píldora de la barra dibuja el mismo ícono que la fila: «Tu turno» ya vista, hueca en las dos.
+        for (status, unseen) in statuses {
+            #expect(StatusPill(status: status, unseen: unseen, kind: .claude).indicator.style.glyph
+                == StatusIndicator(status: status, unseen: unseen, kind: .claude).style.glyph, "\(status) \(unseen)")
+        }
+        #expect(StatusPill(status: .waiting, unseen: false, kind: .claude).indicator.style.glyph == .seen)
+        #expect(StatusPill(status: .waiting, unseen: true, kind: .claude).indicator.style.glyph == .pending)
         let defaults = SnapshotDefaults()
         let reps = await Snapshot.render(view, size: CGSize(width: 360, height: 270), name: "estados-muestrario", defaults: defaults.defaults)
         #expect(reps.count == 2)
