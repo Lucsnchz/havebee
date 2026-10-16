@@ -115,9 +115,12 @@ private final class LockedLogos: @unchecked Sendable {
     }
 }
 
-/// Espera (cediendo el hilo principal) hasta que se cumpla una condición.
+/// Espera (cediendo el hilo principal) hasta que se cumpla una condición. El margen es amplio a
+/// propósito: todos los tests @MainActor comparten el hilo principal (al arrancar la corrida, decenas
+/// crean repos con git y dibujan vistas a la vez) y la máquina puede estar cargada. Devuelve apenas
+/// se cumple, así que el margen solo se nota cuando algo de verdad falla.
 @MainActor
-func waitUntil(timeout: TimeInterval = 5, _ condition: () -> Bool) async -> Bool {
+func waitUntil(timeout: TimeInterval = 20, _ condition: () -> Bool) async -> Bool {
     let deadline = Date().addingTimeInterval(timeout)
     while !condition() {
         if Date() > deadline { return false }

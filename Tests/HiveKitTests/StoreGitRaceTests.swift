@@ -22,7 +22,7 @@ private struct RaceSetup {
 
     /// Espera a que termine la revisión en curso (y las que se pidieron mientras tanto).
     func settle() async -> Bool {
-        await waitUntil(timeout: 10) { store.refreshTask == nil }
+        await waitUntil { store.refreshTask == nil }
     }
 
     /// Le da tiempo a la revisión para leer git antes de cambiar algo.

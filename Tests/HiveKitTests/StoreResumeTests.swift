@@ -106,7 +106,7 @@ struct StoreResumeTests {
         w.store.activate(claude.id)
         w.store.activate(claude.id) // otra vez mientras se arma: no lanza dos veces
         #expect(rt.isLaunching)
-        #expect(await waitUntil(timeout: 10) { rt.isRunning })
+        #expect(await waitUntil { rt.isRunning })
         #expect(!rt.isLaunching)
         #expect(w.world.processes.launches.count == 1)
         #expect(FileManager.default.fileExists(atPath: w.store.history.markdownURL(claude.id).path))
@@ -115,7 +115,7 @@ struct StoreResumeTests {
         // Si la archivás mientras se arma, no se lanza.
         w.store.activate(shell.id)
         w.store.archive(shell.id)
-        #expect(await waitUntil(timeout: 10) { w.store.runtimes[shell.id]?.isLaunching == false })
+        #expect(await waitUntil { w.store.runtimes[shell.id]?.isLaunching == false })
         #expect(w.world.processes.launches.count == 1)
         #expect(w.store.runtimes[shell.id]?.isRunning == false)
     }
