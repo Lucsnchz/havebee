@@ -79,8 +79,9 @@ struct HiveCommands: Commands {
         .hiveShortcut(.newBranch)
         .disabled(project == nil || project?.isScratch == true)
         Divider()
+        // Con un agente trabajando (o una Terminal con un proceso) pregunta antes: ⌘R es un reflejo.
         Button(runtime?.status.isExited == true ? "Reanudar" : "Reiniciar") {
-            if let id = selected?.session.id { store.relaunch(id) }
+            if let id = selected?.session.id { store.requestRestart(id) }
         }
         .hiveShortcut(.restart)
         .disabled(!(runtime?.isRunning == true || runtime?.status.isExited == true))
@@ -398,7 +399,8 @@ enum HiveNavigator {
     static func stopOrCancel(_ store: AppStore) {
         let window = NSApp?.keyWindow
         switch stopDecision(selection: store.selection, keyWindowIsMain: isMain(window), sheetOpen: window?.attachedSheet != nil) {
-        case .stop(let id): store.stop(id)
+        // Si cortaría algo en curso, pregunta (⌘. es el «cancelar» de macOS: quizás querías un Esc).
+        case .stop(let id): store.requestStop(id)
         case .cancel:
             // Por el mismo camino que esc: así un campo de texto se lo avisa a su vista (onExitCommand).
             window?.firstResponder?.doCommand(by: #selector(NSResponder.cancelOperation(_:)))

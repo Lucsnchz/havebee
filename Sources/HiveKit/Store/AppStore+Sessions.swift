@@ -180,18 +180,51 @@ extension AppStore {
         updateBadge()
     }
 
+    // MARK: - Confirmar antes de cortar
+
+    /// Reiniciar desde un menú o con ⌘R: si cortaría algo en curso (ver `InterruptRule`), primero pregunta.
+    public func requestRestart(_ id: UUID) {
+        guard runtimes[id] != nil else { return }
+        confirmInterruption(.restart, of: id) { [weak self] in self?.relaunch(id) }
+    }
+
+    /// Detener desde un menú o con ⌘.: si cortaría algo en curso, primero pregunta.
+    public func requestStop(_ id: UUID) {
+        guard runtimes[id] != nil else { return }
+        confirmInterruption(.stop, of: id) { [weak self] in self?.stop(id) }
+    }
+
+    /// Lo que hay que confirmar antes de `action`, o nil si no corta nada en curso: un agente que
+    /// trabaja o espera permiso, o una Terminal con un proceso en primer plano.
+    func interruptConfirmation(_ action: SessionInterruption, of id: UUID) -> InterruptConfirmation? {
+        guard let rt = runtimes[id], rt.isRunning, let ctx = sessionContext(id) else { return nil }
+        return InterruptRule.confirmation(for: action, sessionName: ctx.session.name, isAgent: rt.kind.isAgent,
+                                          status: rt.status, foregroundJob: rt.kind.isAgent ? nil : rt.terminal?.foregroundJob)
+    }
+
+    private func confirmInterruption(_ action: SessionInterruption, of id: UUID, perform: @escaping () -> Void) {
+        guard let confirmation = interruptConfirmation(action, of: id) else {
+            perform()
+            return
+        }
+        alert = AppAlert(title: confirmation.title, message: confirmation.message, actionTitle: confirmation.actionTitle,
+                         isDestructive: true, action: perform)
+    }
+
+    /// Sesiones de agente esperando tu permiso (a mitad de una herramienta): al salir también se cortan.
+    var permissionCount: Int { runtimes.values.filter { $0.kind.isAgent && $0.isRunning && $0.status == .attention }.count }
+
+    /// Sesiones de Terminal con un proceso en primer plano (un `npm run dev`, un build).
+    var busyTerminalsCount: Int {
+        runtimes.values.filter { !$0.kind.isAgent && $0.isRunning && $0.terminal?.foregroundJob != nil }.count
+    }
+
     // MARK: - Archivar
 
+    /// Archivar desde un menú, la X de la pestaña o con ⌘W: si cortaría algo en curso, primero pregunta.
     public func requestArchive(_ id: UUID) {
-        guard let rt = runtimes[id] else { return }
-        if rt.status == .working {
-            alert = AppAlert(title: "La sesión está trabajando",
-                             message: "Si la archivás se corta lo que está haciendo. La conversación queda guardada y la podés restaurar.",
-                             actionTitle: "Archivar igual", isDestructive: true,
-                             action: { [weak self] in self?.archive(id) })
-        } else {
-            archive(id)
-        }
+        guard runtimes[id] != nil else { return }
+        confirmInterruption(.archive, of: id) { [weak self] in self?.archive(id) }
     }
 
     public func archive(_ id: UUID) {
