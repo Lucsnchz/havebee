@@ -107,12 +107,17 @@ extension AppStore {
         guard let project = project(request.projectId) else { return "No encontré el proyecto." }
         let git = self.git
         gitGeneration += 1
+        gitOperations += 1
         let result = await Task.detached { BranchPlanner.prepareDetailed(request, project: project, git: git) }.value
+        gitOperations -= 1
         gitGeneration += 1
         let prepared: PreparedBranch
         switch result {
         case .success(let value): prepared = value
-        case .failure(let error): return error.errorDescription
+        case .failure(let error):
+            // La revisión que corría mientras tanto se descartó: que venga otra.
+            refreshGit()
+            return error.errorDescription
         }
         var branch = prepared.branch
         projects.updateProject(project.id) { p in
@@ -166,11 +171,15 @@ extension AppStore {
         let name = ctx.branch.name
         let git = self.git
         gitGeneration += 1
+        gitOperations += 1
         let r = await Task.detached { git.checkout(name, in: path) }.value
+        gitOperations -= 1
         // Otra vez: una revisión que empezó durante el checkout pudo leer la rama de antes.
         gitGeneration += 1
         guard r.ok else {
             alert = AppAlert(title: "No se pudo hacer checkout de «\(name)»", message: r.errorMessage)
+            // La revisión que corría mientras tanto se descartó: que venga otra.
+            refreshGit()
             return false
         }
         mainHeads[ctx.project.id] = name
@@ -265,8 +274,9 @@ extension AppStore {
         }
         missing = missing.filter { known.contains($0) }
         if missingWorktrees != missing { missingWorktrees = missing }
-        // Hive cambió git mientras leíamos: lo leído puede ser viejo. La pasada que pidió ese cambio lo corrige.
-        guard generation == gitGeneration else { return }
+        // Hive cambió git mientras leíamos (o lo está cambiando ahora): lo leído puede ser viejo o estar a
+        // mitad de camino. La pasada que pide ese cambio al terminar lo corrige.
+        guard generation == gitGeneration, gitOperations == 0 else { return }
         applyHeads(scan.heads)
         var found = false
         for (id, worktrees) in scan.worktrees where syncWorktrees(id, worktrees) { found = true }
@@ -287,8 +297,8 @@ extension AppStore {
             for (id, path) in pending { heads[id] = git.currentBranch(path) ?? "" }
             return heads
         }.value
-        // Hive cambió git mientras tanto: lo leído puede ser viejo; lo corrige la revisión completa.
-        guard generation == gitGeneration else { return }
+        // Hive cambió git mientras tanto (o lo está cambiando): lo leído puede ser viejo; lo corrige la revisión completa.
+        guard generation == gitGeneration, gitOperations == 0 else { return }
         applyHeads(heads)
     }
 

@@ -50,6 +50,37 @@ struct StoreUndoTests {
         #expect(store.selection == .session(claude.id))
     }
 
+    @Test("Eliminar una sesión ya archivada no ofrece archivarla; archivarla de nuevo no hace nada")
+    func deleteArchived() async throws {
+        let s = try await Setup()
+        let (store, project) = (s.store, s.project)
+        store.requestNewSession(branchId: project.branches[0].id, kind: .claude)
+        store.requestNewSession(branchId: project.branches[0].id, kind: .shell)
+        let sessions = try #require(store.project(project.id)?.branches[0].sessions)
+        let (claude, shell) = (sessions[0], sessions[1])
+
+        // Abierta: se puede archivar en lugar de eliminarla.
+        store.requestRemoval(.session(claude.id))
+        #expect(store.pendingRemoval?.offersArchive == true)
+
+        store.archive(claude.id)
+        store.archive(shell.id)
+        store.dismissUndo()
+        let archivedAt = try #require(store.sessionContext(claude.id)?.session.archivedAt)
+        store.requestRemoval(.session(claude.id))
+        #expect(store.pendingRemoval?.offersArchive == false)
+        #expect(store.pendingRemoval?.message == "También se borra su historial en Hive (todo lo anterior a cada /clear). No se puede deshacer.")
+        store.requestRemoval(.session(shell.id))
+        #expect(store.pendingRemoval?.offersArchive == false)
+        #expect(store.pendingRemoval?.message == "Se borra de las archivadas. No se puede deshacer.")
+
+        // Archivar otra vez una archivada no le cambia la fecha ni ofrece un deshacer que la restauraría.
+        s.world.advance(60)
+        store.archive(claude.id)
+        #expect(store.sessionContext(claude.id)?.session.archivedAt == archivedAt)
+        #expect(store.undoAction == nil)
+    }
+
     @Test("⌘Z (el undo de la ventana) restaura lo archivado; deshacer con la cápsula lo saca del menú")
     func commandZ() async throws {
         let s = try await Setup()

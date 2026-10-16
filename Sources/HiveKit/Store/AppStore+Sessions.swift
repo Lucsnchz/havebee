@@ -48,6 +48,8 @@ extension AppStore {
         rt.isLaunching = true
         Task { [weak self] in
             let context = await Task.detached(priority: .userInitiated) { builder.build() }.value
+            // Se canceló mientras se armaba (se cortaron sus sesiones para borrar la carpeta).
+            guard rt.isLaunching else { return }
             rt.isLaunching = false
             // Mientras tanto se pudo borrar, archivar o lanzar por otro lado.
             guard let self, self.runtimes[id] === rt, !rt.isRunning,
@@ -193,7 +195,8 @@ extension AppStore {
     }
 
     public func archive(_ id: UUID) {
-        guard let ctx = sessionContext(id) else { return }
+        // Una ya archivada no se vuelve a archivar (le cambiaría la fecha y el deshacer la restauraría).
+        guard let ctx = sessionContext(id), !ctx.session.isArchived else { return }
         if let rt = runtimes[id] {
             tearDown(rt.terminal)
             rt.terminal = nil

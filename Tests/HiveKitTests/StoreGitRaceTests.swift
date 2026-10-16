@@ -22,7 +22,7 @@ private struct RaceSetup {
 
     /// Espera a que termine la revisión en curso (y las que se pidieron mientras tanto).
     func settle() async -> Bool {
-        await waitUntil(timeout: 10) { store.refreshTask == nil }
+        await waitUntil { store.refreshTask == nil }
     }
 
     /// Le da tiempo a la revisión para leer git antes de cambiar algo.
@@ -67,6 +67,73 @@ struct StoreGitRaceTests {
         #expect(await s.settle())
         #expect(s.store.mainHead(of: s.project.id) == "fix")
         #expect(s.store.isActive(fix, in: try #require(s.store.project(s.project.id))))
+    }
+
+    @Test("Una revisión en medio de un checkout de Hive no lo toma como un cambio de afuera")
+    func refreshDuringCheckout() async throws {
+        let s = await RaceSetup()
+        #expect(await s.store.createBranch(NewBranchRequest(projectId: s.project.id, name: "fix", isNew: true, mode: .main)) == nil)
+        #expect(await s.settle())
+        let main = s.project.branches[0]
+        let fix = try #require(s.store.project(s.project.id)?.branches.first { $0.name == "fix" })
+        // Una sesión corriendo en main: si la revisión creyera que la rama cambió por fuera, preguntaría.
+        s.store.requestNewSession(branchId: main.id, kind: .shell)
+        let session = try #require(s.store.branchContext(main.id)?.branch.sessions.last)
+        s.store.activate(session.id)
+        #expect(s.store.runtimes[session.id]?.isRunning == true)
+
+        // El checkout tarda: git ya cambió de rama, pero Hive todavía no recibió la respuesta.
+        s.git.setDelay(.checkout, 0.6)
+        s.store.requestCheckout(branchId: fix.id)
+        let pending = try #require(s.store.pendingCheckout)
+        let checkout = Task { await s.store.performCheckout(pending) }
+        await s.letItRead()
+        await s.store.refreshGitNow() // la revisión del timer cae justo en el medio
+        #expect(s.store.alert == nil)
+        #expect(await checkout.value)
+        #expect(await s.settle())
+        #expect(s.store.alert == nil)
+        #expect(s.store.mainHead(of: s.project.id) == "fix")
+        #expect(s.store.isActive(fix, in: try #require(s.store.project(s.project.id))))
+    }
+
+    @Test("Un checkout que falla igual pide otra revisión (la que estaba en curso se descartó)")
+    func failedCheckoutRefreshes() async throws {
+        let s = await RaceSetup()
+        #expect(await s.store.createBranch(NewBranchRequest(projectId: s.project.id, name: "fix", isNew: true, mode: .main)) == nil)
+        #expect(await s.settle())
+        let fix = try #require(s.store.project(s.project.id)?.branches.first { $0.name == "fix" })
+        s.repo.sh("git branch -q -D fix") // la rama ya no existe en git: el checkout va a fallar
+        s.store.requestCheckout(branchId: fix.id)
+        let pending = try #require(s.store.pendingCheckout)
+        #expect(!(await s.store.performCheckout(pending)))
+        #expect(s.store.alert?.title == "No se pudo hacer checkout de «fix»")
+        #expect(s.store.refreshTask != nil)
+        #expect(await s.settle())
+    }
+
+    @Test("Quitar una rama borrando el worktree no deja arrancar una sesión que se estaba armando")
+    func removeWhileLaunching() async throws {
+        let s = await RaceSetup()
+        #expect(await s.store.createBranch(NewBranchRequest(projectId: s.project.id, name: "wt", isNew: true, mode: .worktree)) == nil)
+        #expect(await s.settle())
+        let branch = try #require(s.store.project(s.project.id)?.branches.last)
+        s.store.requestNewSession(branchId: branch.id, kind: .shell)
+        let session = try #require(s.store.branchContext(branch.id)?.branch.sessions.last)
+        // Con el lanzamiento en segundo plano, como en la app.
+        var environment = s.world.environment
+        environment.launchesInBackground = true
+        let store = AppStore(environment: environment)
+        let rt = try #require(store.runtimes[session.id])
+        await store.refreshGitNow()
+        s.git.setDelay(.removeWorktree, 0.5) // git tarda en borrar: el armado del lanzamiento termina antes
+        store.activate(session.id)
+        #expect(rt.isLaunching)
+        let removed = Task { await store.performRemove(.branch(branch.id), deleteWorktree: true) }
+        #expect(await waitUntil { !rt.isLaunching })
+        #expect(!rt.isRunning) // se cortó para borrar la carpeta: no arranca ahí
+        #expect(await removed.value)
+        #expect(s.world.processes.launches.isEmpty)
     }
 
     @Test("Un pedido durante una revisión dispara otra pasada al terminar")

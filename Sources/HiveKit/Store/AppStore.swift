@@ -81,6 +81,9 @@ public final class AppStore {
     /// Sube con cada cambio de git que hace Hive (checkout, proyecto o rama nuevos, rama quitada).
     /// Una revisión que empezó antes descarta las ramas actuales que leyó, porque pueden ser viejas.
     @ObservationIgnored var gitGeneration = 0
+    /// Cambios de git de Hive en curso (checkout, rama nueva). Mientras dura uno, git ya puede estar en
+    /// la rama nueva sin que Hive lo sepa: una revisión que termina en ese momento tampoco aplica lo leído.
+    @ObservationIgnored var gitOperations = 0
     /// Repos cuya rama actual ya leyó git en esta ejecución. La que viene del estado guardado puede
     /// estar vieja (si cambiaste de rama con Hive cerrado): hasta confirmarla no se lanza nada ahí.
     @ObservationIgnored var confirmedHeads: Set<UUID> = []

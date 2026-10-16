@@ -75,6 +75,8 @@ public struct PendingRemoval: Identifiable {
     public let title: String
     public let message: String
     public let isWorktree: Bool
+    /// Una sesión que todavía no está archivada: el diálogo ofrece archivarla en lugar de eliminarla.
+    public var offersArchive = false
 }
 
 public struct RenameRequest: Identifiable {
