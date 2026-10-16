@@ -445,6 +445,7 @@ struct MCPEditorSheet: View {
                 Button("Cancelar", role: .cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Button("Guardar") { save() }
+                    .buttonStyle(.hiveProminent)
                     .keyboardShortcut(.defaultAction)
                     .disabled(!canSave)
             }

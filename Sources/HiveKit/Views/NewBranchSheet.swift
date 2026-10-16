@@ -91,6 +91,7 @@ struct NewBranchSheet: View {
                 Button("Cancelar", role: .cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Button(isNew ? "Crear rama" : "Agregar rama") { submit() }
+                    .buttonStyle(.hiveProminent)
                     .keyboardShortcut(.defaultAction)
                     .disabled(!canSubmit || busy)
             }

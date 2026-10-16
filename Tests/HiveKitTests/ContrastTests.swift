@@ -158,6 +158,24 @@ struct ContrastTests {
         }
     }
 
+    @Test("El botón principal de cada hoja (el de Return) es el miel de Hive, no el botón por defecto del sistema")
+    func defaultButtonsUseAccentFill() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let files = try #require(FileManager.default.enumerator(at: root.appendingPathComponent("Sources/HiveKit"), includingPropertiesForKeys: nil)?
+            .compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" })
+        var found = 0
+        for file in files {
+            let lines = try String(contentsOf: file, encoding: .utf8).components(separatedBy: "\n")
+            for (index, line) in lines.enumerated() where line.contains(".keyboardShortcut(.defaultAction)") {
+                found += 1
+                let before = lines[max(0, index - 3)..<index].joined(separator: "\n")
+                #expect(before.contains(".buttonStyle(.hiveProminent)"),
+                        "\(file.lastPathComponent):\(index + 1): el botón de Return va con .buttonStyle(.hiveProminent) (miel con texto oscuro)")
+            }
+        }
+        #expect(found >= 5)
+    }
+
     @Test("Color.honey es el acento del tema: cambia con la apariencia")
     func honeyIsAccent() {
         for appearance in [NSAppearance.Name.aqua, .darkAqua] {

@@ -412,6 +412,7 @@ struct CommandEditorSheet: View {
                     store.saveCommand(projectId: target.projectId, commandId: target.commandId, name: name, command: command)
                     dismiss()
                 }
+                .buttonStyle(.hiveProminent)
                 .keyboardShortcut(.defaultAction)
                 .disabled(command.trimmingCharacters(in: .whitespaces).isEmpty)
             }

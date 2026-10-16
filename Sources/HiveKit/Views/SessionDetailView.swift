@@ -348,6 +348,7 @@ private struct ExitedBar: View {
                     copied = false
                 }
                 Button("Reintentar", action: onResume)
+                    .buttonStyle(.hiveProminent)
                     .keyboardShortcut(.defaultAction)
             } else {
                 Image(systemName: "stop.circle")
@@ -355,6 +356,7 @@ private struct ExitedBar: View {
                 Text(code == nil || code == 0 ? "La sesión terminó." : "La sesión terminó con código \(code!).")
                 Spacer()
                 Button(kind.isAgent ? "Reanudar conversación" : "Abrir de nuevo", action: onResume)
+                    .buttonStyle(.hiveProminent)
                     .keyboardShortcut(.defaultAction)
             }
         }

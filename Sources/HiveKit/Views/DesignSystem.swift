@@ -178,7 +178,9 @@ extension View {
 
 // MARK: - Botones
 
-/// Botón principal con el acento: texto negro suave sobre miel, en claro y en oscuro.
+/// Botón principal con el acento: texto negro suave sobre miel, en claro y en oscuro. Es también el
+/// del botón de Return de cada hoja: el botón por defecto de macOS se pinta con el `.tint` de la
+/// ventana (el ámbar de texto, marrón como relleno) o con el azul del sistema, nunca con el miel.
 struct HiveProminentButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         HiveProminentLabel(configuration: configuration)
