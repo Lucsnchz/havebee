@@ -27,6 +27,11 @@ public final class SessionRuntime {
     @ObservationIgnored var workingSince: Date?
     /// Recibimos al menos un evento del agente (hooks / notify) en esta ejecución.
     @ObservationIgnored var hooksSeen = false
+    /// Subagentes o workflows que siguen trabajando después de que el agente principal terminó su
+    /// turno. Mientras haya, la sesión figura trabajando aunque la terminal esté quieta.
+    public internal(set) var backgroundAgents = 0
+    /// Último evento del agente o de sus subagentes (para soltar el «segundo plano» si se cortan).
+    @ObservationIgnored var lastEventAt = Date.distantPast
 
     init(sessionId: UUID, kind: SessionKind) {
         self.sessionId = sessionId

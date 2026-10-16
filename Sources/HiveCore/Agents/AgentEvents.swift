@@ -69,6 +69,9 @@ public struct AgentEventOutcome: Equatable, Sendable {
     public var transcript: (conversationId: String, path: String)?
     /// La herramienta que acaba de pedir permiso (el store la recuerda mientras siga en «Necesita permiso»).
     public var permissionRequest: PermissionRequestKey?
+    /// Subagentes o workflows que siguen trabajando con el agente principal quieto (nil: no cambia).
+    /// El Stop dice cuántos quedan; un turno nuevo del agente principal lo vuelve a 0.
+    public var backgroundAgents: Int?
 
     public init(status: SessionStatus? = nil, notification: String? = nil, agentSessionId: String? = nil,
                 history: [(role: HistoryEntry.Role, text: String)] = [], reply: String? = nil, touchesActivity: Bool = false,
@@ -87,7 +90,7 @@ public struct AgentEventOutcome: Equatable, Sendable {
             && a.history.map(\.role) == b.history.map(\.role) && a.history.map(\.text) == b.history.map(\.text)
             && a.reply == b.reply && a.touchesActivity == b.touchesActivity
             && a.transcript?.conversationId == b.transcript?.conversationId && a.transcript?.path == b.transcript?.path
-            && a.permissionRequest == b.permissionRequest
+            && a.permissionRequest == b.permissionRequest && a.backgroundAgents == b.backgroundAgents
     }
 }
 
@@ -98,9 +101,12 @@ public enum AgentEventInterpreter {
 
     /// - Parameter isSubagentThread: si un thread de Codex es de un subagente (sus eventos se ignoran).
     /// - Parameter pendingPermission: la herramienta que pidió permiso, si la sesión sigue esperándolo.
+    /// - Parameter inBackground: el agente principal terminó su turno, pero sus subagentes o un
+    ///   workflow siguen trabajando (la sesión figura trabajando hasta que Claude retome).
     public static func interpret(_ event: HiveEvent, status: SessionStatus, agentSessionId: String?,
                                  isSubagentThread: (String) -> Bool = { _ in false },
-                                 pendingPermission: PermissionRequestKey? = nil) -> AgentEventOutcome {
+                                 pendingPermission: PermissionRequestKey? = nil,
+                                 inBackground: Bool = false) -> AgentEventOutcome {
         var outcome = AgentEventOutcome()
         let payload = event.payload
         // Dentro de un subagente, los hooks traen `agent_id`: no dicen nada del agente principal.
@@ -122,6 +128,7 @@ public enum AgentEventInterpreter {
             outcome.transcript = transcript(payload, agentSessionId: agentSessionId)
         case ("claude", "UserPromptSubmit"):
             outcome.status = .working
+            outcome.backgroundAgents = 0
             let source = payload["source"]?.string ?? "user"
             if source == "user" {
                 outcome.touchesActivity = true
@@ -133,6 +140,8 @@ public enum AgentEventInterpreter {
         case ("claude", "PreToolUse"), ("claude", "PostToolUse"):
             // Un subagente usando herramientas solo confirma que sigue trabajando; nunca te saca de tu turno.
             if !fromSubagent || status == .working { outcome.status = .working }
+            // El agente principal volvió a trabajar: ya no es solo trabajo en segundo plano.
+            if !fromSubagent { outcome.backgroundAgents = 0 }
         case ("claude", "PostToolUseFailure"):
             if payload["is_interrupt"]?.asBool == true {
                 // Lo cortaste con Esc: te toca a vos, y ya lo estás mirando.
@@ -155,8 +164,9 @@ public enum AgentEventInterpreter {
                 outcome.status = .attention
                 outcome.notification = message.isEmpty ? permissionNotification : message
             case .idle:
-                // "Claude está esperando tu respuesta" después de un rato sin actividad.
-                guard status == .working else { break }
+                // "Claude está esperando tu respuesta" después de un rato sin actividad. Con subagentes o
+                // un workflow trabajando en segundo plano todavía no te toca.
+                guard status == .working, !inBackground else { break }
                 outcome.status = .waiting
                 outcome.notification = message.isEmpty ? nil : message
             case .informative:
@@ -167,9 +177,17 @@ public enum AgentEventInterpreter {
             if let full { outcome.history = [(.assistant, full)] }
             outcome.reply = summary(full)
             outcome.touchesActivity = true
-            outcome.status = .waiting
-            let pending = backgroundTaskCount(payload["background_tasks"])
-            outcome.notification = pending > 0 ? backgroundText(pending) : (outcome.reply ?? defaultNotification)
+            let work = BackgroundWork.parse(payload["background_tasks"])
+            outcome.backgroundAgents = work.agents
+            if work.agents > 0 {
+                // Lanzó subagentes o un workflow en segundo plano: siguen trabajando y Claude retoma solo
+                // cuando terminan. Todavía no te toca, así que no hay aviso.
+                outcome.status = .working
+            } else {
+                // Un shell o un monitor en segundo plano (un servidor, por ejemplo) puede no terminar nunca.
+                outcome.status = .waiting
+                outcome.notification = work.total > 0 ? backgroundText(work.total) : (outcome.reply ?? defaultNotification)
+            }
             outcome.transcript = transcript(payload, agentSessionId: agentSessionId)
         case ("claude", "StopFailure"):
             // El turno terminó por un error de la API: sin Stop, así que hace falta que hagas algo.
@@ -180,6 +198,7 @@ public enum AgentEventInterpreter {
             outcome.reply = text
             outcome.touchesActivity = true
             outcome.status = .attention
+            outcome.backgroundAgents = 0
             outcome.notification = text
             outcome.transcript = transcript(payload, agentSessionId: agentSessionId)
         case ("codex", _):
@@ -249,13 +268,7 @@ public enum AgentEventInterpreter {
 
     /// Cuántas tareas siguen en segundo plano según `background_tasks` (lista, número u objeto).
     static func backgroundTaskCount(_ value: JSONValue?) -> Int {
-        switch value {
-        case .array(let tasks)?: tasks.count
-        case .object(let tasks)?: tasks.count
-        // Int(n) se cae con un número fuera de rango: el payload viene de afuera.
-        case .number(let n)?: n.isFinite ? Int(min(max(n, 0), 10_000)) : 0
-        default: 0
-        }
+        BackgroundWork.parse(value).total
     }
 
     static func backgroundText(_ count: Int) -> String {

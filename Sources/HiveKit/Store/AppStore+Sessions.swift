@@ -107,6 +107,7 @@ extension AppStore {
         rt.events = events
         rt.hooksSeen = false
         rt.workingSince = nil
+        rt.backgroundAgents = 0
         rt.status = started ? .idle : .exited(nil)
     }
 
