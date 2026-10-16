@@ -79,6 +79,25 @@ struct StoreInterruptTests {
         #expect(f.rt.status == .attention)
     }
 
+    @Test("Eliminar una sesión que está trabajando lo dice en el mismo diálogo")
+    func removalSaysItIsWorking() throws {
+        let f = try InterruptFixture()
+        let name = try #require(f.store.sessionContext(f.id)?.session.name)
+        f.store.requestRemoval(.session(f.id))
+        let idle = try #require(f.store.pendingRemoval)
+        #expect(idle.title == "¿Eliminar «\(name)»?")
+        #expect(!idle.message.contains("trabajando"))
+        f.store.userInput(f.id, [13])
+        #expect(f.rt.status == .working)
+        f.store.requestRemoval(.session(f.id))
+        #expect(f.store.pendingRemoval?.message
+            == "Está trabajando: se corta lo que está haciendo. " + idle.message)
+        f.permission()
+        f.store.requestRemoval(.session(f.id))
+        #expect(f.store.pendingRemoval?.message.hasPrefix("Está esperando tu permiso: se corta") == true)
+        #expect(f.store.pendingRemoval?.offersArchive == true)
+    }
+
     @Test("Con un agente listo o esperando tu turno, ⌘W, ⌘R y ⌘. no preguntan")
     func idleDoesNotAsk() throws {
         let f = try InterruptFixture()
@@ -143,6 +162,10 @@ struct StoreInterruptTests {
         #expect(alert.actionTitle == "Archivar igual")
         #expect(store.sessionContext(session.id)?.session.isArchived == false)
         store.alert = nil
+        // Eliminarla también lo avisa, en el mismo diálogo.
+        store.requestRemoval(.session(session.id))
+        #expect(store.pendingRemoval?.message.hasPrefix("«sleep» está corriendo: se corta.") == true)
+        store.pendingRemoval = nil
 
         // Ctrl+C: vuelve al prompt y ya se puede cerrar sin preguntar.
         terminal.sendInput([3])

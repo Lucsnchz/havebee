@@ -68,6 +68,20 @@ struct InterruptRuleTests {
         #expect(!archive.message.contains("Esc"))
     }
 
+    @Test("Eliminar una sesión avisa, con la misma regla, qué se corta")
+    func removalNotes() {
+        #expect(InterruptRule.removalNote(status: .working, isAgent: true, foregroundJob: nil) == "Está trabajando: se corta lo que está haciendo.")
+        #expect(InterruptRule.removalNote(status: .attention, isAgent: true, foregroundJob: nil)
+            == "Está esperando tu permiso: se corta lo que estaba haciendo.")
+        #expect(InterruptRule.removalNote(status: .idle, isAgent: false, foregroundJob: "npm") == "«npm» está corriendo: se corta.")
+        #expect(InterruptRule.removalNote(status: .idle, isAgent: false, foregroundJob: "") == "Tiene un proceso corriendo: se corta.")
+        // Sin nada en curso, nada que agregar.
+        #expect(InterruptRule.removalNote(status: .idle, isAgent: true, foregroundJob: nil) == nil)
+        #expect(InterruptRule.removalNote(status: .waiting, isAgent: true, foregroundJob: nil) == nil)
+        #expect(InterruptRule.removalNote(status: .idle, isAgent: false, foregroundJob: nil) == nil)
+        #expect(InterruptRule.removalNote(status: .exited(0), isAgent: false, foregroundJob: "npm") == nil)
+    }
+
     @Test("Una Terminal nombra el proceso que se corta (o dice «un proceso» si no se sabe)")
     func terminalTexts() throws {
         let archive = try #require(InterruptRule.confirmation(for: .archive, sessionName: "Terminal 1", isAgent: false, status: .idle, foregroundJob: "node"))
@@ -77,10 +91,13 @@ struct InterruptRuleTests {
 
         let stop = try #require(InterruptRule.confirmation(for: .stop, sessionName: "Terminal 1", isAgent: false, status: .idle, foregroundJob: ""))
         #expect(stop.title == "Hay un proceso corriendo en «Terminal 1»")
+        #expect(stop.message == "Si la detenés, se corta junto con la terminal. Para cortar solo ese proceso y seguir en la terminal, apretá Ctrl+C.")
         #expect(stop.actionTitle == "Detener igual")
 
+        // Al reiniciar o detener sugiere Ctrl+C (como el Esc de los agentes); al archivar, no.
         let restart = try #require(InterruptRule.confirmation(for: .restart, sessionName: "Terminal 1", isAgent: false, status: .idle, foregroundJob: "sleep"))
-        #expect(restart.message == "Si reiniciás la terminal, se corta.")
+        #expect(restart.message == "Si reiniciás la terminal, se corta. Para cortar solo «sleep» y seguir en la terminal, apretá Ctrl+C.")
         #expect(restart.actionTitle == "Reiniciar igual")
+        #expect(!archive.message.contains("Ctrl+C"))
     }
 }

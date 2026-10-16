@@ -59,7 +59,14 @@ extension AppStore {
             case (true, true): "Se borra su historial en Hive (todo lo anterior a cada /clear). No se puede deshacer."
             case (false, true): "Se borra de las archivadas. No se puede deshacer."
             }
-            pendingRemoval = PendingRemoval(item: item, title: "¿Eliminar «\(ctx.session.name)»?", message: message, isWorktree: false,
+            // Si está en algo (la misma regla que ⌘W), que se sepa antes de elegir: «Archivarla» y
+            // «Eliminar sesión» lo cortan sin volver a preguntar.
+            let busy = runtimes[id].flatMap { rt in
+                rt.isRunning ? InterruptRule.removalNote(status: rt.status, isAgent: rt.kind.isAgent,
+                                                         foregroundJob: rt.kind.isAgent ? nil : rt.terminal?.foregroundJob) : nil
+            }
+            pendingRemoval = PendingRemoval(item: item, title: "¿Eliminar «\(ctx.session.name)»?",
+                                            message: [busy, message].compactMap { $0 }.joined(separator: " "), isWorktree: false,
                                             offersArchive: !archived)
         }
     }

@@ -49,7 +49,11 @@ struct DiffSheet: View {
             Group {
                 Button("") { move(-1) }.keyboardShortcut(.upArrow, modifiers: [])
                 Button("") { move(1) }.keyboardShortcut(.downArrow, modifiers: [])
-                Button("") { dismiss() }.keyboardShortcut(.cancelAction)
+                // Con una confirmación abierta en la barra del conflicto, Esc la cancela (no cierra la hoja).
+                Button("") {
+                    if pendingChoice != nil { pendingChoice = nil } else { dismiss() }
+                }
+                .keyboardShortcut(.cancelAction)
             }
             .opacity(0)
             .frame(width: 0, height: 0)
@@ -206,11 +210,34 @@ struct DiffSheet: View {
 
     /// Pide confirmación si hace falta; si no (marcar resuelto sin marcadores), lo hace directo.
     private func ask(_ choice: ConflictChoice, file: DiffTarget.File, operation: GitOperation?) {
-        if prompt(for: choice, file: file, operation: operation) == nil {
-            perform(choice, file: file, operation: operation)
-        } else {
+        guard choice == .markResolved else {
             pendingChoice = choice
+            return
         }
+        // El diff que se ve puede ser de antes de que lo arreglaras en el editor (o seguir cargando):
+        // se vuelve a leer antes de decidir si quedan marcadores.
+        let index = selected
+        resolving = true
+        Task {
+            let fresh = await Self.markResolvedCheck(file, in: target.directory, git: store.git)
+            resolving = false
+            guard selected == index else { return }
+            diff = fresh.diff
+            if fresh.prompt == nil {
+                perform(.markResolved, file: file, operation: operation)
+            } else {
+                pendingChoice = .markResolved
+            }
+        }
+    }
+
+    /// El diff del archivo recién leído y, si todavía tiene marcadores de conflicto, la confirmación
+    /// para marcarlo resuelto igual.
+    static func markResolvedCheck(_ file: DiffTarget.File, in directory: String, git: GitClient) async -> (diff: FileDiff, prompt: ConflictPrompt?) {
+        let diff = await Task.detached { git.diff(for: file.change, staged: file.staged, in: directory) }.value
+        let prompt = ConflictPrompt.make(.markResolved, fileName: file.change.fileName, code: file.change.code,
+                                         hasMarkers: ConflictPrompt.hasMarkers(diff))
+        return (diff, prompt)
     }
 
     @ViewBuilder private var content: some View {

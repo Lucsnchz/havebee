@@ -56,6 +56,20 @@ struct FlujosViewTests {
         #expect(text.contains("<<<<<<<"))
     }
 
+    @Test("«Marcar resuelto» vuelve a leer el archivo: si lo arreglaste en el editor no pregunta; con marcadores, sí")
+    func markResolvedRereadsTheFile() async throws {
+        let f = try await FlujosConflictRepo()
+        let file = f.target.files[f.target.selected]
+        let withMarkers = await DiffSheet.markResolvedCheck(file, in: f.repo.path, git: f.store.git)
+        #expect(ConflictPrompt.hasMarkers(withMarkers.diff))
+        #expect(withMarkers.prompt?.confirmTitle == "Marcar igual")
+        // Con la hoja abierta (y su diff de antes), lo arreglaste a mano en el editor.
+        f.repo.write("app/Order.php", "<?php\n$total = $subtotal + $envio + 1;\n")
+        let fixed = await DiffSheet.markResolvedCheck(file, in: f.repo.path, git: f.store.git)
+        #expect(!ConflictPrompt.hasMarkers(fixed.diff))
+        #expect(fixed.prompt == nil)
+    }
+
     @Test("Publicando: junto al spinner hay una X para cancelar (un pre-push puede tardar minutos)")
     func remoteBusyCanCancel() async throws {
         let world = TestWorld()

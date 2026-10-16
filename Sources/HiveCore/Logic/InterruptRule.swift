@@ -31,6 +31,18 @@ public enum InterruptRule {
         return foregroundJob != nil
     }
 
+    /// Para el diálogo de eliminar una sesión (que ya es una confirmación): con la misma regla, avisa
+    /// qué se corta si está en algo. nil si no hay nada en curso.
+    public static func removalNote(status: SessionStatus, isAgent: Bool, foregroundJob: String?) -> String? {
+        guard needsConfirmation(status: status, isAgent: isAgent, foregroundJob: foregroundJob) else { return nil }
+        if isAgent {
+            return status == .attention ? "Está esperando tu permiso: se corta lo que estaba haciendo."
+                : "Está trabajando: se corta lo que está haciendo."
+        }
+        let job = foregroundJob ?? ""
+        return job.isEmpty ? "Tiene un proceso corriendo: se corta." : "«\(job)» está corriendo: se corta."
+    }
+
     /// El diálogo para confirmar `action`, o nil si se puede cortar sin preguntar.
     public static func confirmation(for action: SessionInterruption, sessionName name: String, isAgent: Bool,
                                     status: SessionStatus, foregroundJob: String?) -> InterruptConfirmation? {
@@ -68,6 +80,10 @@ public enum InterruptRule {
         case .restart: "Si reiniciás la terminal, se corta."
         case .stop: "Si la detenés, se corta junto con la terminal."
         }
-        return InterruptConfirmation(title: title, message: message, actionTitle: actionTitle)
+        // Como el Esc de los agentes: con ⌘. o ⌘R casi siempre se quería cortar solo ese proceso.
+        let tip = action == .archive ? nil
+            : "Para cortar solo \(job.isEmpty ? "ese proceso" : "«\(job)»") y seguir en la terminal, apretá Ctrl+C."
+        return InterruptConfirmation(title: title, message: [message, tip].compactMap { $0 }.joined(separator: " "),
+                                     actionTitle: actionTitle)
     }
 }
