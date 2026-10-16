@@ -155,6 +155,31 @@ struct UsageReaderTests {
         #expect(snapshot.limits.count == 2)
     }
 
+    @Test("Porcentajes raros (NaN, inf, 1e20) quedan acotados y no hacen caer a Hive")
+    func weirdPercents() throws {
+        let claude = try #require(UsageReader.claudeSnapshot(
+            ["context_window": ["used_percentage": "NaN"],
+             "rate_limits": ["five_hour": ["used_percentage": .number(1e20)], "seven_day": ["used_percentage": "inf"]]],
+            updatedAt: .reference))
+        #expect(claude.contextPercent == nil)
+        #expect(claude.limits.map(\.usedPercent) == [100])
+        let negative = try #require(UsageReader.claudeSnapshot(["context_window": ["used_percentage": .number(-5)]], updatedAt: .reference))
+        #expect(negative.contextPercent == 0)
+
+        #expect(UsageReader.codexLimit(["used_percent": "nan"], lineDate: .reference) == nil)
+        let codex = try #require(UsageReader.codexLimit(["used_percent": .number(1e20), "resets_in_seconds": "inf"], lineDate: .reference))
+        #expect(codex.usedPercent == 100)
+        #expect(codex.resetsAt == nil)
+        let lines = #"{"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"total_tokens":"1e400"},"model_context_window":100},"rate_limits":null}}"#
+        #expect(UsageReader.codexSnapshot(fromLines: lines, fallbackDate: .reference)?.contextPercent == nil)
+
+        // Ni armándolo a mano: lo que llega a las vistas siempre es seguro para Int(_:).
+        #expect(UsageLimit(windowMinutes: nil, usedPercent: .nan, resetsAt: nil).usedPercent == 0)
+        #expect(UsageSnapshot(agent: .claude, contextPercent: .infinity, limits: [], updatedAt: .reference).contextPercent == nil)
+        #expect(UsageReader.date(.number(.nan)) == nil)
+        #expect(UsageReader.date("inf") == nil)
+    }
+
     @Test("Fechas de reinicio: números, milisegundos y texto")
     func dates() {
         #expect(UsageReader.date(.number(1_790_000_000)) == .reference)

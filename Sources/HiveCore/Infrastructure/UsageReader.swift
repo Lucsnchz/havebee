@@ -10,7 +10,8 @@ public struct UsageLimit: Equatable, Sendable {
 
     public init(windowMinutes: Int?, usedPercent: Double, resetsAt: Date?) {
         self.windowMinutes = windowMinutes
-        self.usedPercent = usedPercent
+        // Las vistas hacen Int(usedPercent): un NaN o un 1e20 de afuera haría caer a Hive.
+        self.usedPercent = UsageReader.percent(usedPercent) ?? 0
         self.resetsAt = resetsAt
     }
 
@@ -46,7 +47,7 @@ public struct UsageSnapshot: Equatable, Sendable {
 
     public init(agent: SessionKind, contextPercent: Double?, limits: [UsageLimit], updatedAt: Date) {
         self.agent = agent
-        self.contextPercent = contextPercent
+        self.contextPercent = contextPercent.flatMap(UsageReader.percent)
         self.limits = limits
         self.updatedAt = updatedAt
     }
@@ -60,6 +61,11 @@ public struct UsageSnapshot: Equatable, Sendable {
 /// Lee el uso de contexto y los límites de Claude (lo que su statusLine le pasa a Hive) y de Codex
 /// (el último `token_count` de su rollout).
 public enum UsageReader {
+    /// Un porcentaje que viene de afuera, acotado a 0…100. Lo que no es un número finito (NaN, inf) no cuenta.
+    public static func percent(_ value: Double) -> Double? {
+        value.isFinite ? min(max(value, 0), 100) : nil
+    }
+
     /// Codex: el último `token_count` del rollout, buscado desde el final. Casi siempre está en los
     /// últimos KB, pero mientras corre un comando con mucha salida puede quedar decenas de MB atrás:
     /// el archivo se recorre hacia atrás de a pedazos, sin cargarlo entero, hasta `maxScan` bytes.
@@ -111,7 +117,7 @@ public enum UsageReader {
             let lineDate = json["timestamp"]?.string.flatMap(AgentTimestamp.parse)
             if context == nil, let info = payload["info"], let window = info["model_context_window"]?.asDouble, window > 0,
                let used = info["last_token_usage"]?["total_tokens"]?.asDouble {
-                context = min(max(used / window * 100, 0), 100)
+                context = UsageReader.percent(used / window * 100)
                 updatedAt = updatedAt ?? lineDate
             }
             if limits == nil, let rates = payload["rate_limits"], case .object = rates {
@@ -130,11 +136,13 @@ public enum UsageReader {
     }
 
     static func codexLimit(_ value: JSONValue?, lineDate: Date) -> UsageLimit? {
-        guard let value, let used = value["used_percent"]?.asDouble else { return nil }
+        guard let value, let used = value["used_percent"]?.asDouble.flatMap(percent) else { return nil }
         // Int(_:) se cae con un número fuera de rango: lo que no es una duración razonable se ignora.
         let window = value["window_minutes"]?.asDouble.flatMap { $0.isFinite && $0 >= 0 && $0 < 1e9 ? Int($0) : nil }
         var resets = date(value["resets_at"])
-        if resets == nil, let seconds = value["resets_in_seconds"]?.asDouble { resets = lineDate.addingTimeInterval(seconds) }
+        if resets == nil, let seconds = value["resets_in_seconds"]?.asDouble, seconds.isFinite, abs(seconds) < 1e10 {
+            resets = lineDate.addingTimeInterval(seconds)
+        }
         return UsageLimit(windowMinutes: window, usedPercent: used, resetsAt: resets)
     }
 
@@ -159,19 +167,23 @@ public enum UsageReader {
         var limits: [UsageLimit] = []
         for (key, minutes) in [("five_hour", 300), ("seven_day", 10080)] {
             guard let limit = json["rate_limits"]?[key],
-                  let used = limit["used_percentage"]?.asDouble ?? limit["used_percent"]?.asDouble else { continue }
+                  let used = (limit["used_percentage"]?.asDouble ?? limit["used_percent"]?.asDouble).flatMap(percent) else { continue }
             limits.append(UsageLimit(windowMinutes: minutes, usedPercent: used, resetsAt: date(limit["resets_at"])))
         }
         guard context != nil || !limits.isEmpty else { return nil }
-        return UsageSnapshot(agent: .claude, contextPercent: context.map { min(max($0, 0), 100) }, limits: limits, updatedAt: updatedAt)
+        return UsageSnapshot(agent: .claude, contextPercent: context.flatMap(percent), limits: limits, updatedAt: updatedAt)
     }
 
     /// Segundos (o milisegundos) desde 1970, o una fecha ISO 8601.
     static func date(_ value: JSONValue?) -> Date? {
+        func epoch(_ n: Double) -> Date? {
+            guard n.isFinite, abs(n) < 1e15 else { return nil }
+            return Date(timeIntervalSince1970: n > 1e12 ? n / 1000 : n)
+        }
         switch value {
-        case .number(let n)?: Date(timeIntervalSince1970: n > 1e12 ? n / 1000 : n)
-        case .string(let s)?: Double(s).map { Date(timeIntervalSince1970: $0 > 1e12 ? $0 / 1000 : $0) } ?? AgentTimestamp.parse(s)
-        default: nil
+        case .number(let n)?: return epoch(n)
+        case .string(let s)?: return Double(s).map(epoch) ?? AgentTimestamp.parse(s)
+        default: return nil
         }
     }
 
