@@ -364,6 +364,9 @@ private struct HistoryRow: View {
     /// La búsqueda, si esta entrada coincide (para resaltarla).
     let query: String
     let isCurrentMatch: Bool
+    /// El botón de copiar de cada mensaje aparece al pasar el mouse (y está en el menú contextual):
+    /// siete iconitos iguales en una columna eran ruido.
+    @State private var hovering = false
 
     var body: some View {
         Group {
@@ -372,6 +375,12 @@ private struct HistoryRow: View {
             case .system: system
             case .user: user
             case .assistant: assistant
+            }
+        }
+        .onHover { hovering = $0 }
+        .contextMenu {
+            if entry.role != .marker {
+                Button("Copiar el mensaje") { ExternalApps.copyToPasteboard(entry.text) }
             }
         }
         .overlay {
@@ -411,7 +420,7 @@ private struct HistoryRow: View {
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.secondaryText)
                 Spacer()
-                HistoryCopyButton(text: entry.text)
+                HistoryCopyButton(text: entry.text, revealed: hovering)
             }
             .foregroundStyle(.secondary)
             Text(highlighted(HistoryRow.withoutTags(entry.text)))
@@ -434,7 +443,7 @@ private struct HistoryRow: View {
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.secondaryText)
                 Spacer()
-                HistoryCopyButton(text: entry.text)
+                HistoryCopyButton(text: entry.text, revealed: hovering)
             }
             .foregroundStyle(.secondary)
             Text(highlighted(entry.text))
@@ -459,7 +468,7 @@ private struct HistoryRow: View {
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.secondaryText)
                 Spacer()
-                HistoryCopyButton(text: entry.text)
+                HistoryCopyButton(text: entry.text, revealed: hovering)
             }
             ForEach(Array(HistoryExport.blocks(entry.text).enumerated()), id: \.offset) { _, block in
                 switch block {
@@ -490,10 +499,12 @@ private struct HistoryRow: View {
     }
 }
 
-/// Copiar, siempre visible (tenue hasta que pasás el mouse) y con un tilde al copiar.
+/// Copiar, con un tilde al copiar. `revealed` nil: siempre visible, tenue hasta que pasás el mouse
+/// (bloques de código); si no, solo cuando se pasa el mouse por el mensaje.
 private struct HistoryCopyButton: View {
     let text: String
     var label = "Copiar"
+    var revealed: Bool?
     @State private var hovering = false
     @State private var copied = false
 
@@ -512,7 +523,7 @@ private struct HistoryCopyButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
-        .opacity(hovering || copied ? 1 : 0.35)
+        .opacity(hovering || copied ? 1 : (revealed.map { $0 ? 0.6 : 0 } ?? 0.35))
         .onHover { hovering = $0 }
         .help(copied ? "Copiado" : label)
         .accessibilityLabel(label)
