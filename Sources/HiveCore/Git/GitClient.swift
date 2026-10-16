@@ -46,8 +46,6 @@ public protocol GitClient: Sendable {
     func addWorktree(at path: String, branch: String, newBranch: Bool, base: String?, track: Bool?, in dir: String) -> CommandResult
     /// Como `createBranch`, eligiendo el seguimiento (ver `addWorktree`).
     func createBranch(_ name: String, from base: String, track: Bool?, in dir: String) -> CommandResult
-    /// `git worktree prune`: olvida los worktrees cuya carpeta ya no existe.
-    func pruneWorktrees(_ dir: String) -> CommandResult
 }
 
 extension GitClient {
@@ -73,7 +71,6 @@ extension GitClient {
     public func createBranch(_ name: String, from base: String, track: Bool?, in dir: String) -> CommandResult {
         createBranch(name, from: base, in: dir)
     }
-    public func pruneWorktrees(_ dir: String) -> CommandResult { unavailable }
 }
 
 /// Implementación con el git del sistema.
@@ -227,16 +224,19 @@ public struct GitCLI: GitClient {
     }
 
     public func removeWorktree(_ path: String, force: Bool, in dir: String) -> CommandResult {
-        // Si la carpeta ya no existe (se borró por fuera), alcanza con olvidarla.
+        // Si la carpeta ya no existe (se borró por fuera), alcanza con olvidar esta entrada. Nunca con
+        // `git worktree prune`: olvidaría también los worktrees de un disco desconectado, que quedarían rotos.
         if !FileManager.default.fileExists(atPath: path) {
-            let pruned = pruneWorktrees(dir)
-            guard pruned.ok else { return pruned }
-            // prune no toca los bloqueados: el lock es justamente para un disco que no está conectado.
-            guard worktrees(dir).contains(where: { $0.isLocked && samePath($0.path, path) }) else { return CommandResult(status: 0) }
-            guard force else {
+            let listed = worktrees(dir)
+            let entry = listed.first { samePath($0.path, path) }
+            // Ya no está registrado: no hay nada que olvidar.
+            if entry == nil && !listed.isEmpty { return CommandResult(status: 0) }
+            let locked = entry?.isLocked == true
+            if locked && !force {
                 return CommandResult(status: 1, stderr: "La carpeta del worktree no está (¿un disco desconectado?) y está bloqueado con git worktree lock.")
             }
-            return run(["worktree", "remove", "-f", "-f", path], in: dir)
+            // git acepta `worktree remove` con la carpeta faltante y toca solo esa entrada; bloqueado, con -f -f.
+            return run(["worktree", "remove"] + (locked ? ["-f", "-f"] : []) + [entry?.path ?? path], in: dir)
         }
         var flags: [String] = []
         if force {
@@ -333,10 +333,6 @@ public struct GitCLI: GitClient {
     public func commitAllowEmpty(message: String, in dir: String) -> CommandResult {
         // --only sin rutas: el commit sale vacío aunque haya archivos preparados, que siguen preparados.
         run(["commit", "--quiet", "--allow-empty", "--only", "-m", message], in: dir)
-    }
-
-    public func pruneWorktrees(_ dir: String) -> CommandResult {
-        run(["worktree", "prune"], in: dir)
     }
 
     // MARK: - Auxiliares

@@ -98,6 +98,32 @@ struct GitEdgeCasesTests {
         #expect(repo.git.currentBranch(target) == "nueva")
     }
 
+    @Test("Olvidar un worktree faltante no se lleva a otro que está en un disco desconectado")
+    func missingWorktreeKeepsOthers() throws {
+        let repo = GitRepo()
+        let gone = repo.dir.url.path + "/borrado-a"
+        let unplugged = repo.dir.url.path + "/disco-b"
+        repo.sh("git worktree add -q -b a \(shellQuote(gone)) && git worktree add -q -b b \(shellQuote(unplugged))")
+        try FileManager.default.removeItem(atPath: gone)
+        try FileManager.default.removeItem(atPath: unplugged) // B «desconectado», sin lock
+        let removed = repo.git.removeWorktree(gone, force: false, in: repo.path)
+        #expect(removed.ok, "\(removed.errorMessage)")
+        let listed = repo.git.worktrees(repo.path)
+        #expect(!listed.contains { $0.branch == "a" })
+        #expect(listed.contains { $0.branch == "b" && samePath($0.path, unplugged) })
+        // Ya olvidado: quitarlo otra vez no es un error.
+        #expect(repo.git.removeWorktree(gone, force: false, in: repo.path).ok)
+
+        // Una rama nueva cuyo destino estaba registrado olvida solo esa entrada.
+        let target = GitParsing.worktreePath(for: "nueva", projectPath: repo.path)
+        repo.sh("git worktree add -q -b vieja \(shellQuote(target))")
+        try FileManager.default.removeItem(atPath: target)
+        let branch = try BranchPlanner.prepare(NewBranchRequest(projectId: UUID(), name: "nueva", isNew: true, base: "main", mode: .worktree),
+                                               project: project(repo), git: repo.git).get()
+        #expect(samePath(try #require(branch.worktreePath), target))
+        #expect(repo.git.worktrees(repo.path).contains { $0.branch == "b" && samePath($0.path, unplugged) })
+    }
+
     @Test("Un worktree bloqueado se borra con «Borrar igual»; uno que ya no existe se olvida")
     func lockedAndMissing() throws {
         let repo = GitRepo()

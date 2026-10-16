@@ -247,6 +247,36 @@ struct ProjectLogicTests {
         #expect(WorktreeSync.apply([GitWorktree(path: "/nuevo/x", branch: "x")], to: project, exists: { _ in true }) == nil)
     }
 
+    @Test("Un worktree borrado por fuera saca su rama; la principal y los que existen quedan")
+    func syncRemovesDeletedWorktrees() throws {
+        let gone = Branch(name: "aviso-direccion", mode: .worktree, worktreePath: "/wt/aviso")
+        let alive = Branch(name: "seguridad", mode: .worktree, worktreePath: "/wt/seguridad")
+        var project = Project.make(path: "/repo", branches: [Branch(name: "main", mode: .main), gone, alive])
+        project.ignoredWorktrees = ["/wt/ignorada-borrada", "/wt/ignorada"]
+        let existing: Set<String> = ["/repo", "/wt/seguridad", "/wt/ignorada"]
+        let listed = [GitWorktree(path: "/repo", branch: "main"), GitWorktree(path: "/wt/seguridad", branch: "seguridad")]
+        let result = try #require(WorktreeSync.apply(listed, to: project, exists: { existing.contains($0) }))
+        #expect(result.project.branches.map(\.name) == ["main", "seguridad"])
+        #expect(result.removed == [gone.id])
+        #expect(result.project.ignoredWorktrees == ["/wt/ignorada"])
+        // Si git todavía lo lista (prunable) pero la carpeta no está, también se va.
+        let prunable = listed + [GitWorktree(path: "/wt/aviso", branch: "aviso-direccion")]
+        #expect(WorktreeSync.apply(prunable, to: project, exists: { existing.contains($0) })?.removed == [gone.id])
+    }
+
+    @Test("No saca ramas si git falló, si el repo no está o si tienen una sesión corriendo")
+    func syncKeepsWhenUnsure() {
+        let gone = Branch(name: "x", mode: .worktree, worktreePath: "/wt/x")
+        let project = Project.make(path: "/repo", branches: [Branch(name: "main", mode: .main), gone])
+        let main = [GitWorktree(path: "/repo", branch: "main")]
+        // git no respondió: lista vacía.
+        #expect(WorktreeSync.apply([], to: project, exists: { $0 == "/repo" }) == nil)
+        // El repo no está a mano (disco desmontado).
+        #expect(WorktreeSync.apply(main, to: project, exists: { _ in false }) == nil)
+        // Una sesión sigue corriendo ahí.
+        #expect(WorktreeSync.apply(main, to: project, exists: { $0 == "/repo" }, isBusy: { $0.id == gone.id }) == nil)
+    }
+
     @Test("Los worktrees ignorados no vuelven y sin cambios devuelve nil")
     func syncIgnored() {
         var project = Project.make(path: "/repo")

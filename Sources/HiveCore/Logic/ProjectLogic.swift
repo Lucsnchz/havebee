@@ -1,12 +1,16 @@
 import Foundation
 
-/// Agrega a un proyecto los worktrees que existen en git pero no en Hive (creados por Warp,
-/// Claude, a mano…). Devuelve el proyecto actualizado y las ramas nuevas, o nil si no cambió nada.
+/// Mantiene las ramas de un proyecto al día con los worktrees de git: agrega los que existen en git
+/// pero no en Hive (creados por Warp, Claude, a mano…) y saca los que se borraron por fuera.
+/// Devuelve el proyecto actualizado, las ramas nuevas y las quitadas, o nil si no cambió nada.
+/// `isBusy` protege las ramas que todavía tienen una sesión corriendo.
 public enum WorktreeSync {
     public static func apply(_ worktrees: [GitWorktree], to project: Project,
-                             exists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }) -> (project: Project, added: [UUID])? {
+                             exists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) },
+                             isBusy: (Branch) -> Bool = { _ in false }) -> (project: Project, added: [UUID], removed: [UUID])? {
         var updated = project
         var added: [UUID] = []
+        var removed: [UUID] = []
         var changed = false
         for worktree in worktrees {
             // Los prunable son worktrees borrados por fuera: su carpeta ya no está.
@@ -43,7 +47,25 @@ public enum WorktreeSync {
             added.append(branch.id)
             changed = true
         }
-        return changed ? (updated, added) : nil
+        // Worktrees borrados por fuera (git worktree remove, rm -rf…): la rama se va de Hive. Solo si
+        // git respondió (la lista trae la carpeta principal) y el repo está a mano, para no vaciar
+        // un proyecto porque git falló o el disco no está montado.
+        if worktrees.contains(where: { samePath($0.path, project.path) }), exists(project.path) {
+            for branch in updated.branches where branch.mode == .worktree {
+                guard let path = branch.worktreePath, !exists(path), !isBusy(branch) else { continue }
+                removed.append(branch.id)
+            }
+            if !removed.isEmpty {
+                updated.branches.removeAll { removed.contains($0.id) }
+                changed = true
+            }
+            let ignored = updated.ignoredWorktrees.filter(exists)
+            if ignored.count != updated.ignoredWorktrees.count {
+                updated.ignoredWorktrees = ignored
+                changed = true
+            }
+        }
+        return changed ? (updated, added, removed) : nil
     }
 }
 
@@ -162,10 +184,12 @@ public enum BranchPlanner {
         func newPath() -> String {
             GitParsing.worktreePath(for: name, projectPath: project.path, style: request.location, exists: exists)
         }
-        /// Un worktree borrado por fuera sigue registrado y bloquea la rama o la carpeta: se poda.
+        /// Un worktree borrado por fuera sigue registrado y bloquea la rama o la carpeta: se olvida esa
+        /// entrada sola (un `git worktree prune` también se llevaría los de un disco desconectado).
         func pruneIfNeeded(_ path: String) {
-            let stale = trees.contains { $0.isPrunable && ($0.branch == name || samePath($0.path, path)) }
-            if stale { _ = git.pruneWorktrees(project.path) }
+            for stale in trees where stale.isPrunable && (stale.branch == name || samePath(stale.path, path)) {
+                _ = git.removeWorktree(stale.path, force: false, in: project.path)
+            }
         }
         func worktreeReady(_ path: String) -> PreparedBranch {
             var copied: [String] = []
