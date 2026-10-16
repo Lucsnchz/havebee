@@ -148,7 +148,9 @@ private struct StoreDialogs: ViewModifier {
                         Button("Quitar y borrar el worktree", role: .destructive) { store.remove(removal.item, deleteWorktree: true) }
                     }
                 case .session(let id):
-                    Button("Archivar en su lugar") { store.archive(id) }
+                    if removal.offersArchive {
+                        Button("Archivar en su lugar") { store.archive(id) }
+                    }
                     Button("Eliminar sesión", role: .destructive) { store.remove(removal.item) }
                 case .project:
                     Button("Quitar de Hive", role: .destructive) { store.remove(removal.item) }

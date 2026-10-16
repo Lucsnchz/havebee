@@ -188,7 +188,8 @@ extension AppStore {
     }
 
     public func archive(_ id: UUID) {
-        guard let ctx = sessionContext(id) else { return }
+        // Una ya archivada no se vuelve a archivar (le cambiaría la fecha y el deshacer la restauraría).
+        guard let ctx = sessionContext(id), !ctx.session.isArchived else { return }
         if let rt = runtimes[id] {
             tearDown(rt.terminal)
             rt.terminal = nil

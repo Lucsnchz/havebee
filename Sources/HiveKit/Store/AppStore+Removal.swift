@@ -49,10 +49,16 @@ extension AppStore {
             pendingRemoval = PendingRemoval(item: item, title: "¿Quitar la rama «\(ctx.branch.name)»?", message: message, isWorktree: worktree)
         case .session(let id):
             guard let ctx = sessionContext(id) else { return }
-            let message = ctx.session.kind.reportsConversation
-                ? "También se borra su historial en Hive (todo lo anterior a cada /clear). Si lo querés conservar, archivala."
-                : "Se cierra su terminal. Si la querés conservar, archivala."
-            pendingRemoval = PendingRemoval(item: item, title: "¿Eliminar «\(ctx.session.name)»?", message: message, isWorktree: false)
+            let archived = ctx.session.isArchived
+            let message = switch (ctx.session.kind.reportsConversation, archived) {
+            case (true, false): "También se borra su historial en Hive (todo lo anterior a cada /clear). Si lo querés conservar, archivala."
+            case (false, false): "Se cierra su terminal. Si la querés conservar, archivala."
+            // Ya archivada: no tiene sentido ofrecer archivarla.
+            case (true, true): "También se borra su historial en Hive (todo lo anterior a cada /clear). No se puede deshacer."
+            case (false, true): "Se borra de las archivadas. No se puede deshacer."
+            }
+            pendingRemoval = PendingRemoval(item: item, title: "¿Eliminar «\(ctx.session.name)»?", message: message, isWorktree: false,
+                                            offersArchive: !archived)
         }
     }
 
