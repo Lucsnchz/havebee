@@ -83,10 +83,14 @@ public struct HistoryStore: Sendable {
     /// Quedan ahí hasta que `purge(olderThan:)` los borra.
     public func delete(_ sessionId: UUID, now: Date = Date()) {
         let fm = FileManager.default
-        // Con el candado: una copia del transcript que esté terminando en segundo plano espera, y
+        // Con los dos candados: una copia del transcript que esté terminando en segundo plano espera, y
         // después ve que la sesión se eliminó (no vuelve a crear sus archivos).
-        Self.writeLock.lock()
-        defer { Self.writeLock.unlock() }
+        Self.archiveLock.lock()
+        Self.segmentsLock.lock()
+        defer {
+            Self.segmentsLock.unlock()
+            Self.archiveLock.unlock()
+        }
         let files = sessionFiles(sessionId).filter { fm.fileExists(atPath: $0.path) }
         guard !files.isEmpty else { return }
         try? fm.createDirectory(at: deletedDirectory, withIntermediateDirectories: true)
@@ -150,8 +154,8 @@ public struct HistoryStore: Sendable {
     /// conversación que la última, solo actualiza la ruta.
     public func recordTranscript(sessionId: UUID, agent: SessionKind, conversationId: String, path: String, now: Date = Date()) {
         guard !conversationId.isEmpty, !path.isEmpty else { return }
-        Self.writeLock.lock()
-        defer { Self.writeLock.unlock() }
+        Self.segmentsLock.lock()
+        defer { Self.segmentsLock.unlock() }
         guard !isDeleted(sessionId) else { return }
         var segments = transcriptSegments(sessionId)
         if let index = segments.lastIndex(where: { $0.conversationId == conversationId && $0.agent == agent }) {
@@ -170,8 +174,8 @@ public struct HistoryStore: Sendable {
     public func archiveTranscript(sessionId: UUID, agent: SessionKind, path: String, now: Date = Date()) -> Int {
         let messages = TranscriptReader.read(URL(fileURLWithPath: path), agent: agent)
         guard !messages.isEmpty else { return 0 }
-        Self.writeLock.lock()
-        defer { Self.writeLock.unlock() }
+        Self.archiveLock.lock()
+        defer { Self.archiveLock.unlock() }
         // Si la eliminaron mientras se leía el transcript, no se vuelve a crear su copia.
         guard !isDeleted(sessionId) else { return 0 }
         let known = Set(loadArchived(sessionId).map { $0.conversationId + "|" + $0.key })
@@ -236,9 +240,12 @@ public struct HistoryStore: Sendable {
                            bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]))
     }
 
-    /// Las escrituras de la copia completa y de los segmentos corren en tareas en segundo plano:
-    /// el candado evita duplicados si dos llegan juntas.
-    private static let writeLock = NSLock()
+    /// La copia completa se escribe en tareas en segundo plano: el candado evita duplicados si dos
+    /// llegan juntas. Mientras lo tiene, `archiveTranscript` decodifica toda la copia anterior.
+    private static let archiveLock = NSLock()
+    /// Los segmentos tienen su propio candado: `recordTranscript` corre en el hilo principal y no
+    /// tiene que esperar a que termine una copia completa (son archivos distintos).
+    private static let segmentsLock = NSLock()
 
     // MARK: - Búsqueda
 

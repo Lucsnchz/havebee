@@ -80,6 +80,23 @@ struct HistorySearchTests {
         #expect(FileManager.default.fileExists(atPath: store.segmentsURL(id).path))
     }
 
+    @Test("Copias completas y segmentos a la vez no duplican ni pierden nada")
+    func concurrentWrites() throws {
+        let id = UUID()
+        let transcript = dir.write("c-1.jsonl", AHFixtures.claudeTranscript)
+        let store = self.store
+        DispatchQueue.concurrentPerform(iterations: 8) { i in
+            if i.isMultiple(of: 2) {
+                store.archiveTranscript(sessionId: id, agent: .claude, path: transcript.path)
+            } else {
+                store.recordTranscript(sessionId: id, agent: .claude, conversationId: "c-\(i % 3)", path: "/p/\(i).jsonl")
+            }
+        }
+        let lines = try String(contentsOf: store.fullURL(id), encoding: .utf8).split(separator: "\n")
+        #expect(lines.count == 7)
+        #expect(store.transcriptSegments(id).map(\.conversationId).sorted() == ["c-0", "c-1", "c-2"])
+    }
+
     @Test("Buscar «validacion» encuentra «validación», sin distinguir mayúsculas")
     func search() throws {
         let a = UUID(), b = UUID()
