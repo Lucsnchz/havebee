@@ -19,7 +19,7 @@ struct SessionCard: View {
         let rt = store.runtimes[session.id]
         let status = rt?.status ?? .dormant
         let unseen = rt?.unseen ?? false
-        let style = StatusStyle.of(status: status, unseen: unseen, kind: session.kind)
+        let style = StatusStyle.of(status: status, unseen: unseen, kind: session.kind, background: inBackground)
         Button {
             Self.open(session.id, in: store)
         } label: {
@@ -46,6 +46,9 @@ struct SessionCard: View {
         .accessibilityHint("Abre la sesión")
     }
 
+    /// El agente terminó su turno pero sus subagentes o un workflow siguen trabajando.
+    private var inBackground: Bool { (store.runtimes[session.id]?.backgroundAgents ?? 0) > 0 }
+
     private func header(style: StatusStyle, status: SessionStatus, unseen: Bool, fullName: Bool, showsText: Bool) -> some View {
         HStack(spacing: 8) {
             AgentLogo(kind: session.kind, size: 18)
@@ -61,7 +64,7 @@ struct SessionCard: View {
     /// Arriba a la derecha: el ícono del estado y, si entra, su nombre en el color del estado.
     private func statusLabel(status: SessionStatus, unseen: Bool, style: StatusStyle, showsText: Bool) -> some View {
         HStack(spacing: 5) {
-            StatusIndicator(status: status, unseen: unseen, kind: session.kind)
+            StatusIndicator(status: status, unseen: unseen, kind: session.kind, background: inBackground)
             if showsText {
                 Text(style.text)
                     .font(HiveFont.meta.weight(.medium))

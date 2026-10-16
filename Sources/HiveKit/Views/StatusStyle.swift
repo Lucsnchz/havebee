@@ -33,9 +33,10 @@ struct StatusStyle: Equatable {
 
     /// El estado de una sesión. El ícono sale del estado; «sin ver» solo cambia el de «tu turno»
     /// (punto lleno o aro hueco). Una sesión que trabaja se ve trabajando aunque tenga algo sin ver:
-    /// eso lo cuenta el grupo (`of(ring:)`).
-    static func of(status: SessionStatus, unseen: Bool, kind: SessionKind) -> StatusStyle {
-        let text = status.label(for: kind)
+    /// eso lo cuenta el grupo (`of(ring:)`). `background`: el agente terminó su turno pero sus
+    /// subagentes o un workflow siguen trabajando (se ve trabajando, con su propio texto).
+    static func of(status: SessionStatus, unseen: Bool, kind: SessionKind, background: Bool = false) -> StatusStyle {
+        let text = status == .working && background ? backgroundText : status.label(for: kind)
         switch status {
         case .attention: return StatusStyle(glyph: .attention, color: Theme.attention, text: text)
         case .waiting: return unseen ? StatusStyle(glyph: .pending, color: Theme.pending, text: text)
@@ -46,6 +47,8 @@ struct StatusStyle: Equatable {
         case .dormant: return StatusStyle(glyph: .none, color: nil, text: text)
         }
     }
+
+    static let backgroundText = "En segundo plano…"
 
     /// Lo que se destaca de un grupo de sesiones (proyecto, rama, títulos del Inicio).
     static func of(ring: Activity.Ring) -> StatusStyle {

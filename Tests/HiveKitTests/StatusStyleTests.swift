@@ -85,6 +85,10 @@ struct StatusStyleTests {
         check(.waiting, unseen: false, .seen, nil, "Tu turno")
         check(.working, unseen: false, .working, Theme.accent, "Trabajando…")
         check(.working, unseen: true, .working, Theme.accent, "Trabajando…")
+        // Subagentes o un workflow en segundo plano: el mismo ícono y color, con su texto.
+        #expect(StatusStyle.of(status: .working, unseen: false, kind: .claude, background: true)
+            == StatusStyle(glyph: .working, color: Theme.accent, text: "En segundo plano…"))
+        #expect(StatusStyle.of(status: .waiting, unseen: true, kind: .claude, background: true).text == "Tu turno")
         check(.idle, unseen: false, .idle, nil, "Lista")
         check(.idle, unseen: false, .idle, nil, "Abierta", kind: .shell)
         check(.exited(0), unseen: false, .exited, nil, "Terminada")

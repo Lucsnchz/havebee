@@ -9,9 +9,11 @@ struct StatusIndicator: View {
     let unseen: Bool
     let kind: SessionKind
     var size: CGFloat = 10
+    /// Trabajando en segundo plano (subagentes o un workflow, con el agente principal quieto).
+    var background = false
 
     /// La forma y el color, los mismos que en la píldora de la barra (`StatusPill`).
-    var style: StatusStyle { StatusStyle.of(status: status, unseen: unseen, kind: kind) }
+    var style: StatusStyle { StatusStyle.of(status: status, unseen: unseen, kind: kind, background: background) }
 
     var body: some View {
         let style = self.style
@@ -53,15 +55,16 @@ struct StatusPill: View {
     let status: SessionStatus
     let unseen: Bool
     let kind: SessionKind
+    var background = false
 
-    var indicator: StatusIndicator { StatusIndicator(status: status, unseen: unseen, kind: kind) }
+    var indicator: StatusIndicator { StatusIndicator(status: status, unseen: unseen, kind: kind, background: background) }
 
     var body: some View {
         HStack(spacing: 6) {
             // Para VoiceOver alcanza con el texto (si no, diría «Trabajando…, sin ver, Trabajando…»).
             indicator
                 .accessibilityHidden(true)
-            Text(status.label(for: kind))
+            Text(indicator.style.text)
                 .font(HiveFont.body)
                 .foregroundStyle(.secondary)
                 // En la barra con poco lugar no se parte en dos renglones («Trabajando» / «…»).
