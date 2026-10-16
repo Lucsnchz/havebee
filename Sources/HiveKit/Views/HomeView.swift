@@ -98,7 +98,7 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Todavía no abriste ninguna sesión.")
                 .font(.headline)
-            Text("Elegí un proyecto o una rama en la barra lateral y abrí Claude, Codex, Gemini o una terminal.")
+            Text("Elegí un proyecto o una rama en la barra lateral y abrí Claude, Codex, Gemini, Grok o una terminal.")
                 .foregroundStyle(.secondary)
         }
         .padding(18)

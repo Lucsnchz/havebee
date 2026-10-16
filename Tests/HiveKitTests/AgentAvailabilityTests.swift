@@ -19,9 +19,10 @@ struct AgentAvailabilityTests {
         #expect(availability.isInstalled(.claude))
         #expect(!availability.isInstalled(.codex))
         #expect(!availability.isInstalled(.gemini))
+        #expect(!availability.isInstalled(.grok))
         // La terminal usa tu shell: siempre está.
         #expect(availability.isInstalled(.shell))
-        #expect(availability.missing == [.codex, .gemini])
+        #expect(availability.missing == [.codex, .gemini, .grok])
     }
 
     @Test("Al volver a revisar ve los que se instalaron después")
@@ -30,8 +31,8 @@ struct AgentAvailabilityTests {
         world.processes.installed = []
         let availability = AgentAvailability(environment: world.environment)
         await availability.refresh().value
-        #expect(availability.missing == [.claude, .codex, .gemini])
-        world.processes.installed = ["claude", "codex", "gemini"]
+        #expect(availability.missing == [.claude, .codex, .gemini, .grok])
+        world.processes.installed = ["claude", "codex", "gemini", "grok"]
         await availability.refresh().value
         #expect(availability.missing.isEmpty)
     }
@@ -124,15 +125,18 @@ struct AgentAvailabilityTests {
         let processes = AgentAvailabilityCountingProcesses()
         let availability = AgentAvailability(processes: processes, path: "/fake/bin")
         await availability.refresh().value
-        #expect(processes.resolves == 3)
+        // Uno por agente (la terminal no se busca).
+        let agents = SessionKind.allCases.filter { $0.binary != nil }.count
+        #expect(agents == 4)
+        #expect(processes.resolves == agents)
         #expect(!availability.isInstalled(.gemini))
         processes.installed = ["gemini"]
         // Recién revisado: no repite.
         #expect(availability.refreshIfStale(maxAge: 60) == nil)
-        #expect(processes.resolves == 3)
+        #expect(processes.resolves == agents)
         // Un minuto después, sí (y ve lo que se instaló).
         await availability.refreshIfStale(maxAge: 60, now: Date().addingTimeInterval(61))?.value
-        #expect(processes.resolves == 6)
+        #expect(processes.resolves == agents * 2)
         #expect(availability.isInstalled(.gemini))
     }
 }

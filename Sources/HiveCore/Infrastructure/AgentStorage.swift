@@ -1,17 +1,21 @@
 import CryptoKit
 import Foundation
 
-/// Dónde guardan sus conversaciones Claude, Codex y Gemini, para poder reanudarlas.
+/// Dónde guardan sus conversaciones Claude, Codex, Gemini y Grok, para poder reanudarlas.
 /// Las carpetas se inyectan para que los tests usen carpetas temporales.
 public struct AgentStorage: Sendable {
     public let claudeConfigDir: URL
     public let codexHome: URL
     public let geminiHome: URL
+    /// La carpeta de Grok Build (~/.grok): sus sesiones y sus hooks personales.
+    public let grokHome: URL
 
-    public init(claudeConfigDir: URL, codexHome: URL, geminiHome: URL) {
+    /// Sin `grokHome`, va al lado de la de Gemini (en los tests, dentro de la misma carpeta temporal).
+    public init(claudeConfigDir: URL, codexHome: URL, geminiHome: URL, grokHome: URL? = nil) {
         self.claudeConfigDir = claudeConfigDir
         self.codexHome = codexHome
         self.geminiHome = geminiHome
+        self.grokHome = grokHome ?? geminiHome.deletingLastPathComponent().appendingPathComponent("grok", isDirectory: true)
     }
 
     public static func live(environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -22,7 +26,8 @@ public struct AgentStorage: Sendable {
         }
         return AgentStorage(claudeConfigDir: dir("CLAUDE_CONFIG_DIR", default: ".claude"),
                             codexHome: dir("CODEX_HOME", default: ".codex"),
-                            geminiHome: home.appendingPathComponent(".gemini"))
+                            geminiHome: home.appendingPathComponent(".gemini"),
+                            grokHome: home.appendingPathComponent(".grok"))
     }
 
     /// Claude guarda cada conversación en <config>/projects/<carpeta>/<id>.jsonl.
@@ -213,6 +218,48 @@ public struct AgentStorage: Sendable {
             }
         }
         return best?.id
+    }
+
+    // MARK: - Grok
+
+    /// Grok Build guarda cada sesión en una carpeta con su ID, agrupada por directorio de trabajo
+    /// (<home>/sessions/<carpeta>/<id>/ con summary.json y updates.jsonl). Si no está, la sesión nunca
+    /// recibió un mensaje y hay que arrancarla de cero con --session-id. Se busca por nombre, sin
+    /// depender de cómo arma Grok el nombre de la carpeta del directorio.
+    public func grokSessionExists(_ id: String) -> Bool {
+        let id = id.lowercased()
+        guard !id.isEmpty else { return false }
+        let fm = FileManager.default
+        let base = grokHome.appendingPathComponent("sessions")
+        func contains(_ dir: URL, depth: Int) -> Bool {
+            guard depth > 0, let names = try? fm.contentsOfDirectory(atPath: dir.path) else { return false }
+            if names.contains(where: { $0.lowercased() == id || $0.lowercased().hasPrefix(id + ".") }) { return true }
+            return names.prefix(2000).contains { name in
+                var isDirectory: ObjCBool = false
+                let child = dir.appendingPathComponent(name)
+                return fm.fileExists(atPath: child.path, isDirectory: &isDirectory) && isDirectory.boolValue
+                    && contains(child, depth: depth - 1)
+            }
+        }
+        return contains(base, depth: 3)
+    }
+
+    /// Los hooks de Grok Build no se pueden pasar al lanzarlo: se instalan como hooks personales
+    /// (<home>/hooks/hive.json). Llaman al puente solo dentro de Hive (afuera, `HIVE_EVENT_BIN` no
+    /// existe y corren `true`). Solo escribe si el archivo cambió. Devuelve el error, si hubo.
+    @discardableResult
+    public func installGrokHooks() -> String? {
+        let file = grokHome.appendingPathComponent("hooks").appendingPathComponent("hive.json")
+        do {
+            let data = try JSONSerialization.data(withJSONObject: EventBridge.grokHooks.anyValue,
+                                                  options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+            if (try? Data(contentsOf: file)) == data { return nil }
+            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try data.write(to: file, options: .atomic)
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
     }
 
     static func sha256(_ text: String) -> String {

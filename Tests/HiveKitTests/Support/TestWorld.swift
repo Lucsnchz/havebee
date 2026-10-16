@@ -40,7 +40,7 @@ final class FakeProcesses: ProcessStarting {
         let directory: String
     }
 
-    var installed: Set<String> = ["claude", "codex", "gemini"]
+    var installed: Set<String> = ["claude", "codex", "gemini", "grok"]
     private(set) var launches: [Launch] = []
 
     func resolve(_ binary: String, path: String) -> String? {

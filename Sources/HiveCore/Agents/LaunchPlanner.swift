@@ -28,6 +28,8 @@ public struct LaunchContext: Sendable {
     public var historyHint: Bool
     public var newAgentId: String
     public var claudeConversationExists: Bool
+    /// Grok ya guardó la sesión con ese ID (se retoma con --resume en lugar de crearla).
+    public var grokConversationExists: Bool
     /// Thread de Codex o sesión de Gemini encontrados en disco (si no se conocían).
     public var discoveredAgentId: String?
     public var mcpFile: URL?
@@ -43,7 +45,7 @@ public struct LaunchContext: Sendable {
     public init(session: Session, project: Project, branch: Branch, directory: String, path: String,
                 inheritedEnvironment: [String: String], paths: HivePaths, claudeInline: Bool = true, historyHint: Bool = true,
                 newAgentId: String = UUID().uuidString.lowercased(), claudeConversationExists: Bool = false,
-                discoveredAgentId: String? = nil, mcpFile: URL? = nil, mcpServers: [MCPServer] = [],
+                grokConversationExists: Bool = false, discoveredAgentId: String? = nil, mcpFile: URL? = nil, mcpServers: [MCPServer] = [],
                 geminiSettingsPath: String? = nil, codexExistingNotify: [String]? = nil,
                 claudeUsage: Bool = false, claudeUserStatusLine: String? = nil) {
         self.session = session
@@ -57,6 +59,7 @@ public struct LaunchContext: Sendable {
         self.historyHint = historyHint
         self.newAgentId = newAgentId
         self.claudeConversationExists = claudeConversationExists
+        self.grokConversationExists = grokConversationExists
         self.discoveredAgentId = discoveredAgentId
         self.mcpFile = mcpFile
         self.mcpServers = mcpServers
@@ -119,6 +122,15 @@ public enum LaunchPlanner {
             let sessionId = ctx.session.agentSessionId ?? ctx.discoveredAgentId
             if let settings = ctx.geminiSettingsPath { env["GEMINI_CLI_SYSTEM_SETTINGS_PATH"] = settings }
             return LaunchPlan(binary: "gemini", args: sessionId.map { ["--resume", $0] } ?? [], environment: env, agentSessionId: sessionId)
+
+        case .grok:
+            // Como Claude: le damos el ID al crearla y la retomamos con ese mismo ID. Los avisos llegan
+            // por los hooks personales que instala `AgentStorage.installGrokHooks`.
+            let agentId = ctx.session.agentSessionId ?? ctx.newAgentId
+            var args = ctx.grokConversationExists ? ["--resume", agentId] : ["--session-id", agentId]
+            // Sin pantalla alternativa, la charla queda en el scroll para leerla y copiarla.
+            if ctx.claudeInline { args.append("--no-alt-screen") }
+            return LaunchPlan(binary: "grok", args: args, environment: env, agentSessionId: agentId)
         }
     }
 }

@@ -201,6 +201,8 @@ public enum AgentEventInterpreter {
             outcome.backgroundAgents = 0
             outcome.notification = text
             outcome.transcript = transcript(payload, agentSessionId: agentSessionId)
+        case ("grok", let name):
+            return grokOutcome(name, payload: payload, status: status, agentSessionId: agentSessionId, inBackground: inBackground)
         case ("codex", _):
             if let thread = payload["thread-id"]?.string, !thread.isEmpty, thread != agentSessionId {
                 // Los subagentes de Codex corren con la config del padre: sus avisos no son de esta sesión.
@@ -230,14 +232,88 @@ public enum AgentEventInterpreter {
         return outcome
     }
 
+    /// Grok Build manda hooks con los nombres de Claude, pero el payload viene en camelCase
+    /// (`sessionId`, `toolName`); según la versión, también en snake_case. Se aceptan los dos.
+    static func grokOutcome(_ name: String, payload: JSONValue, status: SessionStatus, agentSessionId: String?,
+                            inBackground: Bool) -> AgentEventOutcome {
+        func field(_ keys: String...) -> JSONValue? {
+            keys.lazy.compactMap { payload[$0] }.first { $0 != .null }
+        }
+        func text(_ keys: String...) -> String? {
+            keys.lazy.compactMap { payload[$0]?.string }.first { !$0.isEmpty }
+        }
+        var outcome = AgentEventOutcome()
+        let fromSubagent = text("agent_id", "agentId", "subagent_id", "subagentId") != nil
+        switch name {
+        case "SessionStart":
+            if let id = text("sessionId", "session_id"), id != agentSessionId { outcome.agentSessionId = id }
+        case "UserPromptSubmit":
+            outcome.status = .working
+            outcome.backgroundAgents = 0
+            outcome.touchesActivity = true
+            if let prompt = text("prompt", "userPrompt", "user_prompt") { outcome.history = [(.user, prompt)] }
+        case "PreToolUse", "PostToolUse", "PostToolUseFailure":
+            // Igual que en Claude: un subagente solo confirma que sigue trabajando.
+            if !fromSubagent || status == .working { outcome.status = .working }
+            if !fromSubagent { outcome.backgroundAgents = 0 }
+        case "Notification":
+            let message = text("message", "body", "title") ?? ""
+            switch notificationEffect(type: text("notification_type", "notificationType", "type") ?? "", message: message) {
+            case .attention:
+                guard status != .attention else { break }
+                outcome.status = .attention
+                outcome.notification = message.isEmpty ? permissionNotification : message
+            case .idle:
+                guard status == .working, !inBackground else { break }
+                outcome.status = .waiting
+                outcome.notification = message.isEmpty ? nil : message
+            case .informative:
+                break
+            }
+        case "Stop":
+            let full = text("last_assistant_message", "lastAssistantMessage", "message")
+            if let full { outcome.history = [(.assistant, full)] }
+            outcome.reply = summary(full)
+            outcome.touchesActivity = true
+            let work = BackgroundWork.parse(field("background_tasks", "backgroundTasks"))
+            outcome.backgroundAgents = work.agents
+            if work.agents > 0 {
+                outcome.status = .working
+            } else {
+                outcome.status = .waiting
+                outcome.notification = work.total > 0 ? backgroundText(work.total) : (outcome.reply ?? defaultNotification)
+            }
+        case "StopFailure":
+            let error = errorCode(field("error", "errorType", "error_type"))
+            let text = stopFailureText(error, provider: "xAI")
+            outcome.history = [(.marker, "\(stopFailureMarker) \(error)")]
+            outcome.reply = text
+            outcome.touchesActivity = true
+            outcome.status = .attention
+            outcome.backgroundAgents = 0
+            outcome.notification = text
+        case "StopCancelled":
+            // Lo cortaste vos (Esc): te toca, sin aviso.
+            outcome.status = .waiting
+            outcome.backgroundAgents = 0
+        default:
+            break
+        }
+        outcome.history = outcome.history.compactMap { entry in
+            let text = entry.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return text.isEmpty ? nil : (entry.role, text)
+        }
+        return outcome
+    }
+
     /// Prefijo del marcador que queda en el historial cuando un turno se corta por un error.
     public static let stopFailureMarker = "⚠︎ Se cortó:"
 
-    /// Qué le decimos al usuario según el `error` de StopFailure.
-    public static func stopFailureText(_ error: String) -> String {
+    /// Qué le decimos al usuario según el `error` de StopFailure. `provider`: quién atiende al agente.
+    public static func stopFailureText(_ error: String, provider: String = "Anthropic") -> String {
         switch error {
         case "rate_limit": "Llegaste al límite de uso"
-        case "overloaded", "server_error": "Anthropic está saturado: reintentá"
+        case "overloaded", "server_error": "\(provider) está saturado: reintentá"
         case "authentication_failed": "Tenés que volver a iniciar sesión (/login)"
         case _ where error.hasPrefix("oauth_"): "Tenés que volver a iniciar sesión (/login)"
         case "max_output_tokens": "La respuesta se cortó (límite de tokens)"
@@ -251,7 +327,7 @@ public enum AgentEventInterpreter {
     public static func stopFailureReason(_ error: String) -> String? {
         switch error {
         case "rate_limit": "llegaste al límite de uso"
-        case "overloaded", "server_error": "Anthropic está saturado"
+        case "overloaded", "server_error": "el servicio está saturado"
         case "authentication_failed": "hay que volver a iniciar sesión (/login)"
         case _ where error.hasPrefix("oauth_"): "hay que volver a iniciar sesión (/login)"
         case "max_output_tokens": "la respuesta llegó al límite de tokens"

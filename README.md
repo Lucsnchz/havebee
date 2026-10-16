@@ -1,6 +1,6 @@
 # Hive
 
-Gestor de sesiones de IA para programar en macOS. Organiza todo en **Proyectos → Ramas → Sesiones** y cada sesión es una terminal real con Claude Code, Codex, Gemini o tu shell.
+Gestor de sesiones de IA para programar en macOS. Organiza todo en **Proyectos → Ramas → Sesiones** y cada sesión es una terminal real con Claude Code, Codex, Gemini, Grok o tu shell.
 
 Qué cambió en la última ronda de mejoras, qué falta y cómo probarlo: [docs/MEJORAS.md](docs/MEJORAS.md).
 
@@ -18,7 +18,7 @@ Sin `--install` solo deja la app en `build/Hive.app`. Para instalar una versión
 - **Rama**: una branch de git (⇧⌘N). Al crearla elegís dónde vive:
   - **Worktree**: carpeta propia, así varias sesiones trabajan en ramas distintas al mismo tiempo. Va **junto al proyecto** (`<repo>-<rama>`, sin `feature/` ni `fix/`; si Herd sirve la carpeta de arriba, queda en `https://<repo>-<rama>.test`) o en `<repo>.worktrees/<rama>`.
   - **Carpeta principal**: usa la carpeta del repo con `git switch`. Solo una rama activa a la vez; si abrís otra, Hive te pide confirmar y te avisa si hay cambios sin commitear o sesiones abiertas.
-- **Sesión**: Claude Code, Codex, Gemini o Terminal, en la carpeta de su rama (⌘T, o clic derecho en una rama → «Nueva sesión…»). Si el agente no está instalado, Hive te dice cómo instalarlo en lugar de abrir una sesión que no arranca. Las de Claude y Codex se nombran solas con tu primer pedido.
+- **Sesión**: Claude Code, Codex, Gemini, Grok o Terminal, en la carpeta de su rama (⌘T, o clic derecho en una rama → «Nueva sesión…»). Si el agente no está instalado, Hive te dice cómo instalarlo en lugar de abrir una sesión que no arranca. Las de Claude y Codex se nombran solas con tu primer pedido.
 
 Un worktree nuevo arranca listo: Hive copia los archivos que git ignora y hacen falta para correr (`.env` con su `APP_URL` reescrito, `auth.json`, los permisos de Claude, `local.properties`, keystores, o lo que diga `.worktreeinclude`) y, si dejás tildado «Preparar al crear», corre la instalación (la de `polyscope.json` o `conductor.json`, o una sugerida como `composer install && npm install && npm run build`, con `herd secure` si hace falta). Al borrar el worktree corre antes el script de cierre, si hay.
 
@@ -139,7 +139,8 @@ Son los mismos íconos y colores en el sidebar, las pestañas, las tarjetas, el 
 - **Claude Code**: se lanza con `--settings ~/Library/Application Support/Hive/claude-settings.json` (o `claude-settings-usage.json`, si está prendido el uso), que agrega hooks: `SessionStart`, `UserPromptSubmit`, `Notification` (leído según su tipo), `Stop`, `StopFailure` (el corte con su motivo), `PermissionRequest` (el pedido de permiso al instante) y `PreToolUse`, `PostToolUse` y `PostToolUseFailure`. Con el uso prendido suma un `statusLine` que guarda el contexto y los límites, y si ya tenías uno propio lo sigue mostrando. Tu configuración de Claude no se modifica.
 - **Codex**: se lanza con `-c notify=[...]`. Si ya tenías un `notify` en `~/.codex/config.toml`, Hive lo sigue llamando igual (y Ajustes avisa si no entiende su formato). Los subagentes de Codex se ignoran, y el uso sale de su `token_count`.
 - **Gemini**: no tiene hooks configurables desde afuera, así que su estado sale de la actividad de la terminal. Para reanudar, Hive busca el chat que Gemini guardó en `~/.gemini/tmp` (el que empezó más cerca del arranque) y usa `gemini --resume <id>`; si no lo encuentra, arranca una sesión nueva.
-- Los dos avisan a través de `~/Library/Application Support/Hive/bin/hive-event`, que deja archivos en `events/` para que la app los lea.
+- **Grok** ([Grok Build](https://docs.x.ai/build/cli/reference), el CLI de xAI; se instala con `curl -fsSL https://x.ai/cli/install.sh | bash`): se lanza con `--session-id <id>` la primera vez y con `--resume <id>` cuando Grok ya guardó la sesión en `~/.grok/sessions`, y con `--no-alt-screen` para que la charla quede en el scroll. Grok no acepta hooks por parámetro, así que Hive instala los suyos en `~/.grok/hooks/hive.json` (`SessionStart`, `UserPromptSubmit`, las herramientas, `Notification`, `Stop`, `StopFailure` y `StopCancelled`). Llaman al puente solo dentro de Hive: afuera, `HIVE_EVENT_BIN` no existe y corren `true`.
+- Claude, Codex y Grok avisan a través de `~/Library/Application Support/Hive/bin/hive-event`, que deja archivos en `events/` para que la app los lea.
 - Como respaldo, si un agente marcado como «trabajando» deja de producir salida unos segundos, Hive lo pasa a «Tu turno».
 
 ## Datos
@@ -182,7 +183,7 @@ Principios:
 ## Tests
 
 ```bash
-scripts/test.sh                              # todo (847 tests: 467 de HiveCore y 380 de HiveKit)
+scripts/test.sh                              # todo (862 tests: 480 de HiveCore y 382 de HiveKit)
 scripts/test.sh HiveCoreTests                # solo el core (unos 3 s)
 scripts/test.sh StoreProjectOrder            # cualquier filtro
 scripts/test.sh --snapshots /tmp/capturas    # además guarda capturas de cada vista, en claro y en oscuro
@@ -201,7 +202,7 @@ Ningún test lee tu estado real ni usa `UserDefaults.standard`. Más detalle en 
 
 SwiftUI + [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm), compilado con Swift Package Manager.
 
-Los logos de los agentes son SVG dentro del código (`HiveKit/Views/LogoAssets.swift`), así funcionan igual en la app, en `swift run` y en los tests. Son marcas de sus dueños: Claude, de la extensión oficial de Claude Code para VS Code; Codex, de [LobeHub Icons](https://github.com/lobehub/lobe-icons) (sin el fondo blanco y con los arcos reescritos para que CoreSVG los dibuje bien); Gemini, de [Dashboard Icons](https://github.com/homarr-labs/dashboard-icons).
+Los logos de los agentes son SVG dentro del código (`HiveKit/Views/LogoAssets.swift`), así funcionan igual en la app, en `swift run` y en los tests. Son marcas de sus dueños: Claude, de la extensión oficial de Claude Code para VS Code; Codex, de [LobeHub Icons](https://github.com/lobehub/lobe-icons) (sin el fondo blanco y con los arcos reescritos para que CoreSVG los dibuje bien); Gemini, de [Dashboard Icons](https://github.com/homarr-labs/dashboard-icons); Grok, de LobeHub Icons (es de un solo color: se dibuja en el color del texto, así se ve en claro y en oscuro).
 
 Para probar la app sin tocar tu estado real: `HIVE_HOME=<carpeta> swift run Hive`.
 

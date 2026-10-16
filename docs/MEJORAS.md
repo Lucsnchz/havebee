@@ -1,6 +1,6 @@
 # Mejoras de Hive · octubre 2026
 
-Qué se hizo en esta ronda, qué falta y cómo probarlo. Cubre todo lo que hay desde el commit `405d9ae` hasta la punta de la rama `ultra/integration`: más de 200 commits, sin push. Los tests pasaron de unos 200 a **847**, y la app compila con cero warnings.
+Qué se hizo en esta ronda, qué falta y cómo probarlo. Cubre todo lo que hay desde el commit `405d9ae` hasta la punta de la rama `ultra/integration`: más de 200 commits, sin push. Los tests pasaron de unos 200 a **862**, y la app compila con cero warnings.
 
 Para el uso diario está el [README](../README.md). Este archivo es el registro de la ronda.
 
@@ -14,6 +14,7 @@ Para el uso diario está el [README](../README.md). Este archivo es el registro 
 - **El historial es la conversación completa.** Queda guardado en Hive (sobrevive a `/clear` y a que Claude borre sus archivos), se ve con Markdown y se busca en todas las sesiones con ⌘K y `?`. Además ves cuánto te queda del límite de Claude y de Codex.
 - **Un reflejo ya no corta nada.** ⌘W, ⌘R, ⌘. y ⌘Q preguntan antes si un agente está trabajando o esperando permiso, o si una Terminal tiene algo corriendo. Los conflictos piden confirmación. Archivar, quitar un proyecto, borrar un comando y quitar un MCP se deshacen con ⌘Z.
 - **Los proyectos no saltan de lugar.** En el riel y en el árbol van primero los fijados, después lo activo de hoy, después lo apagado (atenuado) y al final «Terminales». Dentro de cada grupo manda tu orden. Hay un solo aro de estado y un solo globito, iguales en todos lados.
+- **Grok es un agente más.** Sesiones de Grok Build (el CLI de xAI) con su logo, su estado (trabajando, permiso, tu turno) y la conversación que se retoma al reabrir.
 - **Un workflow no te avisa antes de tiempo.** Si Claude termina su turno pero deja subagentes o un workflow trabajando, la sesión sigue en «En segundo plano…», sin aviso ni globito, y te avisa recién cuando Claude retoma y termina de verdad.
 - **Se ve bien en claro y en oscuro.** Hay un solo acento miel, el contraste está medido con tests, y el verde y el naranja quedan solo para el estado de las sesiones.
 - **Menos sustos.** git no pisa ni pierde estado. Un `.mcp.json` roto no se reescribe y un `state.json` ilegible no se pisa. Los worktrees borrados por fuera se van solos y Hive ya no se cae con datos raros de uso.
@@ -122,6 +123,11 @@ Todo lo de esta sección está en el código y en `git log 405d9ae..HEAD`.
 
 ### Agentes e historial
 
+- **Grok (Grok Build, de xAI).** Se crea como cualquier agente (⌘T, el menú, ⌘K, las tarjetas) y, si no está instalado, Hive muestra `curl -fsSL https://x.ai/cli/install.sh | bash`.
+  - Arranca con `--session-id <id>` y, cuando Grok ya guardó la sesión en `~/.grok/sessions`, se retoma con `--resume <id>`. Va con `--no-alt-screen`, así la charla queda en el scroll.
+  - Grok no acepta hooks por parámetro: Hive instala `~/.grok/hooks/hive.json`, que llama al puente solo dentro de Hive (afuera corre `true`). Se lee el payload en camelCase o snake_case.
+  - Estados como en Claude: el prompt pone «Trabajando», las herramientas lo confirman, `Stop` te deja el turno con su respuesta (o el aviso de siempre), `StopFailure` dice el motivo («xAI está saturado: reintentá»), `StopCancelled` no avisa, y los subagentes o un workflow en segundo plano mantienen la sesión trabajando.
+  - El logo es el original (LobeHub Icons), de un solo color: se dibuja con el color del texto.
 - **Estados más precisos con Claude:**
   - los `Notification` se leen según su tipo, así los avisos de computer use, push o cuota ya no dan un «Tu turno» falso;
   - `PermissionRequest` marca «Necesita permiso» al instante, con «Pide permiso para Bash: npm test» o «…para editar app/Models/User.php»;
@@ -412,6 +418,7 @@ Esfuerzo: **S** chico, **M** mediano, **L** grande.
 | Qué | Cómo probarlo | Por qué no alcanza el test |
 |---|---|---|
 | **Teclado latino** | En los teclados ABC y Latinoamericano: ⌥e y después a → «á», ⌥n y después n → «ñ», la @ y los corchetes. | Los eventos simulados no pasan por la composición de teclas de macOS. |
+| **Grok** | Instalalo, abrí una sesión de Grok, pedile algo y salí: tiene que pasar a «Trabajando» y después a «Tu turno» con aviso. Reiniciala: tiene que retomar la misma conversación. Fijate en `grok inspect` que aparezca el hook de Hive y si Grok lee el `.mcp.json` del proyecto. | Grok no está instalado en esta Mac: el formato de sus hooks y de `~/.grok/sessions` sale de la documentación de xAI. |
 | **Shift+Enter** | En Claude, Codex y Gemini: hace salto de línea sin enviar, y después de un `/clear` lo anterior sigue en el scroll. | Probado con eventos simulados, no con los agentes reales. |
 | **Notificaciones con respuesta** | Con Hive.app: «Responder» a un aviso de turno → la sesión pasa a «Trabajando». Con la sesión pidiendo permiso → la abre y deja el texto en el portapapeles. Probá también el sonido. | Los tests nunca llaman al centro de avisos de macOS, y los avisos solo existen dentro de un `.app`. |
 | **Herd** | En un proyecto Laravel servido por Herd, una rama nueva «Junto al proyecto»: tiene que abrir `https://<repo>-<rama>.test`, con el `.env` y su `APP_URL`, «Preparar» (y `herd secure` si el principal tiene certificado) y «Abrir sitio». | Los tests usan una configuración de Herd falsa en una carpeta temporal. |
@@ -462,9 +469,9 @@ scripts/test.sh --snapshots /tmp/capturas    # además guarda capturas PNG en cl
 
 | Suite | Tests | Suites |
 |---|---|---|
-| HiveCoreTests | 467 | 65 |
-| HiveKitTests | 380 | 51 |
-| **Total** | **847** | |
+| HiveCoreTests | 480 | 66 |
+| HiveKitTests | 382 | 52 |
+| **Total** | **862** | |
 
 Al empezar la ronda había unos 200 tests (unos 145 en HiveCore y 57 en HiveKit). El build limpio con `--build-tests` da cero warnings. Ningún test lee tu estado real (`~/.claude`, `~/.codex`, `~/.gemini`, Herd o Application Support), usa `UserDefaults.standard` ni llama al centro de avisos de macOS.
 

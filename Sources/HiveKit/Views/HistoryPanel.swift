@@ -210,6 +210,8 @@ struct HistoryPanel: View {
             "Todavía no hay mensajes. Lo que hables con \(session.kind.label) se guarda acá, también lo anterior a cada /clear."
         case .gemini:
             "Gemini no avisa sus mensajes a Hive, así que no hay historial acá. Todo queda en el scroll de la terminal."
+        case .grok:
+            "Grok le avisa a Hive cuándo trabaja y cuándo te toca, pero la charla completa queda en el scroll de la terminal."
         case .shell:
             "Las terminales no tienen historial de chat. Todo queda en el scroll de la terminal."
         }

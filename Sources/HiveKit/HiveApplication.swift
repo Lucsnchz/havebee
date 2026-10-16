@@ -165,6 +165,7 @@ extension SessionKind {
         case .claude: Color(red: 0.85, green: 0.47, blue: 0.34)
         case .codex: Color(red: 0.45, green: 0.66, blue: 0.96)
         case .gemini: Color(red: 0.45, green: 0.50, blue: 0.98)
+        case .grok: .primary
         case .shell: .secondary
         }
     }

@@ -230,10 +230,19 @@ struct AgentLogo: View {
     var body: some View {
         Group {
             if let image = AgentLogo.image(kind) {
-                Image(nsImage: image)
-                    .resizable()
-                    .interpolation(.high)
-                    .scaledToFit()
+                if LogoAssets.isMonochrome(kind.rawValue) {
+                    Image(nsImage: image)
+                        .renderingMode(.template)
+                        .resizable()
+                        .interpolation(.high)
+                        .scaledToFit()
+                        .foregroundStyle(.primary)
+                } else {
+                    Image(nsImage: image)
+                        .resizable()
+                        .interpolation(.high)
+                        .scaledToFit()
+                }
             } else {
                 Image(systemName: "terminal.fill")
                     .resizable()
@@ -263,6 +272,8 @@ struct AgentLogo: View {
         let result: NSImage
         if let logo = image(kind)?.copy() as? NSImage {
             logo.size = NSSize(width: 16, height: 16)
+            // Los de un solo color los pinta el menú (negro en claro, blanco en oscuro).
+            logo.isTemplate = LogoAssets.isMonochrome(kind.rawValue)
             result = logo
         } else {
             result = NSImage(systemSymbolName: "terminal", accessibilityDescription: nil) ?? NSImage()

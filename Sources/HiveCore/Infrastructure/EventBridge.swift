@@ -47,8 +47,8 @@ public enum EventBridge {
     if [ -z "$dir" ] || [ -z "$sid" ] || [ ! -d "$dir" ]; then exit 0; fi
     tmp=$(mktemp "$dir/tmp.XXXXXX") || exit 0
     case "$src" in
-      claude)
-        { printf '%s\t%s\t%s\n' "$sid" claude "$1"; cat; } > "$tmp"
+      claude|grok)
+        { printf '%s\t%s\t%s\n' "$sid" "$src" "$1"; cat; } > "$tmp"
         ;;
       codex)
         payload=""
@@ -78,6 +78,21 @@ public enum EventBridge {
         var hooks: [String: JSONValue] = [:]
         for event in claudeHookEvents { hooks[event] = [.object(["hooks": [hook(event)]])] }
         for event in claudeToolEvents { hooks[event] = [.object(["matcher": "*", "hooks": [hook(event)]])] }
+        return .object(["hooks": .object(hooks)])
+    }
+
+    /// Eventos de Grok Build que le interesan a Hive. StopCancelled: el turno terminó sin completarse
+    /// (lo cortaste). Sin `matcher`, los de herramientas corren con todas.
+    public static let grokEvents = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure",
+                                    "Notification", "Stop", "StopFailure", "StopCancelled"]
+
+    /// Hooks personales de Grok (~/.grok/hooks/hive.json), con el mismo formato que los de Claude.
+    public static var grokHooks: JSONValue {
+        var hooks: [String: JSONValue] = [:]
+        for event in grokEvents {
+            let command = JSONValue.string("\"${HIVE_EVENT_BIN:-true}\" grok \(event)")
+            hooks[event] = [.object(["hooks": [.object(["type": "command", "command": command, "timeout": .number(10)])]])]
+        }
         return .object(["hooks": .object(hooks)])
     }
 

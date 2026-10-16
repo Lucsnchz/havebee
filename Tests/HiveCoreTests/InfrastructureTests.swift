@@ -214,8 +214,8 @@ struct HistoryStoreTests {
 
     @Test("Los cortes se muestran con una frase clara y el código aparte", arguments: [
         ("⚠︎ Se cortó: rate_limit", "⚠︎ Se cortó: llegaste al límite de uso", "rate_limit"),
-        ("⚠︎ Se cortó: overloaded", "⚠︎ Se cortó: Anthropic está saturado", "overloaded"),
-        ("⚠︎ Se cortó: server_error", "⚠︎ Se cortó: Anthropic está saturado", "server_error"),
+        ("⚠︎ Se cortó: overloaded", "⚠︎ Se cortó: el servicio está saturado", "overloaded"),
+        ("⚠︎ Se cortó: server_error", "⚠︎ Se cortó: el servicio está saturado", "server_error"),
         ("⚠︎ Se cortó: authentication_failed", "⚠︎ Se cortó: hay que volver a iniciar sesión (/login)", "authentication_failed"),
         ("⚠︎ Se cortó: oauth_token_expired", "⚠︎ Se cortó: hay que volver a iniciar sesión (/login)", "oauth_token_expired"),
         ("⚠︎ Se cortó: max_output_tokens", "⚠︎ Se cortó: la respuesta llegó al límite de tokens", "max_output_tokens"),

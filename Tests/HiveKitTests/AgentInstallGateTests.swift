@@ -12,7 +12,7 @@ private final class InstallGateFixture {
     let availability: AgentAvailability
 
     init() async throws {
-        world.processes.installed = ["claude", "codex"]
+        world.processes.installed = ["claude", "codex", "grok"]
         store = world.makeStore()
         branchId = try #require(store.scratchProject?.branches.first?.id)
         store.select(.branch(branchId))

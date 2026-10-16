@@ -17,7 +17,7 @@ struct WelcomeView: View {
                         .frame(width: 96, height: 96)
                     Text("Te damos la bienvenida a Hive")
                         .font(.system(size: 28, weight: .bold))
-                    Text("Tus sesiones de Claude Code, Codex, Gemini y la terminal, ordenadas por proyecto y rama.")
+                    Text("Tus sesiones de Claude Code, Codex, Gemini, Grok y la terminal, ordenadas por proyecto y rama.")
                         .font(.title3)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -25,7 +25,7 @@ struct WelcomeView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     WelcomeStep(number: 1, title: "Agregá tus repos", detail: "⌘O, podés elegir varios")
                     WelcomeStep(number: 2, title: "Creá una rama o worktree", detail: "para trabajar en paralelo sin pisarte")
-                    WelcomeStep(number: 3, title: "Abrí Claude, Codex, Gemini o una terminal", detail: "⌘T")
+                    WelcomeStep(number: 3, title: "Abrí Claude, Codex, Gemini, Grok o una terminal", detail: "⌘T")
                 }
                 .frame(maxWidth: 420, alignment: .leading)
                 dropZone

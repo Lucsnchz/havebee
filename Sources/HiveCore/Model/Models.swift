@@ -2,7 +2,7 @@ import Foundation
 
 /// Qué corre dentro de una sesión.
 public enum SessionKind: String, Codable, CaseIterable, Identifiable, Sendable {
-    case claude, codex, gemini, shell
+    case claude, codex, gemini, grok, shell
 
     public var id: String { rawValue }
 
@@ -11,6 +11,7 @@ public enum SessionKind: String, Codable, CaseIterable, Identifiable, Sendable {
         case .claude: "Claude Code"
         case .codex: "Codex"
         case .gemini: "Gemini"
+        case .grok: "Grok"
         case .shell: "Terminal"
         }
     }
@@ -20,6 +21,7 @@ public enum SessionKind: String, Codable, CaseIterable, Identifiable, Sendable {
         case .claude: "Claude"
         case .codex: "Codex"
         case .gemini: "Gemini"
+        case .grok: "Grok"
         case .shell: "Terminal"
         }
     }
@@ -30,6 +32,7 @@ public enum SessionKind: String, Codable, CaseIterable, Identifiable, Sendable {
         case .claude: "claude"
         case .codex: "codex"
         case .gemini: "gemini"
+        case .grok: "grok"
         case .shell: nil
         }
     }
@@ -39,6 +42,7 @@ public enum SessionKind: String, Codable, CaseIterable, Identifiable, Sendable {
         case .claude: "curl -fsSL https://claude.ai/install.sh | bash"
         case .codex: "npm install -g @openai/codex"
         case .gemini: "npm install -g @google/gemini-cli"
+        case .grok: "curl -fsSL https://x.ai/cli/install.sh | bash"
         case .shell: ""
         }
     }
@@ -55,7 +59,7 @@ public struct Session: Identifiable, Codable, Hashable, Sendable {
     public var kind: SessionKind
     public var createdAt: Date
     /// Conversación del agente para poder reanudarla.
-    /// Claude: el UUID que le pasamos con --session-id. Codex: el thread-id que reporta su notify.
+    /// Claude y Grok: el UUID que le pasamos con --session-id. Codex: el thread-id que reporta su notify.
     public var agentSessionId: String?
     public var lastLaunchedAt: Date?
     /// Lo último que respondió el agente (resumido), para mostrarlo en la tarjeta de la sesión.

@@ -63,6 +63,8 @@ public struct LaunchContextBuilder: Sendable {
         }
         // Con el uso de Hive, el statusLine que ya tenías en Claude se sigue mostrando (Hive lo llama).
         let userStatusLine = session.kind == .claude && claudeUsage ? agents.claudeUserStatusLine(directory: directory) : nil
+        // Los hooks de Grok van en su carpeta personal: se revisan en cada arranque por si los borraste.
+        if session.kind == .grok { agents.installGrokHooks() }
         let geminiSettings = session.kind == .gemini
             ? MCPConfig.writeGeminiSettings(mcpServers, to: paths.geminiDir.appendingPathComponent("\(session.id.uuidString).json"))
             : nil
@@ -71,6 +73,7 @@ public struct LaunchContextBuilder: Sendable {
             inheritedEnvironment: inheritedEnvironment, paths: paths,
             claudeInline: claudeInline, historyHint: historyHint,
             claudeConversationExists: session.kind == .claude && session.agentSessionId.map(agents.claudeConversationExists) == true,
+            grokConversationExists: session.kind == .grok && session.agentSessionId.map(agents.grokSessionExists) == true,
             discoveredAgentId: discovered, mcpFile: mcpFile, mcpServers: mcpServers, geminiSettingsPath: geminiSettings,
             codexExistingNotify: session.kind == .codex ? agents.codexExistingNotify() : nil,
             claudeUsage: claudeUsage, claudeUserStatusLine: userStatusLine)
