@@ -54,22 +54,30 @@ struct HiveCommands: Commands {
 
     @ViewBuilder private var sessionItems: some View {
         let target = HiveNavigator.newSessionTarget(store)
+        let availability = AgentAvailability.shared(for: store)
         let project = store.currentProjectId.flatMap(store.project)
         let selected = HiveNavigator.selectedSession(store)
         let runtime = selected.flatMap { store.runtimes[$0.session.id] }
         let panels = HiveNavigator.sidePanels(selected)
-        Button(target.map { "Nueva sesión de \($0.kind.defaultName)" } ?? "Nueva sesión") {
+        // Con el agente sin instalar, ⌘T no abre una sesión que no arranca: avisa cómo instalarlo.
+        Button(target.map { "Nueva sesión de \($0.kind.defaultName)" + (availability.isInstalled($0.kind) ? "" : " (no instalado)") }
+               ?? "Nueva sesión") {
             HiveNavigator.newSession(store)
         }
         .hiveShortcut(.newSession)
         .disabled(target == nil)
         Menu("Nueva sesión de…") {
+            // Como en NewSessionItems: un ítem deshabilitado no se puede tocar para volver a revisar,
+            // así que se revisa al armar el menú (como mucho cada 10 s).
+            let _ = availability.refreshIfStale()
             ForEach(SessionKind.allCases) { kind in
+                let installed = availability.isInstalled(kind)
                 Button {
                     HiveNavigator.newSession(store, kind: kind)
                 } label: {
-                    Label { Text(kind.label) } icon: { Image(nsImage: AgentLogo.menuImage(kind)) }
+                    Label { Text(installed ? kind.label : "\(kind.label) (no instalado)") } icon: { Image(nsImage: AgentLogo.menuImage(kind)) }
                 }
+                .disabled(!installed)
             }
         }
         .disabled(target == nil)
@@ -359,7 +367,27 @@ enum HiveNavigator {
 
     static func newSession(_ store: AppStore, kind: SessionKind? = nil) {
         guard let target = newSessionTarget(store) else { return }
-        store.requestNewSession(branchId: target.branchId, kind: kind ?? target.kind)
+        requestNewSession(store, branchId: target.branchId, kind: kind ?? target.kind)
+    }
+
+    /// Crea una sesión si su agente está instalado. Si figura como no instalado, vuelve a revisar
+    /// (quizás lo acabás de instalar) y, si sigue faltando, avisa cómo instalarlo en lugar de abrir
+    /// una sesión que no va a arrancar. Lo usan ⌘T, el menú «Sesión», ⌘K y el botón «Nueva sesión».
+    @discardableResult
+    static func requestNewSession(_ store: AppStore, branchId: UUID, kind: SessionKind,
+                                  availability: AgentAvailability? = nil) -> Task<Void, Never>? {
+        let availability = availability ?? .shared(for: store)
+        guard !availability.isInstalled(kind) else {
+            store.requestNewSession(branchId: branchId, kind: kind)
+            return nil
+        }
+        return Task {
+            if await availability.recheck(kind) {
+                store.requestNewSession(branchId: branchId, kind: kind)
+            } else {
+                store.alert = AgentAvailability.installAlert(for: kind)
+            }
+        }
     }
 
     /// Qué hace ⌘W.

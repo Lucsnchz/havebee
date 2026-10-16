@@ -192,7 +192,7 @@ private struct NewSessionMenu: View {
         } label: {
             Label("Nueva sesión", systemImage: "plus")
         } primaryAction: {
-            store.requestNewSession(branchId: branchId, kind: kind)
+            HiveNavigator.requestNewSession(store, branchId: branchId, kind: kind)
         }
         .help("Nueva sesión de \(kind.label) en esta rama (con la flechita elegís otro agente)")
     }

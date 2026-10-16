@@ -53,7 +53,7 @@ struct QuickSwitcher: View {
         let historyText = SwitcherIndex.historyQuery(query)
         let found = historyText.map { SwitcherIndex.historyItems(historyHits, query: $0, in: store.projects) }
             ?? SwitcherIndex.search(query, in: store.projects, includeArchived: true, includeActions: true,
-                                    compactLayout: layout == .compact)
+                                    compactLayout: layout == .compact, missingAgents: AgentAvailability.shared(for: store).missing)
         let groups = grouped(found)
         let results = groups.flatMap(\.items)
         let showHeaders = groups.count > 1
@@ -121,7 +121,11 @@ struct QuickSwitcher: View {
             }
             footer
         }
-        .onAppear { focused = true }
+        .onAppear {
+            focused = true
+            // Que las acciones de «Nueva sesión» no digan «No instalado» de algo que ya instalaste.
+            AgentAvailability.shared(for: store).refreshIfStale()
+        }
         .onChange(of: query) { index = 0 }
         .task(id: historyText) { await searchHistory(historyText) }
     }
@@ -250,7 +254,8 @@ struct QuickSwitcher: View {
         switch action {
         case .newSession(let branch, let kind):
             // Si la rama no está activa pide el checkout con un diálogo: que aparezca con la hoja ya cerrada.
-            afterDismiss = { [store] in store.requestNewSession(branchId: branch, kind: kind) }
+            // Lo mismo el aviso de un agente que no está instalado.
+            afterDismiss = { [store] in HiveNavigator.requestNewSession(store, branchId: branch, kind: kind) }
         case .newBranch(let project):
             // Otra hoja: se abre cuando termina de cerrarse esta.
             afterDismiss = { [store] in store.newBranchTarget = NewBranchTarget(id: project) }
