@@ -87,7 +87,7 @@ struct QuickSwitcher: View {
                     .onExitCommand { dismiss() }
                     // Con «?validación» ya escrito (el botón del panel de historial), lo primero que tipees
                     // sigue la búsqueda en lugar de reemplazarla entera, «?» incluido.
-                    .background(CaretAtEnd(focused: focused))
+                    .background(CaretAtEnd(focused: focused, text: query))
                 if searchingHistory {
                     ProgressView().controlSize(.small)
                 } else if let historyText, historyText.count >= 2, !results.isEmpty {
@@ -456,8 +456,10 @@ private struct ArchivedSessionView: View {
 /// un campo: con «?validación» seleccionado, la primera tecla lo reemplazaría y se perdería el «?».
 private struct CaretAtEnd: NSViewRepresentable {
     let focused: Bool
+    /// Lo que tiene el campo al tomar el foco.
+    let text: String
 
-    final class Coordinator {
+    @MainActor final class Coordinator {
         var wasFocused = false
     }
 
@@ -467,17 +469,22 @@ private struct CaretAtEnd: NSViewRepresentable {
     func updateNSView(_ view: NSView, context: Context) {
         let coordinator = context.coordinator
         defer { coordinator.wasFocused = focused }
-        // Solo al tomar el foco: después, lo que selecciones vos queda como lo dejaste.
-        guard focused, !coordinator.wasFocused else { return }
+        // Solo al tomar el foco: después, lo que selecciones vos queda como lo dejaste. Con el campo
+        // vacío no hay nada que cuidar.
+        guard focused, !coordinator.wasFocused, !text.isEmpty else { return }
+        let expected = text
         Task { @MainActor [weak view] in
-            // SwiftUI le da el foco al campo un instante después: se espera a que tenga su editor
-            // (hasta 2 s, por si la máquina está cargada).
-            for _ in 0..<200 {
-                if let editor = view?.window?.firstResponder as? NSTextView {
-                    editor.setSelectedRange(NSRange(location: (editor.string as NSString).length, length: 0))
+            // SwiftUI le da el foco y el texto al campo un rato después: con la máquina cargada, el editor
+            // puede aparecer antes que el texto, o tardar varios segundos. Se espera a que el editor muestre
+            // el texto (si no, el cursor quedaría al principio, antes del «?»), mientras el campo siga con
+            // el foco y como mucho 30 s.
+            let deadline = Date().addingTimeInterval(30)
+            while Date() < deadline, coordinator.wasFocused, let window = view?.window {
+                if let editor = window.firstResponder as? NSTextView, editor.string == expected {
+                    editor.setSelectedRange(NSRange(location: (expected as NSString).length, length: 0))
                     return
                 }
-                try? await Task.sleep(nanoseconds: 10_000_000)
+                try? await Task.sleep(nanoseconds: 20_000_000)
             }
         }
     }
