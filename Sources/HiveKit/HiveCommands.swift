@@ -434,6 +434,19 @@ enum HiveNavigator {
         return true
     }
 
+    /// Restaura una archivada desde ⌘K y la abre. Si se llegó a ella desde un mensaje encontrado con
+    /// «?» (`jump`), abre con el historial en ese mensaje, como una sesión activa.
+    static func restoreArchived(_ store: AppStore, session id: UUID, jump: HistoryJumpRequest.Jump?,
+                                jumps: HistoryJumpRequest? = nil, defaults: UserDefaults = .standard) {
+        guard store.sessionContext(id) != nil else { return }
+        store.unarchive(id)
+        if let jump, jump.sessionId == id {
+            (jumps ?? .shared).pending = jump
+            defaults.set("history", forKey: "sessionSidePanel")
+        }
+        reveal(store, session: id)
+    }
+
     /// Abre un proyecto (en su última sesión) y lo despliega en el árbol.
     static func open(_ store: AppStore, project id: UUID) {
         store.openProject(id)

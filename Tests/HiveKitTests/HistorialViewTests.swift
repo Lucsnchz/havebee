@@ -178,6 +178,61 @@ struct HistorialViewTests {
                     size: CGSize(width: 420, height: 400), name: "ah-11-historial-archivada")
     }
 
+    @Test("Restaurar una archivada a la que llegaste desde un mensaje la abre con el historial en ese mensaje")
+    func restoreArchivedFromMessage() async throws {
+        let demo = try Demo()
+        let query = "validacion"
+        let hit = try #require(demo.store.history.search(query, sessionIds: [demo.codex.id]).first)
+        // ⌘K con «?»: la archivada no se abre, se lee su historial en la hoja. Su panel se queda con el salto.
+        let jumps = HistoryJumpRequest()
+        #expect(!HiveNavigator.openHistoryEntry(demo.store, session: demo.codex.id, entry: hit.entryId, query: query,
+                                                jumps: jumps, defaults: demo.defaults))
+        let jump = try #require(jumps.pending)
+        jumps.pending = nil // lo aplicó el historial de la hoja
+        // «Restaurar»: vuelve a pedir el salto para el panel de la sesión, que pasa a «Historial».
+        HiveNavigator.restoreArchived(demo.store, session: demo.codex.id, jump: jump, jumps: jumps, defaults: demo.defaults)
+        #expect(demo.store.sessionContext(demo.codex.id)?.session.isArchived == false)
+        #expect(demo.store.selection == .session(demo.codex.id))
+        #expect(jumps.pending == .init(sessionId: demo.codex.id, entryId: hit.entryId, query: query))
+        #expect(demo.defaults.string(forKey: "sessionSidePanel") == "history")
+
+        // Una archivada a la que llegaste por su nombre (sin mensaje) abre como siempre.
+        demo.store.archive(demo.codex.id)
+        demo.defaults.removeObject(forKey: "sessionSidePanel")
+        let other = HistoryJumpRequest()
+        HiveNavigator.restoreArchived(demo.store, session: demo.codex.id, jump: nil, jumps: other, defaults: demo.defaults)
+        #expect(demo.store.selection == .session(demo.codex.id))
+        #expect(other.pending == nil)
+        #expect(demo.defaults.string(forKey: "sessionSidePanel") == nil)
+        // Un salto de otra sesión no se usa.
+        demo.store.archive(demo.codex.id)
+        HiveNavigator.restoreArchived(demo.store, session: demo.codex.id, jump: .init(sessionId: demo.claude.id, entryId: hit.entryId, query: query),
+                                      jumps: other, defaults: demo.defaults)
+        #expect(other.pending == nil)
+    }
+
+    @Test("⌘K abierto desde el panel deja el cursor al final: lo que escribas no borra el «?»", arguments: ["?validacion", "?"])
+    func switcherCaretAtEnd(query: String) async throws {
+        let demo = try Demo()
+        let host = NSHostingView(rootView: QuickSwitcher(query: query).environment(demo.store).defaultAppStorage(demo.defaults)
+            .frame(width: 600, height: 520))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 520), styleMask: [.titled],
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        defer { window.close() }
+        // Al enfocar un campo, macOS selecciona todo su texto: con «?validacion» seleccionado, la primera
+        // tecla lo reemplazaría entero y ⌘K dejaría de buscar en el historial.
+        let editor = await { () -> NSTextView? in
+            _ = await waitUntil(timeout: 5) { (window.firstResponder as? NSTextView)?.string == query }
+            return window.firstResponder as? NSTextView
+        }()
+        let field = try #require(editor)
+        let end = (query as NSString).length
+        #expect(await waitUntil(timeout: 5) { field.selectedRange() == NSRange(location: end, length: 0) },
+                "Quedó seleccionado \(field.selectedRange()) en «\(query)»")
+    }
+
     @Test("Uso: el monitor lee Claude y Codex y las vistas lo muestran")
     func usage() async throws {
         let demo = try Demo()
