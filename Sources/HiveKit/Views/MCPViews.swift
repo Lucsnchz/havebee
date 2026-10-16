@@ -458,14 +458,10 @@ struct MCPEditorSheet: View {
         .task { await load() }
     }
 
-    /// Un TextEditor que se ve como campo: fondo, borde y un texto de ejemplo cuando está vacío.
+    /// Un editor de varias líneas que se ve como campo: fondo, borde y un texto de ejemplo cuando está vacío.
     private var environmentEditor: some View {
         ZStack(alignment: .topLeading) {
-            TextEditor(text: $form.environment)
-                .font(.system(size: 12, design: .monospaced))
-                .scrollContentBackground(.hidden)
-                .padding(.horizontal, 3)
-                .padding(.vertical, 5)
+            MCPPlainTextEditor(text: $form.environment)
             if form.environment.isEmpty {
                 Text("CLAVE=valor, una por línea")
                     .font(.system(size: 12, design: .monospaced))
@@ -513,6 +509,62 @@ struct MCPEditorSheet: View {
     private func save() {
         store.saveMCP(form.apply(to: original), replacing: target.serverName, projectId: target.projectId)
         dismiss()
+    }
+}
+
+/// Texto de varias líneas sin los reemplazos automáticos de macOS. El TextEditor de SwiftUI cambia `"` por
+/// comillas tipográficas y `--` por una raya (`NODE_OPTIONS=--max-old-space-size=4096` quedaría roto), y
+/// SwiftUI no deja apagarlo: por eso va un NSTextView propio, en monoespaciada y sin fondo.
+struct MCPPlainTextEditor: NSViewRepresentable {
+    @Binding var text: String
+    var font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scroll = NSTextView.scrollableTextView()
+        scroll.drawsBackground = false
+        scroll.autohidesScrollers = true
+        guard let textView = scroll.documentView as? NSTextView else { return scroll }
+        textView.delegate = context.coordinator
+        textView.isRichText = false
+        textView.importsGraphics = false
+        textView.allowsUndo = true
+        textView.drawsBackground = false
+        textView.textContainerInset = NSSize(width: 3, height: 5)
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDashSubstitutionEnabled = false
+        textView.isAutomaticTextReplacementEnabled = false
+        textView.isAutomaticSpellingCorrectionEnabled = false
+        textView.isAutomaticDataDetectionEnabled = false
+        textView.isAutomaticLinkDetectionEnabled = false
+        textView.isContinuousSpellCheckingEnabled = false
+        textView.isGrammarCheckingEnabled = false
+        textView.smartInsertDeleteEnabled = false
+        textView.string = text
+        textView.font = font
+        textView.textColor = .textColor
+        return scroll
+    }
+
+    func updateNSView(_ scroll: NSScrollView, context: Context) {
+        context.coordinator.parent = self
+        // Solo cuando cambia desde afuera (al cargar el servidor): así no se pierde la selección al escribir.
+        guard let textView = scroll.documentView as? NSTextView, textView.string != text else { return }
+        textView.string = text
+        textView.font = font
+        textView.textColor = .textColor
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        var parent: MCPPlainTextEditor
+
+        init(_ parent: MCPPlainTextEditor) { self.parent = parent }
+
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else { return }
+            parent.text = textView.string
+        }
     }
 }
 
