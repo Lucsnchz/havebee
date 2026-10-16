@@ -14,8 +14,8 @@ struct SessionDetailView: View {
     /// todavía no sabe si va (o que no va) dejaba una cápsula de vidrio vacía en la barra de macOS.
     /// Se guardan con la carpeta y el repo para los que se leyeron (al cambiar de sesión no se
     /// muestra el de la anterior).
-    @State private var site: Loaded<String>?
-    @State private var remote: Loaded<RemoteInfo>?
+    @State private var site: SessionLoaded<String>?
+    @State private var remote: SessionLoaded<RemoteInfo>?
     var usage: UsageMonitor = .shared
 
     var body: some View {
@@ -105,12 +105,12 @@ struct SessionDetailView: View {
                 guard !ctx.project.isScratch else { return }
                 let dir = ctx.project.directory(for: ctx.branch)
                 let url = await OpenSiteButton.loadURL(project: ctx.project, branch: ctx.branch, home: store.environment.home)
-                site = Loaded(key: dir, value: url)
+                site = SessionLoaded(key: dir, value: url)
             }
             .task(id: ctx.project.isScratch ? "" : ctx.project.path) {
                 guard !ctx.project.isScratch else { return }
                 let path = ctx.project.path
-                remote = Loaded(key: path, value: await RemoteInfo.load(git: store.git, path: path))
+                remote = SessionLoaded(key: path, value: await RemoteInfo.load(git: store.git, path: path))
             }
             .task(id: store.focusTerminalRequest) {
                 guard store.focusTerminalRequest == sessionId else { return }
@@ -170,7 +170,7 @@ struct LaunchingIndicator: View {
 // MARK: - Barra de herramientas
 
 /// Algo que se leyó en segundo plano para una carpeta o un repo (`key`).
-struct Loaded<Value: Sendable>: Sendable {
+struct SessionLoaded<Value: Sendable>: Sendable {
     let key: String
     let value: Value?
 

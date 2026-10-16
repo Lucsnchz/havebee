@@ -106,9 +106,9 @@ struct SessionToolbarTests {
 
     @Test("Lo leído para otra carpeta no se muestra")
     func loadedIsKeyed() {
-        let loaded = Loaded(key: "/a", value: "https://a.test")
+        let loaded = SessionLoaded(key: "/a", value: "https://a.test")
         #expect(loaded.value(for: "/a") == "https://a.test")
         #expect(loaded.value(for: "/b") == nil)
-        #expect(Loaded<String>(key: "/a", value: nil).value(for: "/a") == nil)
+        #expect(SessionLoaded<String>(key: "/a", value: nil).value(for: "/a") == nil)
     }
 }
