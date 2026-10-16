@@ -113,6 +113,8 @@ struct UsageBadge: View {
             let high = percent >= 80
             Text("ctx \(value)%")
                 .font(.system(size: 10.5, weight: .medium).monospacedDigit())
+                .lineLimit(1)
+                .fixedSize()
                 .foregroundStyle(high ? AnyShapeStyle(Theme.attention) : AnyShapeStyle(.secondary))
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)

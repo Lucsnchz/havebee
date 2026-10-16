@@ -313,14 +313,18 @@ struct HomeAndWelcomeTests {
     @Test("Sin selección se ve el Inicio en las dos vistas; sin proyectos, la bienvenida")
     func emptyDetail() async throws {
         let demo = try await Demo()
-        #expect(await renderNucleoSnapshot(EmptyDetailView().environment(demo.store), size: CGSize(width: 1100, height: 820), name: "nucleo-01-inicio") > 3)
-        #expect(await renderNucleoSnapshot(EmptyDetailView().environment(demo.store), size: CGSize(width: 1100, height: 820),
-                                           name: "nucleo-02-inicio-claro", dark: false) > 3)
+        // «Ahora» del mismo reloj que el mundo de prueba: si no, «Trabajando · 585:48:54».
+        let now = demo.world.now.addingTimeInterval(134)
+        #expect(await renderNucleoSnapshot(EmptyDetailView().environment(demo.store).environment(\.hiveNow, now),
+                                           size: CGSize(width: 1100, height: 820), name: "nucleo-01-inicio") > 3)
+        #expect(await renderNucleoSnapshot(EmptyDetailView().environment(demo.store).environment(\.hiveNow, now),
+                                           size: CGSize(width: 1100, height: 820), name: "nucleo-02-inicio-claro", dark: false) > 3)
         let empty = TestWorld().makeStore()
         #expect(await renderNucleoSnapshot(EmptyDetailView().environment(empty), size: CGSize(width: 1000, height: 760), name: "nucleo-03-bienvenida") > 3)
         #expect(await renderNucleoSnapshot(EmptyDetailView().environment(empty), size: CGSize(width: 1000, height: 760),
                                            name: "nucleo-04-bienvenida-clara", dark: false) > 3)
-        #expect(await renderNucleoSnapshot(CompactLayout().environment(demo.store), size: CGSize(width: 1180, height: 760), name: "nucleo-05-compacta-inicio") > 3)
+        #expect(await renderNucleoSnapshot(CompactLayout().environment(demo.store).environment(\.hiveNow, now),
+                                           size: CGSize(width: 1180, height: 760), name: "nucleo-05-compacta-inicio") > 3)
     }
 
     @Test("La cápsula de deshacer")

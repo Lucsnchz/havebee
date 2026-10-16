@@ -76,6 +76,9 @@ struct StatusPill: View {
             Text(status.label(for: kind))
                 .font(HiveFont.body)
                 .foregroundStyle(.secondary)
+                // En la barra con poco lugar no se parte en dos renglones («Trabajando» / «…»).
+                .lineLimit(1)
+                .fixedSize()
         }
         .padding(.horizontal, 6)
         .accessibilityElement(children: .combine)

@@ -283,7 +283,8 @@ struct ViewRenderTests {
                     size: CGSize(width: 440, height: 260), name: "10-comando", defaults: defaults)
         await check(MCPEditorSheet(target: MCPEditorTarget(projectId: id, serverName: "laravel-boost")).environment(demo.store),
                     size: CGSize(width: 480, height: 420), name: "11-mcp", defaults: defaults)
-        await check(SettingsView(dataFolder: demo.world.paths.root), size: CGSize(width: 520, height: 320), name: "12-ajustes",
+        // SettingsView mide 540 de ancho: con menos se corta (y con 320 de alto no entraba la primera pestaña).
+        await check(SettingsView(dataFolder: demo.world.paths.root), size: CGSize(width: 540, height: 600), name: "12-ajustes",
                     defaults: defaults)
     }
 
