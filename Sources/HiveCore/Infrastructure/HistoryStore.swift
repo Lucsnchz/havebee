@@ -281,7 +281,7 @@ public struct HistoryStore: Sendable {
         public let entryId: UUID
         public let role: HistoryEntry.Role
         public let date: Date
-        /// ±60 caracteres alrededor de la coincidencia, en una línea.
+        /// ±60 caracteres alrededor de la coincidencia, en una línea y sin las marcas de Markdown.
         public let snippet: String
     }
 
@@ -295,7 +295,10 @@ public struct HistoryStore: Sendable {
         for id in ids {
             let entries = HistoryExport.timeline(log: load(id), full: loadArchive(id))
             for entry in entries where entry.role != .marker {
-                guard let snippet = HistoryExport.snippet(entry.text, query: q) else { continue }
+                guard let raw = HistoryExport.snippet(entry.text, query: q) else { continue }
+                // Sin Markdown, limpiado antes de juntar las líneas (así se sabe qué es una viñeta). Si lo
+                // que buscás tiene alguna marca («**», «`»), el fragmento queda tal cual.
+                let snippet = HistoryExport.snippet(HistoryExport.withoutMarkdown(entry.text), query: q) ?? raw
                 hits.append(SearchHit(sessionId: id, entryId: entry.id, role: entry.role, date: entry.date, snippet: snippet))
             }
         }
@@ -330,8 +333,26 @@ public struct HistoryStore: Sendable {
         case .system:
             return "\n## Aviso automático · \(when)\n\n\(entry.text)\n"
         case .marker:
-            return "\n---\n\n> **\(entry.text) · \(when)**: \(markerMeaning(entry.text))\n\n---\n"
+            let marker = markerTitle(entry.text)
+            // Igual que la ayuda del panel: «… sigue en la memoria de la IA. Código del error: `rate_limit`.»
+            let code = marker.code.map { " Código del error: `\($0)`." } ?? ""
+            return "\n---\n\n> **\(marker.title) · \(when)**: \(markerMeaning(entry.text))\(code)\n\n---\n"
         }
+    }
+
+    /// Cómo se muestra un marcador. Un corte se guarda con el código de la API («⚠︎ Se cortó: rate_limit»)
+    /// y se muestra con una frase clara («⚠︎ Se cortó: llegaste al límite de uso»), con el código aparte
+    /// como detalle. Los demás marcadores («/clear», «Nueva conversación») quedan como están.
+    public static func markerTitle(_ text: String) -> (title: String, code: String?) {
+        let prefix = AgentEventInterpreter.stopFailureMarker
+        guard text.hasPrefix(prefix) else { return (text, nil) }
+        let raw = text.dropFirst(prefix.count).trimmingCharacters(in: .whitespaces)
+        // «unknown» es lo que se guarda cuando el evento no traía ningún código: no aporta nada.
+        let code = raw.isEmpty || raw == "unknown" ? nil : raw
+        guard let code, let reason = AgentEventInterpreter.stopFailureReason(code) else {
+            return ("⚠︎ Se cortó por un error", code)
+        }
+        return ("\(prefix) \(reason)", code)
     }
 
     /// Qué significa cada marcador: /clear y «Nueva conversación» empiezan de cero, /compact no.

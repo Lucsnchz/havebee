@@ -1,6 +1,21 @@
 import AppKit
 import HiveCore
+import Observation
 import SwiftUI
+
+/// Pedido para que el panel de historial de una sesión muestre una búsqueda y salte a una entrada
+/// (lo deja ⌘K con «?» antes de abrir la sesión).
+@Observable @MainActor
+final class HistoryJumpRequest {
+    struct Jump: Equatable {
+        let sessionId: UUID
+        let entryId: UUID
+        let query: String
+    }
+
+    static let shared = HistoryJumpRequest()
+    var pending: Jump?
+}
 
 /// Panel lateral con todo lo que se habló en la sesión, también lo anterior a cada /clear.
 /// «Todo» muestra la conversación completa (la copia de Hive de los transcripts más el transcript
@@ -8,8 +23,8 @@ import SwiftUI
 struct HistoryPanel: View {
     @Environment(AppStore.self) private var store
     let session: Session
-    /// Dentro de «Buscar en todas las sesiones» (leyendo una archivada) no se ofrece abrir otra búsqueda
-    /// encima: al elegir un resultado se cerraría solo la de adentro y la de afuera taparía la sesión.
+    /// El botón que busca en todas las sesiones abre ⌘K. Dentro de una hoja (una archivada, o el propio
+    /// ⌘K) no se ofrece: no se puede abrir otra hoja encima.
     var showsGlobalSearch = true
     @AppStorage("historyShowEverything") private var showEverything = true
     @State private var everything: [HistoryEntry] = []
@@ -17,10 +32,9 @@ struct HistoryPanel: View {
     @State private var loaded = false
     @State private var query = ""
     @State private var matchIndex = 0
-    @State private var showGlobalSearch = false
     @State private var note: String?
     @State private var scrollTarget: UUID?
-    /// Entrada a la que hay que saltar cuando se aplique la búsqueda (viene de «Buscar en todas las sesiones»).
+    /// Entrada a la que hay que saltar cuando se aplique la búsqueda (viene de ⌘K con «?»).
     @State private var jumpTarget: UUID?
     @FocusState private var searchFocused: Bool
 
@@ -53,9 +67,6 @@ struct HistoryPanel: View {
         .task(id: reloadKey) { await keepLoaded() }
         .onChange(of: query) { focusMatch() }
         .onChange(of: HistoryJumpRequest.shared.pending?.entryId) { applyJumpIfNeeded() }
-        .sheet(isPresented: $showGlobalSearch) {
-            HistorySearchView(initialQuery: query).environment(store)
-        }
     }
 
     // MARK: - Partes
@@ -74,8 +85,10 @@ struct HistoryPanel: View {
             }
             Spacer()
             if showsGlobalSearch {
-                HistoryIconButton(symbol: "text.magnifyingglass", label: "Buscar en todas las sesiones") {
-                    showGlobalSearch = true
+                // Una sola búsqueda en todas las sesiones: la de ⌘K con «?», con lo que ya escribiste acá.
+                // Otro ícono que la lupa del campo, que busca solo en esta sesión.
+                HistoryIconButton(symbol: "bubble.left.and.text.bubble.right", label: "Buscar en todas las sesiones (⌘K con «?»)") {
+                    store.openSwitcher(query: SwitcherIndex.historySearch(query))
                 }
             }
             HistoryIconButton(symbol: "doc.on.doc", label: "Copiar todo el historial") {
@@ -276,7 +289,7 @@ struct HistoryPanel: View {
         scrollToMatch()
     }
 
-    /// Si se llegó desde «Buscar en todas las sesiones», muestra la búsqueda y salta a esa entrada.
+    /// Si se llegó desde ⌘K con «?», muestra la búsqueda y salta a esa entrada.
     private func applyJumpIfNeeded() {
         guard let jump = HistoryJumpRequest.shared.pending, jump.sessionId == session.id, loaded else { return }
         HistoryJumpRequest.shared.pending = nil
@@ -385,18 +398,33 @@ private struct HistoryRow: View {
 
     private var time: String { entry.date.formatted(date: .omitted, time: .shortened) }
 
+    /// Una divisoria con lo que pasó. Un corte se lee con una frase clara («Se cortó: llegaste al
+    /// límite de uso») y el código de la API queda abajo, chiquito, por si hace falta buscarlo.
     private var marker: some View {
         let failed = entry.text.hasPrefix(AgentEventInterpreter.stopFailureMarker)
-        return HStack(spacing: 8) {
-            Rectangle().fill((failed ? Theme.attention : Color.primary).opacity(0.2)).frame(height: 1)
-            Text("\(entry.text) · \(time)")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(failed ? AnyShapeStyle(Theme.attention) : AnyShapeStyle(.secondary))
-                .fixedSize()
-            Rectangle().fill((failed ? Theme.attention : Color.primary).opacity(0.2)).frame(height: 1)
+        let label = HistoryStore.markerTitle(entry.text)
+        let meaning = HistoryStore.markerMeaning(entry.text)
+        let rule = Rectangle().fill((failed ? Theme.attention : Color.primary).opacity(0.2)).frame(minWidth: 12, maxHeight: 1)
+        return VStack(spacing: 2) {
+            HStack(spacing: 8) {
+                rule
+                Text("\(label.title) · \(time)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(failed ? AnyShapeStyle(Theme.attention) : AnyShapeStyle(.secondary))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .layoutPriority(1)
+                rule
+            }
+            if let code = label.code {
+                Text(code)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.tertiary)
+                    .accessibilityLabel("Código del error: \(code)")
+            }
         }
         .padding(.vertical, 4)
-        .help(HistoryStore.markerMeaning(entry.text))
+        .help(label.code.map { "\(meaning) Código del error: \($0)." } ?? meaning)
         .accessibilityElement(children: .combine)
     }
 

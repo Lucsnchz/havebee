@@ -31,6 +31,32 @@ struct SwitcherHistoryTests {
         #expect(SwitcherIndex.highlights("?stock", in: "validación de stock") == [14..<19])
     }
 
+    @Test("El botón del panel de historial escribe la búsqueda con «?» adelante")
+    func historySearch() {
+        #expect(SwitcherIndex.historySearch("validación") == "?validación")
+        #expect(SwitcherIndex.historySearch("  validación de stock \n") == "?validación de stock")
+        #expect(SwitcherIndex.historySearch("") == "?") // sin nada escrito, ⌘K muestra la ayuda del historial
+        for text in ["migración", "stock al checkout", ""] {
+            #expect(SwitcherIndex.historyQuery(SwitcherIndex.historySearch(text)) == text)
+        }
+    }
+
+    @Test("Las filas del historial no muestran las marcas de Markdown", arguments: [
+        ("## Listo\n\nAgregué la **validación** de stock:\n\n- Si no alcanza, tira `OutOfStock`.\n- Los 12 tests pasan.",
+         "Listo\n\nAgregué la validación de stock:\n\n• Si no alcanza, tira OutOfStock.\n• Los 12 tests pasan."),
+        ("Cambié el\n```php\nif ($item->stock < $qty) {\n```\ny listo", "Cambié el\nif ($item->stock < $qty) {\ny listo"),
+        ("Pasos:\n  * uno\n  + dos\n### Notas", "Pasos:\n  • uno\n  • dos\nNotas"),
+        // Un « - » o un « * » en medio de una línea no es una viñeta, ni un «#» pegado es un título.
+        ("$total = $precio - $descuento * 2 + $envio", "$total = $precio - $descuento * 2 + $envio"),
+        ("Opción A - más rápida", "Opción A - más rápida"),
+        ("Arreglá el issue #123 en src/**/*.php", "Arreglá el issue #123 en src/**/*.php"),
+        ("Llegó un rate_limit en __construct", "Llegó un rate_limit en __construct"),
+        ("Agregá validación de stock", "Agregá validación de stock"),
+    ])
+    func withoutMarkdown(snippet: String, expected: String) {
+        #expect(HistoryExport.withoutMarkdown(snippet) == expected)
+    }
+
     @Test("Busca en las sesiones de Claude y Codex, también las archivadas")
     func sessionIds() {
         let ids = SwitcherIndex.historySessionIds(projects)
@@ -75,6 +101,19 @@ struct SwitcherHistoryTests {
         #expect(title.contains("migración"))
         #expect(title.count < 90)
         #expect(title.hasPrefix("…") && title.hasSuffix("…"))
+    }
+
+    @Test("La fila de un mensaje con Markdown se lee limpia y con la coincidencia marcada")
+    func markdownTitle() throws {
+        let hit = HistoryStore.SearchHit(sessionId: claude.id, entryId: UUID(), role: .assistant, date: .reference,
+                                         snippet: "## Listo Agregué la **validación** de stock: - Si no alcanza, tira `OutOfStock`.")
+        let title = try #require(SwitcherIndex.historyItems([hit], query: "validacion", in: projects).first?.title)
+        #expect(!title.contains("**") && !title.contains("##") && !title.contains("`"))
+        #expect(title.contains("Agregué la validación de stock"))
+        let range = try #require(SwitcherIndex.highlights("?validacion", in: title).first)
+        let start = title.index(title.startIndex, offsetBy: range.lowerBound)
+        let end = title.index(title.startIndex, offsetBy: range.upperBound)
+        #expect(title[start..<end] == "validación")
     }
 
     @Test("De punta a punta: lo guardado en el historial aparece como resultado")

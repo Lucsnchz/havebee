@@ -452,6 +452,38 @@ struct IntegracionFinalTests {
         #expect(!store.isMissing(branch))
     }
 
+    @Test("Un worktree borrado no ofrece lanzar comandos, pero muestra el que sigue corriendo para detenerlo")
+    func missingWorktreeRunningCommand() async throws {
+        let world = TestWorld()
+        let repo = GitRepo(name: "tienda")
+        defer { withExtendedLifetime((world, repo)) {} }
+        let store = world.makeStore()
+        await store.addProject(at: repo.path)
+        let project = try #require(store.repoProjects.first)
+        #expect(await store.createBranch(NewBranchRequest(projectId: project.id, name: "vieja", isNew: true, mode: .worktree,
+                                                          copyIgnored: false, setupCommand: nil)) == nil)
+        let branch = try #require(store.project(project.id)?.branches.first { $0.name == "vieja" })
+        store.saveCommand(projectId: project.id, commandId: nil, name: "Cola", command: "sleep 30")
+        store.saveCommand(projectId: project.id, commandId: nil, name: "Tests", command: "true")
+        let commands = try #require(store.project(project.id)?.commands)
+        #expect(commands.map(\.name) == ["Cola", "Tests"])
+        store.run(commands[0].id, projectId: project.id, branchId: branch.id)
+        let run = try #require(store.runningRun(commandId: commands[0].id, branchId: branch.id))
+        repo.sh("git worktree remove --force \(shellQuote(try #require(branch.worktreePath)))")
+        await store.refreshGitNow()
+        #expect(store.isMissing(branch) && store.hasRunningWork(branch))
+        // Lo que muestra la vista: solo «Cola», que sigue corriendo (con su botón para detenerla).
+        let situation = BranchSituation.of(mode: branch.mode, active: true, missing: store.isMissing(branch), mainBusy: false)
+        #expect(situation == .missing)
+        #expect(situation.shownCommands(commands) { store.runningRun(commandId: $0.id, branchId: branch.id) != nil }.map(\.name) == ["Cola"])
+        let drawn = await colors(NavigationStack { BranchDetailView(branchId: branch.id) }.environment(store),
+                                 size: CGSize(width: 900, height: 460), name: "rama-worktree-faltante-comando")
+        #expect(drawn.allSatisfy { $0 > 3 })
+        let terminal = try #require(run.terminal)
+        store.closeRun(run.id)
+        #expect(await waitUntil { !terminal.isProcessRunning })
+    }
+
     @Test("Mientras se arma el lanzamiento, la sesión muestra «Abriendo…» en lugar de una terminal vacía")
     func launchingIndicator() async throws {
         let world = TestWorld()

@@ -117,8 +117,8 @@ private struct StoreDialogs: ViewModifier {
             .sheet(item: $store.diffTarget) { target in
                 DiffSheet(target: target)
             }
-            .sheet(isPresented: $store.showSwitcher) {
-                QuickSwitcher()
+            .sheet(isPresented: $store.showSwitcher, onDismiss: { store.switcherQuery = "" }) {
+                QuickSwitcher(query: store.switcherQuery)
             }
             .alert(store.alert?.title ?? "", isPresented: alertPresence, presenting: store.alert) { alert in
                 if let title = alert.actionTitle {

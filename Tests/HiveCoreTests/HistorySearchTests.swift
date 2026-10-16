@@ -122,6 +122,26 @@ struct HistorySearchTests {
         #expect(hits.dropFirst().allSatisfy { entryIds.contains($0.entryId) })
     }
 
+    @Test("El fragmento de un resultado sale sin Markdown, pero un « - » en medio de una línea queda")
+    func searchSnippetWithoutMarkdown() throws {
+        let id = UUID()
+        store.append(HistoryEntry(date: date("2026-10-01T10:00:00Z"), role: .assistant, text: """
+        ## Listo
+
+        Agregué la **validación** de stock:
+
+        - Si no alcanza, tira `OutOfStock`.
+        - El total queda en `$precio - $descuento`.
+        """), sessionId: id, agentName: "Claude Code")
+        let hit = try #require(store.search("validacion").first)
+        #expect(hit.snippet.hasPrefix("Listo Agregué la validación de stock: • Si no alcanza, tira OutOfStock. • El total"))
+        let total = try #require(store.search("descuento").first)
+        #expect(total.snippet.hasSuffix("• El total queda en $precio - $descuento."))
+        // Si lo que buscás tiene una marca, el fragmento queda tal cual (si no, no se encontraría en él).
+        let marked = try #require(store.search("**validación**").first)
+        #expect(marked.snippet.contains("**validación**"))
+    }
+
     @Test("El resultado de la búsqueda se encuentra en «Todo» aunque ahí se vea la copia del transcript")
     func jumpCounterpart() throws {
         let id = UUID()
@@ -209,6 +229,9 @@ struct HistoryExportTests {
 
         Aviso automático: <task-notification>ok</task-notification>
         """)
+        // Un corte se copia con la frase clara y el código de la API entre paréntesis.
+        let cut = HistoryEntry(date: .reference, role: .marker, text: "⚠︎ Se cortó: rate_limit")
+        #expect(HistoryExport.plainText(cut, agent: "Claude Code") == "—— ⚠︎ Se cortó: llegaste al límite de uso (rate_limit) ——")
         #expect(HistoryExport.plainText([], agent: "Codex").isEmpty)
     }
 

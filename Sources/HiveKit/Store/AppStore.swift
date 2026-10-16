@@ -65,6 +65,9 @@ public final class AppStore {
     /// Lo último que se puede deshacer, o un aviso corto (vence a los `undoWindow` segundos).
     public internal(set) var undoAction: UndoAction?
     public var showSwitcher = false
+    /// Lo que aparece escrito en ⌘K al abrirlo («?validación» desde el panel de historial). Vuelve a
+    /// quedar vacío al cerrarlo.
+    public var switcherQuery = ""
     public var dockExpanded = false
     public var dockRunId: UUID?
 
@@ -163,6 +166,12 @@ public final class AppStore {
     /// Los repos, sin el proyecto «Terminales».
     public var repoProjects: [Project] { projects.repos }
     public var scratchProject: Project? { projects.scratch }
+
+    /// Abre ⌘K, con una búsqueda ya escrita si se pasa (por ejemplo, en el historial de todas las sesiones).
+    public func openSwitcher(query: String = "") {
+        switcherQuery = query
+        showSwitcher = true
+    }
 
     public func project(_ id: UUID) -> Project? { projects.project(id) }
     public func branchContext(_ id: UUID) -> (project: Project, branch: Branch)? { projects.branchContext(id) }

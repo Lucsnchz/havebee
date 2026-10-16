@@ -278,7 +278,8 @@ private struct ArchivedHistorySheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HistoryPanel(session: session)
+            // En una hoja no se puede abrir ⌘K encima: sin el botón de buscar en todas las sesiones.
+            HistoryPanel(session: session, showsGlobalSearch: false)
             Divider()
             HStack {
                 Spacer()

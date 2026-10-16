@@ -16,16 +16,19 @@ struct BranchDetailView: View {
             let status = store.gitStatus(for: ctx.branch, in: ctx.project)
             // La carpeta principal (para saber si hay un rebase o un merge a medias antes de hacer checkout).
             let mainStatus = store.dirStatus[ctx.project.path]
+            // Una sola fuente para el chip del encabezado, el aviso y lo que se ofrece hacer.
+            let situation = BranchSituation.of(mode: ctx.branch.mode, active: active, missing: store.isMissing(ctx.branch),
+                                               mainBusy: mainStatus?.operation != nil)
             let sessions = ctx.branch.activeSessions
             ScrollView {
                 VStack(alignment: .leading, spacing: 26) {
                     if ctx.project.isScratch {
                         ScratchHeader(directory: dir)
                     } else {
-                        BranchHeader(project: ctx.project, branch: ctx.branch, status: status, directory: dir)
+                        BranchHeader(project: ctx.project, branch: ctx.branch, status: status, directory: dir, situation: situation)
                     }
 
-                    if store.isMissing(ctx.branch) {
+                    if situation == .missing {
                         // Sin nada corriendo, la próxima revisión de git la saca sola: el aviso queda para
                         // las que todavía tienen una sesión o un comando andando.
                         Callout(icon: "exclamationmark.triangle.fill", color: Theme.attention,
@@ -59,20 +62,26 @@ struct BranchDetailView: View {
                     }
 
                     if sessions.isEmpty {
-                        DetailSection("Nueva sesión") {
-                            HStack(spacing: 10) {
-                                ForEach(SessionKind.allCases) { kind in
-                                    NewSessionCard(kind: kind) { store.requestNewSession(branchId: branchId, kind: kind) }
+                        // Sin carpeta o con un rebase a medias, una sesión nueva no podría arrancar: el aviso
+                        // de arriba dice qué hacer.
+                        if situation.canStartSessions {
+                            DetailSection("Nueva sesión") {
+                                HStack(spacing: 10) {
+                                    ForEach(SessionKind.allCases) { kind in
+                                        NewSessionCard(kind: kind) { store.requestNewSession(branchId: branchId, kind: kind) }
+                                    }
                                 }
+                                // Todas del alto de la más alta (la de un agente sin instalar suma una línea).
+                                .fixedSize(horizontal: false, vertical: true)
                             }
-                            // Todas del alto de la más alta (la de un agente sin instalar suma una línea).
-                            .fixedSize(horizontal: false, vertical: true)
                         }
                     } else {
                         DetailSection("Sesiones", trailing: {
-                            HStack(spacing: 6) {
-                                ForEach(SessionKind.allCases) { kind in
-                                    NewSessionPill(kind: kind, branchId: branchId)
+                            if situation.canStartSessions {
+                                HStack(spacing: 6) {
+                                    ForEach(SessionKind.allCases) { kind in
+                                        NewSessionPill(kind: kind, branchId: branchId)
+                                    }
                                 }
                             }
                         }) {
@@ -84,13 +93,16 @@ struct BranchDetailView: View {
                         }
                     }
 
-                    if !ctx.project.commands.isEmpty && !ctx.project.isScratch {
+                    // Sin checkout, un comando correría en la carpeta principal con otra rama (o en ninguna): no se
+                    // ofrece lanzarlos, pero los que siguen corriendo acá se ven, con su salida y para detenerlos.
+                    let commands = situation.shownCommands(ctx.project.commands) { store.runningRun(commandId: $0.id, branchId: branchId) != nil }
+                    if !commands.isEmpty && !ctx.project.isScratch {
                         DetailSection("Comandos") {
-                            CommandsSection(project: ctx.project, branch: ctx.branch, editable: false)
+                            CommandsSection(project: ctx.project, branch: ctx.branch, editable: false, commands: commands)
                         }
                     }
 
-                    if !ctx.project.isScratch {
+                    if !ctx.project.isScratch && situation != .missing {
                         GitSections(git: store.git, status: status, directory: dir, active: active, branchName: ctx.branch.name,
                                     inactiveRefreshKey: RecentCommits.refreshKey(mainStatus))
                     }
@@ -112,13 +124,17 @@ struct BranchDetailView: View {
             }
             .toolbar {
                 ToolbarItemGroup {
-                    Menu {
-                        NewSessionItems(branchId: branchId)
-                    } label: {
-                        Label("Nueva sesión", systemImage: "plus")
+                    if situation.canStartSessions {
+                        Menu {
+                            NewSessionItems(branchId: branchId)
+                        } label: {
+                            Label("Nueva sesión", systemImage: "plus")
+                        }
+                        .help("Nueva sesión en esta rama")
                     }
-                    .help("Nueva sesión en esta rama")
-                    OpenInMenu(path: dir)
+                    if situation.hasFolder {
+                        OpenInMenu(path: dir)
+                    }
                 }
             }
         }
@@ -193,6 +209,7 @@ private struct BranchHeader: View {
     let branch: Branch
     let status: GitStatus?
     let directory: String
+    let situation: BranchSituation
 
     var body: some View {
         let tint = (branch.color ?? project.tint).color
@@ -208,7 +225,8 @@ private struct BranchHeader: View {
                     Text(branch.name)
                         .font(HiveFont.title)
                         .textSelection(.enabled)
-                    Chip(text: branch.mode == .worktree ? "Worktree" : "Carpeta principal")
+                    Chip(text: situation.label, help: situationHelp)
+                        .foregroundStyle(situation.isWarning ? AnyShapeStyle(Theme.attention) : AnyShapeStyle(.primary))
                     ForEach(BranchGitBadges.make(status), id: \.text) { badge in
                         Chip(text: badge.text, help: badge.help)
                             .foregroundStyle(badge.warning ? AnyShapeStyle(Theme.attention) : AnyShapeStyle(.primary))
@@ -218,7 +236,23 @@ private struct BranchHeader: View {
             }
             Spacer(minLength: 12)
             // Abrir el sitio de la rama y traer, publicar o abrir el MR. Si no hay sitio ni remoto, no ocupan lugar.
-            BranchWebActions(project: project, branch: branch)
+            // Sin checkout, el sitio mostraría otra rama: queda solo el remoto (publicar y el MR andan
+            // igual). Sin carpeta no se ofrece nada: la única salida es «Quitar de Hive…».
+            if situation.hasCheckout {
+                BranchWebActions(project: project, branch: branch)
+            } else if situation.offersRemoteActions {
+                RemoteActionsMenu(project: project, branch: branch)
+                    .fixedSize()
+            }
+        }
+    }
+
+    private var situationHelp: String {
+        switch situation {
+        case .worktree: "Worktree en su propia carpeta"
+        case .main: "Tiene el checkout en la carpeta principal"
+        case .inactive, .blocked: "La carpeta principal está en otra rama"
+        case .missing: "La carpeta de este worktree ya no está"
         }
     }
 }

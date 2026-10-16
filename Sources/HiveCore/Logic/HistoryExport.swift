@@ -11,10 +11,13 @@ public enum HistoryExport {
 
     public static func plainText(_ entry: HistoryEntry, agent: String) -> String {
         switch entry.role {
-        case .user: "Vos: \(entry.text)"
-        case .assistant: "\(agent): \(entry.text)"
-        case .system: "Aviso automático: \(entry.text)"
-        case .marker: "—— \(entry.text) ——"
+        case .user: return "Vos: \(entry.text)"
+        case .assistant: return "\(agent): \(entry.text)"
+        case .system: return "Aviso automático: \(entry.text)"
+        case .marker:
+            // Un corte, con la frase clara y el código de la API entre paréntesis.
+            let marker = HistoryStore.markerTitle(entry.text)
+            return "—— \(marker.title)\(marker.code.map { " (\($0))" } ?? "") ——"
         }
     }
 
@@ -40,6 +43,19 @@ public enum HistoryExport {
         let end = text.index(match.upperBound, offsetBy: radius, limitedBy: text.endIndex) ?? text.endIndex
         let flat = text[start..<end].split(whereSeparator: \.isWhitespace).joined(separator: " ")
         return (start > text.startIndex ? "…" : "") + flat + (end < text.endIndex ? "…" : "")
+    }
+
+    /// Un texto sin las marcas de Markdown que en una fila se verían crudas: títulos («## »), viñetas
+    /// (pasan a «• »), negritas («**así**») y código («`así`» y «```php»). Va antes de juntar las
+    /// líneas: los títulos y las viñetas solo cuentan al principio de una línea, así que un « - » en
+    /// medio de una («$precio - $descuento») queda como está. Los «_» también: son parte de nombres
+    /// como `rate_limit` o `__construct`.
+    public static func withoutMarkdown(_ text: String) -> String {
+        text.replacingOccurrences(of: #"(?m)^([ \t]*)#{1,6}[ \t]+"#, with: "$1", options: .regularExpression)
+            .replacingOccurrences(of: #"(?m)^([ \t]*)[-*+][ \t]+"#, with: "$1• ", options: .regularExpression)
+            .replacingOccurrences(of: #"\*\*(\S(?:.*?\S)?)\*\*"#, with: "$1", options: .regularExpression)
+            .replacingOccurrences(of: #"```[A-Za-z0-9_+-]*\s*"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: "`", with: "")
     }
 
     /// Junta la copia completa (textos intermedios de los transcripts) con el registro de Hive:

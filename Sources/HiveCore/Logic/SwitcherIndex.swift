@@ -76,6 +76,12 @@ public enum SwitcherIndex {
         return String(text.dropFirst()).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Lo que hay que escribir en el buscador para buscar `text` en el historial («validación» →
+    /// «?validación»). Es lo que hace el botón del panel de historial.
+    public static func historySearch(_ text: String) -> String {
+        "\(historyPrefix)\(text.trimmingCharacters(in: .whitespacesAndNewlines))"
+    }
+
     /// Las sesiones (activas y archivadas) cuyo historial se puede buscar: las de Claude y Codex.
     public static func historySessionIds(_ projects: [Project]) -> [UUID] {
         projects.flatMap { $0.branches.flatMap(\.sessions) }.filter { $0.kind.reportsConversation }.map(\.id)
@@ -83,7 +89,9 @@ public enum SwitcherIndex {
 
     /// Los resultados del historial como filas del buscador: el fragmento como título y, abajo, quién
     /// lo dijo, en qué sesión y cuándo. Se saltean los de sesiones que ya no existen.
-    /// El fragmento se recorta alrededor de `query` para que la coincidencia entre en una línea.
+    /// El fragmento se recorta alrededor de `query` para que la coincidencia entre en una línea, y sin
+    /// las marcas de Markdown («## Listo», «**validación**»), que en una fila se verían crudas (la
+    /// búsqueda ya las saca; acá se repasa por si el fragmento llegó de otro lado).
     public static func historyItems(_ hits: [HistoryStore.SearchHit], query: String, in projects: [Project],
                                     now: Date = Date(), calendar: Calendar = .current) -> [SwitcherItem] {
         var places: [UUID: (project: Project, branch: Branch, session: Session)] = [:]
@@ -104,7 +112,8 @@ public enum SwitcherIndex {
             let place = ctx.project.isScratch ? ctx.project.name : "\(ctx.project.name) › \(ctx.branch.name)"
             let archived = ctx.session.isArchived ? " (archivada)" : ""
             let day = HistoryExport.dayLabel(hit.date, now: now, calendar: calendar)
-            let title = HistoryExport.snippet(hit.snippet, query: query, radius: 32) ?? hit.snippet
+            let clean = HistoryExport.withoutMarkdown(hit.snippet)
+            let title = HistoryExport.snippet(clean, query: query, radius: 32) ?? clean
             return SwitcherItem(id: "h-\(hit.id)", target: .historyEntry(session: hit.sessionId, entry: hit.entryId),
                                 title: title,
                                 subtitle: "\(who) · \(ctx.session.name)\(archived) · \(place) · \(day)",

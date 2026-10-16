@@ -244,11 +244,13 @@ struct CommandsSection: View {
     var editable = true
     /// El botón «Agregar comando» (el resumen lo puede poner en el encabezado de la sección).
     var showsAddButton = true
+    /// Los comandos que se listan (la vista de rama puede pasar solo los que corren); nil: todos.
+    var commands: [ProjectCommand]? = nil
     @State private var suggestions: [CommandSuggestions.Suggestion] = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ForEach(project.commands) { command in
+            ForEach(commands ?? project.commands) { command in
                 CommandRow(project: project, command: command, branch: branch)
             }
             if editable && (showsAddButton || !suggestions.isEmpty) {

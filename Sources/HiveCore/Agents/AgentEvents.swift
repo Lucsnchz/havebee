@@ -227,6 +227,20 @@ public enum AgentEventInterpreter {
         }
     }
 
+    /// Por qué se cortó, para seguir a «Se cortó:» en el historial («llegaste al límite de uso»).
+    /// Los mismos códigos que `stopFailureText`; nil si el código no se conoce.
+    public static func stopFailureReason(_ error: String) -> String? {
+        switch error {
+        case "rate_limit": "llegaste al límite de uso"
+        case "overloaded", "server_error": "Anthropic está saturado"
+        case "authentication_failed": "hay que volver a iniciar sesión (/login)"
+        case _ where error.hasPrefix("oauth_"): "hay que volver a iniciar sesión (/login)"
+        case "max_output_tokens": "la respuesta llegó al límite de tokens"
+        case "billing_error": "hubo un problema de facturación"
+        default: nil
+        }
+    }
+
     /// El `error` puede venir como texto o, en otras versiones, como objeto con `type`.
     static func errorCode(_ value: JSONValue?) -> String {
         let code = value?.string ?? value?["type"]?.string ?? value?["code"]?.string ?? ""

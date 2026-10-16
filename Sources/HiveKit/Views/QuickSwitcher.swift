@@ -1,9 +1,11 @@
+import AppKit
 import HiveCore
 import SwiftUI
 
 /// Buscador rápido (⌘K): proyectos, ramas, sesiones, comandos y archivadas. Con «>» adelante
 /// muestra acciones (sesiones y ramas nuevas, agregar proyecto, cambiar de vista, ajustes) y con
-/// «?», lo que hablaste con Claude y Codex (el historial guardado de todas las sesiones).
+/// «?», lo que hablaste con Claude y Codex (el historial guardado de todas las sesiones). Es la única
+/// búsqueda en todas las sesiones: el botón del panel de historial abre esta misma con «?».
 struct QuickSwitcher: View {
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
@@ -13,6 +15,8 @@ struct QuickSwitcher: View {
     @State private var index = 0
     /// Archivada elegida: la hoja muestra su historial en lugar de los resultados.
     @State private var archivedId: UUID?
+    /// El mensaje encontrado con «?» que llevó a la archivada: al restaurarla, abre en ese mensaje.
+    @State private var archivedJump: HistoryJumpRequest.Jump?
     /// Lo que hay que hacer cuando se termine de cerrar la hoja (abrir otra hoja o un panel).
     @State private var afterDismiss: (() -> Void)?
     /// Con «?»: lo que se encontró en el historial (se busca fuera del hilo principal).
@@ -20,8 +24,8 @@ struct QuickSwitcher: View {
     @State private var searchingHistory = false
     @FocusState private var focused: Bool
 
-    /// Cuántos mensajes del historial muestra el buscador (la hoja «Buscar en todas las sesiones» muestra más).
-    static let historyLimit = 30
+    /// Cuántos mensajes del historial muestra el buscador como mucho (la lista es perezosa: no pesa).
+    static let historyLimit = 200
 
     init(query: String = "", archivedId: UUID? = nil) {
         _query = State(initialValue: query)
@@ -33,11 +37,15 @@ struct QuickSwitcher: View {
             if let id = archivedId, let ctx = store.sessionContext(id) {
                 ArchivedSessionView(project: ctx.project, branch: ctx.branch, session: ctx.session) {
                     archivedId = nil
+                    archivedJump = nil
                     focused = true
                 } onRestore: {
+                    // Si se llegó desde un mensaje encontrado con «?», la sesión abre con el historial en ese
+                    // mensaje. Se restaura con la hoja ya cerrada: si no, el salto se lo quedaría el historial
+                    // de adentro (el de esta hoja, que muestra la misma sesión).
+                    let jump = archivedJump
+                    afterDismiss = { [store] in HiveNavigator.restoreArchived(store, session: id, jump: jump) }
                     dismiss()
-                    store.unarchive(id)
-                    HiveNavigator.reveal(store, session: id)
                 }
             } else {
                 search
@@ -76,8 +84,17 @@ struct QuickSwitcher: View {
                         return .handled
                     }
                     .onExitCommand { dismiss() }
+                    // Con «?validación» ya escrito (el botón del panel de historial), lo primero que tipees
+                    // sigue la búsqueda en lugar de reemplazarla entera, «?» incluido.
+                    .background(CaretAtEnd(focused: focused))
                 if searchingHistory {
                     ProgressView().controlSize(.small)
+                } else if let historyText, historyText.count >= 2, !results.isEmpty {
+                    Text(historyHits.count >= Self.historyLimit ? "\(Self.historyLimit)+ resultados"
+                         : results.count == 1 ? "1 resultado" : "\(results.count) resultados")
+                        .font(.system(size: 11).monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .fixedSize()
                 }
             }
             .padding(16)
@@ -220,14 +237,17 @@ struct QuickSwitcher: View {
         guard results.indices.contains(index) else { return }
         let item = results[index]
         if case .archivedSession(let id) = item.target {
+            archivedJump = nil
             archivedId = id
             return
         }
         if case .historyEntry(let session, let entry) = item.target {
             // Una archivada no se abre: su historial se ve en la misma hoja, ya en esa entrada.
-            if HiveNavigator.openHistoryEntry(store, session: session, entry: entry, query: SwitcherIndex.historyQuery(query) ?? "") {
+            let text = SwitcherIndex.historyQuery(query) ?? ""
+            if HiveNavigator.openHistoryEntry(store, session: session, entry: entry, query: text) {
                 dismiss()
             } else {
+                archivedJump = .init(sessionId: session, entryId: entry, query: text)
                 archivedId = session
             }
             return
@@ -427,8 +447,39 @@ private struct ArchivedSessionView: View {
             }
             .padding(12)
             Divider()
-            HistoryPanel(session: session)
+            // Ya estás en ⌘K: el panel no ofrece abrirlo otra vez encima.
+            HistoryPanel(session: session, showsGlobalSearch: false)
                 .frame(height: 440)
+        }
+    }
+}
+
+/// Deja el cursor al final del campo cuando toma el foco. macOS selecciona todo el texto al enfocar
+/// un campo: con «?validación» seleccionado, la primera tecla lo reemplazaría y se perdería el «?».
+private struct CaretAtEnd: NSViewRepresentable {
+    let focused: Bool
+
+    final class Coordinator {
+        var wasFocused = false
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeNSView(context: Context) -> NSView { NSView() }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        let coordinator = context.coordinator
+        defer { coordinator.wasFocused = focused }
+        // Solo al tomar el foco: después, lo que selecciones vos queda como lo dejaste.
+        guard focused, !coordinator.wasFocused else { return }
+        Task { @MainActor [weak view] in
+            // SwiftUI le da el foco al campo un instante después: se espera a que tenga su editor.
+            for _ in 0..<50 {
+                if let editor = view?.window?.firstResponder as? NSTextView {
+                    editor.setSelectedRange(NSRange(location: (editor.string as NSString).length, length: 0))
+                    return
+                }
+                try? await Task.sleep(nanoseconds: 10_000_000)
+            }
         }
     }
 }
