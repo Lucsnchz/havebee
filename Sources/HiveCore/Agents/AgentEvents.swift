@@ -217,8 +217,7 @@ public enum AgentEventInterpreter {
                 outcome.agentSessionId = thread
             }
             if payload["type"]?.string == "agent-turn-complete" {
-                let inputs = payload["input-messages"]?.stringArray ?? []
-                if !inputs.isEmpty { outcome.history.append((.user, inputs.joined(separator: "\n\n"))) }
+                if let prompt = codexTurnPrompt(payload) { outcome.history.append((.user, prompt)) }
                 let full = payload["last-assistant-message"]?.string
                 if let full { outcome.history.append((.assistant, full)) }
                 outcome.reply = summary(full)
@@ -442,6 +441,16 @@ public enum AgentEventInterpreter {
         // Tipo desconocido (o versiones viejas sin tipo): la palabra «permission» es el respaldo.
         if message.localizedCaseInsensitiveContains("permission") { return .attention }
         return type.isEmpty ? .idle : .informative
+    }
+
+    /// El pedido que abrió un turno de Codex. `input-messages` trae todos los pedidos que siguen en su
+    /// contexto (tras compactarlo, también los de turnos anteriores), en orden: el del turno es el último.
+    /// Si en un turno entraron varios, la copia del rollout los tiene a todos.
+    static func codexTurnPrompt(_ payload: JSONValue) -> String? {
+        (payload["input-messages"]?.stringArray ?? []).last {
+            let text = $0.trimmingCharacters(in: .whitespacesAndNewlines)
+            return !text.isEmpty && !TranscriptReader.isCodexInjected(text)
+        }
     }
 
     /// Una línea de hasta 200 caracteres para avisos y tarjetas.

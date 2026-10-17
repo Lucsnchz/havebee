@@ -17,12 +17,7 @@ public enum CodexInternalTurn {
         guard event.source == "codex", event.payload["type"]?.string == "agent-turn-complete" else { return false }
         // Importa el último pedido efectivo, no uno viejo ni el formato de la respuesta:
         // un usuario puede pedir un JSON con una clave "title" como parte de su trabajo.
-        let inputs = event.payload["input-messages"]?.stringArray ?? []
-        let prompt = inputs.last {
-            let text = $0.trimmingCharacters(in: .whitespacesAndNewlines)
-            return !text.isEmpty && !TranscriptReader.isCodexInjected(text)
-        }
-        return prompt.map(isRequest) ?? false
+        return AgentEventInterpreter.codexTurnPrompt(event.payload).map(isRequest) ?? false
     }
 
     /// Repara la lectura de registros viejos sin ocultar JSON solicitado por el usuario. El hook

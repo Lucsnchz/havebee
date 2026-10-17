@@ -58,7 +58,7 @@ struct CodexInternalTurnTests {
         for e in original { store.append(e, sessionId: session.id, agentName: "Codex") }
         let raw = try Data(contentsOf: store.jsonlURL(session.id))
         #expect(store.load(session.id) == Array(original.prefix(2)) + Array(original.suffix(3)))
-        #expect(try store.repairCodexInternalTurns(session: session, place: "app › main"))
+        #expect(try store.repairCodexHistory(session: session, place: "app › main"))
         #expect(!store.fullTimeline(session.id, agent: .codex).contains { $0.text == Self.prompt })
         let markdown = try String(contentsOf: store.markdownURL(session.id), encoding: .utf8)
         #expect(!markdown.contains(Self.prompt))
@@ -66,6 +66,6 @@ struct CodexInternalTurnTests {
         let backups = try FileManager.default.contentsOfDirectory(at: dir.url.appendingPathComponent("backups"), includingPropertiesForKeys: nil)
         #expect(backups.count == 1)
         #expect(try Data(contentsOf: backups[0].appendingPathComponent(store.jsonlURL(session.id).lastPathComponent)) == raw)
-        #expect(try !store.repairCodexInternalTurns(session: session, place: "app › main"))
+        #expect(try !store.repairCodexHistory(session: session, place: "app › main"))
     }
 }

@@ -45,7 +45,7 @@ public struct LaunchContextBuilder: Sendable {
     public func build() -> LaunchContext {
         let history = HistoryStore(directory: paths.historyDir)
         if session.kind.reportsConversation {
-            _ = try? history.repairCodexInternalTurns(session: session, place: place)
+            _ = try? history.repairCodexHistory(session: session, place: place)
         }
         let resolved = CodexSessionRecovery.resolve(session, directory: directory, agents: agents,
                                                     history: history, excluding: claimedAgentIds)

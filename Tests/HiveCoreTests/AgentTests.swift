@@ -117,7 +117,7 @@ struct AgentEventTests {
         #expect(o.status == .waiting)
         #expect(o.agentSessionId == "t-1")
         #expect(o.history.map(\.role) == [.user, .assistant]) // sin marca: es el primer thread
-        #expect(o.history[0].text == "Primero\n\nSegundo")
+        #expect(o.history[0].text == "Segundo") // Codex repite los pedidos anteriores que siguen en su contexto
         #expect(o.reply == "Hecho" && o.notification == "Hecho")
     }
 

@@ -63,7 +63,9 @@ public enum HistoryExport {
     public static func timeline(log: [HistoryEntry], full: [HistoryEntry]) -> [HistoryEntry] {
         guard !full.isEmpty else { return log }
         func normalized(_ role: HistoryEntry.Role, _ text: String) -> String {
-            role.rawValue + "|" + text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+            // El aviso de Codex trae el pedido sin las etiquetas de las imágenes que guarda el rollout.
+            let text = role == .user ? withoutImageTags(text) : text
+            return role.rawValue + "|" + text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
         }
         var covered = Set<String>()
         // La respuesta final de un turno puede venir partida en varios bloques seguidos: se cubren
@@ -83,11 +85,30 @@ public enum HistoryExport {
             if entry.role == .assistant { run.append(entry.text) } else { flush() }
         }
         flush()
-        let kept = log.filter { $0.role == .marker || !covered.contains(normalized($0.role, $0.text)) }
+        let prompts = orderedFull.filter { $0.role == .user }
+        let kept = log.filter {
+            $0.role == .marker || !(covered.contains(normalized($0.role, $0.text)) || repeatsCodexPrompts($0, prompts: prompts))
+        }
         // A igual fecha, primero la copia completa y después el registro.
         return (orderedFull + kept).enumerated()
             .sorted { ($0.element.date, $0.offset) < ($1.element.date, $1.offset) }
             .map(\.element)
+    }
+
+    /// Las versiones anteriores guardaban de cada turno de Codex todos sus `input-messages` juntos, y
+    /// Codex manda ahí todos los pedidos que siguen en su contexto, no solo los del turno. Ese registro
+    /// termina con el último pedido anterior al aviso, que la copia del rollout ya tiene por separado.
+    /// `prompts`: los pedidos de la copia completa, ordenados por fecha.
+    static func repeatsCodexPrompts(_ entry: HistoryEntry, prompts: [HistoryEntry]) -> Bool {
+        guard entry.agent == .codex, entry.role == .user,
+              let last = prompts.last(where: { $0.date <= entry.date.addingTimeInterval(2) }) else { return false }
+        let prompt = withoutImageTags(last.text).trimmingCharacters(in: .whitespacesAndNewlines)
+        return !prompt.isEmpty && entry.text.hasSuffix("\n\n" + prompt)
+    }
+
+    /// Un pedido sin las etiquetas `<image …></image>` que Codex pone alrededor de cada adjunto.
+    static func withoutImageTags(_ text: String) -> String {
+        text.replacingOccurrences(of: #"<image\b[^>]*>\s*</image>\s*"#, with: "", options: .regularExpression)
     }
 
     /// La entrada de `candidates` que corresponde a `target`. La búsqueda global devuelve entradas del

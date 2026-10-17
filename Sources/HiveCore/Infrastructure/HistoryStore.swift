@@ -227,6 +227,11 @@ public struct HistoryStore: Sendable {
     /// La línea de tiempo completa: la copia de Hive, los transcripts vivos que se le pasen (por ejemplo,
     /// el de la conversación actual) y, del registro de siempre, los marcadores y lo que la copia no tenga.
     public func fullTimeline(_ sessionId: UUID, agent: SessionKind, live: [URL] = []) -> [HistoryEntry] {
+        CodexInternalTurn.removingFromHistory(HistoryExport.timeline(log: load(sessionId), full: fullCopy(sessionId, agent: agent, live: live)))
+    }
+
+    /// La copia de Hive más lo que los transcripts todavía no le pasaron.
+    private func fullCopy(_ sessionId: UUID, agent: SessionKind, live: [URL] = []) -> [HistoryEntry] {
         var full = loadArchived(sessionId)
         var seen = Set(full.map { $0.conversationId + "|" + $0.key })
         let segments = transcriptSegments(sessionId)
@@ -239,15 +244,18 @@ public struct HistoryStore: Sendable {
                                             text: message.text, date: message.date ?? .distantPast, agent: source.agent))
             }
         }
-        return CodexInternalTurn.removingFromHistory(HistoryExport.timeline(log: load(sessionId), full: full.map(\.entry)))
+        return full.map(\.entry)
     }
 
-    /// Limpia los turnos auxiliares guardados por versiones anteriores, también del Markdown que
-    /// lee la IA. Conserva los originales antes de escribir y solo se llama antes de lanzar el proceso.
+    /// Limpia lo que guardaron mal las versiones anteriores con Codex, también del Markdown que lee la
+    /// IA: los turnos auxiliares y los pedidos de cada turno repetidos todos juntos. Conserva los
+    /// originales antes de escribir y solo se llama antes de lanzar el proceso.
     @discardableResult
-    public func repairCodexInternalTurns(session: Session, place: String) throws -> Bool {
+    public func repairCodexHistory(session: Session, place: String) throws -> Bool {
         let original = loadUnfiltered(session.id)
+        let prompts = fullCopy(session.id, agent: session.kind).filter { $0.role == .user }.sorted { $0.date < $1.date }
         let cleaned = CodexInternalTurn.removingFromHistory(original)
+            .filter { !HistoryExport.repeatsCodexPrompts($0, prompts: prompts) }
         guard cleaned.count != original.count else { return false }
         let raw = try Data(contentsOf: jsonlURL(session.id))
         // Si hubiera una línea dañada, no reescribimos solo las que logramos decodificar.
