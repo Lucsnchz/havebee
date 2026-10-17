@@ -59,7 +59,7 @@ public enum InterruptedWork {
         // En Codex el checkpoint puede venir de Enter en la terminal. Hace falta que el rollout
         // confirme que inició una tarea; Enter en un menú, /status o una entrada vacía no alcanzan.
         var allowed = agent != .codex
-        var titleTurn = false
+        var internalTurn = false
         for line in lines {
             guard let json = JSONValue.parse(Data(line)), let stamp = json["timestamp"]?.string.flatMap(AgentTimestamp.parse),
                   stamp.timeIntervalSince1970 >= pending.since else { continue }
@@ -67,15 +67,15 @@ public enum InterruptedWork {
                 let payload = json["payload"]
                 let type = payload?["type"]?.string
                 if json["type"]?.string == "event_msg" {
-                    if type == "task_started" { allowed = true; titleTurn = false }
-                    if ["task_complete", "turn_aborted"].contains(type ?? ""), !titleTurn { allowed = false }
+                    if type == "task_started" { allowed = true; internalTurn = false }
+                    if ["task_complete", "turn_aborted"].contains(type ?? ""), !internalTurn { allowed = false }
                 } else if json["type"]?.string == "response_item", type == "message" {
                     let text = (payload?["content"]?.array ?? []).compactMap { $0["text"]?.string }.joined(separator: "\n")
                     if payload?["role"]?.string == "user" {
-                        titleTurn = CodexTitleGeneration.isRequest(text)
-                        if !titleTurn, !TranscriptReader.isCodexInjected(text) { allowed = true }
+                        internalTurn = CodexInternalTurn.isRequest(text)
+                        if !internalTurn, !TranscriptReader.isCodexInjected(text) { allowed = true }
                         if text.hasPrefix("<turn_aborted>") { allowed = false }
-                    } else if payload?["role"]?.string == "assistant", payload?["phase"]?.string == "final", !titleTurn {
+                    } else if payload?["role"]?.string == "assistant", payload?["phase"]?.string == "final", !internalTurn {
                         allowed = false
                     }
                 } else if json["type"]?.string == "response_item", ["function_call", "custom_tool_call"].contains(type ?? "") {

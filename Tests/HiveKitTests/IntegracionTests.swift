@@ -111,11 +111,11 @@ struct IntegracionViewTests {
                     size: CGSize(width: 240, height: 70), name: "25-uso-sidebar")
         await check(UsageBadge(sessionId: session.id, monitor: monitor).environment(store).padding(12),
                     size: CGSize(width: 100, height: 44), name: "26-uso-sesion")
-        // Sin datos no ocupa lugar.
+        // Sin porcentajes sigue disponible el acceso a las IAs instaladas.
         let empty = UsageMonitor(interval: 3600)
         await check(UsageSummary(monitor: empty, compact: true, insets: EdgeInsets(top: 12, leading: 0, bottom: 0, trailing: 0))
                         .environment(TestWorld().makeStore()),
-                    size: CGSize(width: 72, height: 40), name: "27-uso-vacio", empty: true)
+                    size: CGSize(width: 72, height: 48), name: "27-uso-sin-datos")
     }
 
     @Test("La ayuda del riel lista cada límite con su reinicio")

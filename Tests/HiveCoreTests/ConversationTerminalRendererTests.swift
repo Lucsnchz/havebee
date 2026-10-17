@@ -28,12 +28,13 @@ struct ConversationTerminalRendererTests {
         #expect(result.lineCount > 15)
     }
 
-    @Test("Los mensajes auxiliares de titulación no se dibujan como pedidos del usuario")
-    func titleMessages() {
+    @Test("Los mensajes auxiliares de titulación no se dibujan, incluso después de cambiar de IA", arguments: [SessionKind.claude, .codex])
+    func titleMessages(agent: SessionKind) {
         let entries = [entry(.user, "Mi pedido real"),
-                       entry(.user, "Generate a concise, single-line task title of at most 36 characters. Do not answer the request.\n\nUser prompt:\nMi pedido real"),
-                       entry(.assistant, #"{"title":"Arreglar el chat"}"#), entry(.assistant, "Voy a revisarlo")]
-        let result = ConversationTerminalRenderer.render(entries, agent: .claude, columns: 80)
+                       HistoryEntry(date: .reference, role: .user, text: "Generate a concise, single-line task title of at most 36 characters. Do not answer the request.\n\nUser prompt:\nMi pedido real", agent: .codex),
+                       HistoryEntry(date: .reference, role: .assistant, text: #"{"title":"Arreglar el chat"}"#, agent: .codex),
+                       entry(.assistant, "Voy a revisarlo")]
+        let result = ConversationTerminalRenderer.render(entries, agent: agent, columns: 80)
         #expect(result.ansi.contains("Mi pedido real") && result.ansi.contains("Voy a revisarlo"))
         #expect(!result.ansi.contains("Generate a concise") && !result.ansi.contains("{\"title\""))
         // Un JSON que forma parte de la conversación sí se muestra.

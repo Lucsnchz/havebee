@@ -128,6 +128,15 @@ public struct AgentStorage: Sendable {
         return Self.isSubagentMeta(meta["payload"])
     }
 
+    /// Una conversación persistida del usuario en esta carpeta, no una tarea interna ni un subagente.
+    public func isCodexConversation(_ id: String, in directory: String) -> Bool {
+        guard let url = codexRolloutURL(id), let meta = Self.firstLineJSON(url),
+              let payload = meta["payload"], payload["id"]?.string == id,
+              let cwd = payload["cwd"]?.string, samePath(cwd, directory),
+              !Self.isSubagentMeta(payload) else { return false }
+        return payload["source"]?.string == "cli"
+    }
+
     /// El archivo de un thread de Codex: sessions/AAAA/MM/DD/rollout-<fecha>-<thread>.jsonl
     /// (o archived_sessions/ si lo archivaste).
     ///

@@ -20,6 +20,8 @@ public final class SessionRuntime {
     /// Se está armando su lanzamiento (búsquedas en disco fuera del hilo principal).
     public internal(set) var isLaunching = false
     public internal(set) var isSwitchingAgent = false
+    /// Error reconocido al arrancar Codex; el borrador recuperado se guarda en la sesión.
+    var startupFailure: CodexStartupFailure?
     @ObservationIgnored var launchId = UUID()
     /// Un Stop explícito no puede ser deshecho por hooks que llegan mientras termina el proceso.
     @ObservationIgnored var isStopping = false

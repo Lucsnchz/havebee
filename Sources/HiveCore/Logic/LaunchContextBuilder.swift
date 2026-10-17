@@ -43,6 +43,13 @@ public struct LaunchContextBuilder: Sendable {
     public var place: String { project.isScratch ? project.name : "\(project.name) › \(branch.name)" }
 
     public func build() -> LaunchContext {
+        let history = HistoryStore(directory: paths.historyDir)
+        if session.kind.reportsConversation {
+            _ = try? history.repairCodexInternalTurns(session: session, place: place)
+        }
+        let resolved = CodexSessionRecovery.resolve(session, directory: directory, agents: agents,
+                                                    history: history, excluding: claimedAgentIds)
+        let replacedMissingCodex = session.kind == .codex && resolved.agentSessionId != session.agentSessionId
         if session.kind.reportsConversation {
             // El archivo existe desde el arranque, para que la IA lo encuentre.
             HistoryStore(directory: paths.historyDir).ensureMarkdown(session: session, place: place)
@@ -57,7 +64,7 @@ public struct LaunchContextBuilder: Sendable {
         let mcpServers = mcp.servers
         var discovered: String?
         // Solo si ya se lanzó antes y no sabemos su conversación: la buscamos entre las que se crearon después.
-        if let since = session.lastLaunchedAt, session.agentSessionId == nil {
+        if let since = session.lastLaunchedAt, resolved.agentSessionId == nil, !replacedMissingCodex {
             switch session.kind {
             case .codex:
                 discovered = agents.discoverCodexThread(cwd: directory, since: since, excluding: claimedAgentIds, now: now)
@@ -74,14 +81,16 @@ public struct LaunchContextBuilder: Sendable {
         let geminiSettings = session.kind == .gemini
             ? MCPConfig.writeGeminiSettings(mcpServers, to: paths.geminiDir.appendingPathComponent("\(session.id.uuidString).json"))
             : nil
-        let history = HistoryStore(directory: paths.historyDir)
         let entries = session.kind.reportsConversation ? history.fullTimeline(session.id, agent: session.kind) : []
-        let handoffContext = session.handoffFrom.map {
+        var handoffContext = session.handoffFrom.map {
             AgentHandoff.instructions(from: $0, markdown: history.markdownURL(session.id),
                                       entries: entries)
         }
+        if replacedMissingCodex && resolved.agentSessionId == nil {
+            handoffContext = AgentHandoff.recoveryInstructions(markdown: history.markdownURL(session.id), entries: entries)
+        }
         return LaunchContext(
-            session: session, project: project, branch: branch, directory: directory, path: path,
+            session: resolved, project: project, branch: branch, directory: directory, path: path,
             inheritedEnvironment: inheritedEnvironment, paths: paths,
             claudeInline: claudeInline, historyHint: historyHint,
             claudeConversationExists: session.kind == .claude && session.agentSessionId.map(agents.claudeConversationExists) == true,
@@ -89,7 +98,7 @@ public struct LaunchContextBuilder: Sendable {
             discoveredAgentId: discovered, mcpFile: mcpFile, mcpServers: mcpServers, geminiSettingsPath: geminiSettings,
             codexExistingNotify: session.kind == .codex ? agents.codexExistingNotify() : nil,
             claudeUsage: claudeUsage, claudeUserStatusLine: userStatusLine, handoffContext: handoffContext,
-            historyEntries: entries, resumeInterruptedWork: canContinueInterruptedWork(agentId: session.agentSessionId ?? discovered))
+            historyEntries: entries, resumeInterruptedWork: canContinueInterruptedWork(agentId: resolved.agentSessionId ?? discovered))
     }
 
     private func canContinueInterruptedWork(agentId: String?) -> Bool {

@@ -52,7 +52,7 @@ struct SidebarView: View {
         }
         .safeAreaInset(edge: .bottom) {
             VStack(alignment: .leading, spacing: 0) {
-                // Los límites de las cuentas de Claude y Codex (nada mientras no haya datos).
+                // Los límites de las cuentas y el acceso al panel de IAs.
                 UsageSummary(insets: EdgeInsets(top: 0, leading: 0, bottom: 10, trailing: 0))
                 HStack {
                     Button {

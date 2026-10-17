@@ -52,8 +52,15 @@ extension AppStore {
             guard let rt = runtimes[event.sessionId], rt.isRunning, let ctx = sessionContext(event.sessionId) else { continue }
             guard !rt.isSwitchingAgent, !rt.isStopping, event.source == ctx.session.kind.rawValue,
                   event.launchId.map({ $0 == rt.launchId }) ?? (ctx.session.handoffFrom == nil) else { continue }
-            // El título automático no cuenta como actividad ni como un hook del agente principal.
-            guard !CodexTitleGeneration.isCompletion(event) else { continue }
+            // Los títulos y resúmenes automáticos no son actividad del agente principal.
+            guard !CodexInternalTurn.isCompletion(event) else { continue }
+            // Un aviso auxiliar desconocido tampoco puede reemplazar una conversación persistida.
+            if event.source == "codex", let incoming = event.payload["thread-id"]?.string,
+               let current = ctx.session.agentSessionId, incoming != current,
+               environment.agents.codexRolloutURL(current) != nil,
+               !environment.agents.isCodexConversation(incoming, in: ctx.project.directory(for: ctx.branch)) {
+                continue
+            }
             rt.hooksSeen = true
             rt.lastEventAt = environment.now()
             // Un thread de Codex distinto del de la sesión puede ser de un subagente: esos avisos se ignoran.

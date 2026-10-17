@@ -111,7 +111,7 @@ public enum AgentEventInterpreter {
                                  isSubagentThread: (String) -> Bool = { _ in false },
                                  pendingPermission: PermissionRequestKey? = nil,
                                  inBackground: Bool = false) -> AgentEventOutcome {
-        guard !CodexTitleGeneration.isCompletion(event) else { return AgentEventOutcome() }
+        guard !CodexInternalTurn.isCompletion(event) else { return AgentEventOutcome() }
         var outcome = AgentEventOutcome()
         let payload = event.payload
         // Dentro de un subagente, los hooks traen `agent_id`: no dicen nada del agente principal.

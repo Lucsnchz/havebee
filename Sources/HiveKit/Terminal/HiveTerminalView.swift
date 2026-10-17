@@ -21,6 +21,14 @@ public final class HiveTerminalView: TerminalView, TerminalViewDelegate, LocalPr
     /// Todo lo que le llega al proceso, también las respuestas automáticas (para las pruebas).
     var onProcessInput: ((ArraySlice<UInt8>) -> Void)?
     private var onOutput: (() -> Void)?
+    /// Solo Codex: cola acotada del proceso para recuperar su diagnóstico y borrador de arranque.
+    /// `feed`/`restoreHistory` no entran acá: una cita del error en el historial no es un fallo nuevo.
+    var capturesStartupOutput = false
+    private var startupOutput = Data()
+
+    func codexStartupFailure() -> CodexStartupFailure? {
+        CodexStartupFailure.parse(output: String(decoding: startupOutput, as: UTF8.self))
+    }
 
     /// Si un agente borra pantalla y scroll justo después de un Enter (como /clear), en vez de
     /// perder todo dejamos la pantalla en el scroll con una línea divisoria. Lo activa el store
@@ -330,6 +338,11 @@ public final class HiveTerminalView: TerminalView, TerminalViewDelegate, LocalPr
 
     /// Salida del proceso (pasa por el filtro de /clear si corresponde).
     func receive(_ slice: ArraySlice<UInt8>) {
+        if capturesStartupOutput {
+            startupOutput.append(contentsOf: slice)
+            let limit = 256 * 1024
+            if startupOutput.count > limit { startupOutput.removeFirst(startupOutput.count - limit) }
+        }
         onOutput?()
         guard preservesScrollbackOnClear else {
             feed(byteArray: slice)

@@ -90,6 +90,7 @@ extension AppStore {
         rt.launchId = UUID()
         rt.isStopping = false
         rt.manuallyInterrupted = false
+        rt.startupFailure = nil
         var plan = plan
         plan.environment["HIVE_LAUNCH_ID"] = rt.launchId.uuidString
         let terminal = HiveTerminalView(frame: NSRect(x: 0, y: 0, width: 900, height: 600))
@@ -98,6 +99,7 @@ extension AppStore {
         terminal.caretColor = ctx.project.tint.nsColor
         // En los agentes, /clear deja lo anterior en el scroll con una divisoria.
         terminal.preservesScrollbackOnClear = ctx.session.kind.isAgent
+        terminal.capturesStartupOutput = ctx.session.kind == .codex
         terminal.restoreHistory(plan.restoredHistory, agent: ctx.session.kind)
         let events = TerminalEvents(
             onTitle: { [weak rt] title in rt?.title = title },
@@ -124,7 +126,8 @@ extension AppStore {
 
         let now = environment.now()
         projects.updateSession(id) { session in
-            session.agentSessionId = plan.agentSessionId ?? session.agentSessionId
+            // El plan puede haber recuperado otro ID o descartado uno temporal que Codex no guardó.
+            session.agentSessionId = plan.agentSessionId
             if started {
                 session.lastLaunchedAt = now
                 session.pendingWork = plan.continuesInterruptedWork ? PendingAgentWork(launchId: rt.launchId, since: now) : nil
@@ -224,11 +227,26 @@ extension AppStore {
     func processExited(_ id: UUID, terminal: HiveTerminalView, code: Int32?) {
         resumeExitWaiters(ObjectIdentifier(terminal))
         // Ignoramos avisos de una terminal vieja que ya reemplazamos (o estamos reemplazando) al reiniciar.
-        guard let rt = runtimes[id], rt.terminal === terminal, !relaunching.contains(id) else { return }
+        guard let rt = runtimes[id], rt.terminal === terminal else { return }
+        if rt.kind == .codex, let code, code != 0,
+           let failure = terminal.codexStartupFailure() {
+            rt.startupFailure = failure
+            if let draft = failure.unsentDraft {
+                projects.updateSession(id) { $0.recoveredDraft = draft }
+                // Antes de reemplazar la terminal, incluso si el fallo llegó al reiniciarla.
+                saveNow()
+            }
+        }
+        guard !relaunching.contains(id) else { return }
         if !isShuttingDown && code == 0 { clearPendingWork(id) }
         rt.status = .exited(code)
         rt.unseen = false
         updateBadge()
+    }
+
+    func discardRecoveredDraft(_ id: UUID) {
+        projects.updateSession(id) { $0.recoveredDraft = nil }
+        saveNow()
     }
 
     // MARK: - Continuar con otra IA

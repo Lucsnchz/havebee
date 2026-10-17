@@ -75,11 +75,14 @@ public struct Session: Identifiable, Codable, Hashable, Sendable {
     public var handoffFrom: SessionKind?
     /// Trabajo confirmado que todavía no terminó. Sobrevive a un cierre o caída de Hive.
     public var pendingWork: PendingAgentWork?
+    /// Texto que el agente devolvió como no enviado al fallar. Se conserva aparte del historial:
+    /// todavía no es una tarea recibida por la IA, y nunca se manda automáticamente.
+    public var recoveredDraft: String?
 
     public init(id: UUID = UUID(), name: String, kind: SessionKind, createdAt: Date = Date(),
                 agentSessionId: String? = nil, lastLaunchedAt: Date? = nil, lastMessage: String? = nil,
                 lastActivityAt: Date? = nil, archivedAt: Date? = nil, autoNamed: Bool? = nil,
-                handoffFrom: SessionKind? = nil, pendingWork: PendingAgentWork? = nil) {
+                handoffFrom: SessionKind? = nil, pendingWork: PendingAgentWork? = nil, recoveredDraft: String? = nil) {
         self.id = id
         self.name = name
         self.kind = kind
@@ -92,6 +95,7 @@ public struct Session: Identifiable, Codable, Hashable, Sendable {
         self.autoNamed = autoNamed
         self.handoffFrom = handoffFrom
         self.pendingWork = pendingWork
+        self.recoveredDraft = recoveredDraft
     }
 
     public var isArchived: Bool { archivedAt != nil }

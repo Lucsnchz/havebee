@@ -6,8 +6,8 @@ import Testing
 @MainActor
 @Suite("Store: avisos de Codex sin tareas internas")
 struct StoreCodexNotificationTests {
-    @Test("El título no avisa ni pisa la sesión; la respuesta real avisa una sola vez", arguments: [nil, "real-thread"] as [String?])
-    func titleThenReply(agentId: String?) async throws {
+    @Test("Los títulos y resúmenes no pisan la sesión; la respuesta real avisa una sola vez", arguments: [nil, "real-thread"] as [String?], [false, true])
+    func internalThenReply(agentId: String?, catchUp: Bool) async throws {
         let s = try await AppStoreSessionTests.Setup()
         let session = try s.newSession(.codex)
         s.store.activate(session.id)
@@ -20,10 +20,12 @@ struct StoreCodexNotificationTests {
         s.store.setStatus(rt, .working)
         let before = try #require(s.store.sessionContext(session.id)?.session)
         let lastEvent = rt.lastEventAt
-        let prompt = "Generate a concise, single-line task title of at most 36 characters. Do not answer the request.\n\nUser prompt:\nRevisá el QR"
+        let prompt = catchUp
+            ? "Write a brief catch-up for a user returning to this task. Return JSON with summary and nullable next_action.\nSummary: broad goal\nNext_action: unanswered question\nConversation:\nUser: Revisá el QR"
+            : "Generate a concise, single-line task title of at most 36 characters. Do not answer the request.\n\nUser prompt:\nRevisá el QR"
         let titleEvent = HiveEvent(sessionId: session.id, source: "codex", name: "notify", payload: [
             "type": "agent-turn-complete", "thread-id": "title-thread", "input-messages": [.string(prompt)],
-            "last-assistant-message": #"{"title":"Revisar QR de Mercado Pago"}"#,
+            "last-assistant-message": .string(catchUp ? #"{"summary":"QR revisado","next_action":null}"# : #"{"title":"Revisar QR de Mercado Pago"}"#),
         ])
         s.world.advance(1)
         s.store.handle([titleEvent])

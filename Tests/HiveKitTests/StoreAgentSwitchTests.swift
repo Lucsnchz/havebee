@@ -33,6 +33,85 @@ private struct SwitchFixture {
 @MainActor
 @Suite("Store: cambiar de IA con historial")
 struct StoreAgentSwitchTests {
+    private static let startupError = "Error: account/read failed during TUI bootstrap: account/read failed: workspace routing discovery timed out (code -32603)"
+
+    @Test("Un timeout al pasar de Claude a Codex conserva contexto y borrador al reintentar y reabrir")
+    func startupFailureRecovery() async throws {
+        let f = try SwitchFixture()
+        f.event("claude", "Stop", ["last_assistant_message": "Queda revisar la vista de rutas"])
+        try await f.switchTo(.codex)
+        let originalTerminal = try #require(f.store.runtimes[f.id]?.terminal)
+        // Un Enter mientras el agente todavía arranca no autoriza reenviar el borrador al reintentar.
+        f.store.userInput(f.id, [13])
+        let draft = "Leé el historial y revisá la vista de rutas.\n    Conservá la separación de este mensaje."
+        originalTerminal.receive(Array("\r\nUnsent draft:\r\n\(draft.replacingOccurrences(of: "\n", with: "\r\n"))\r\n\r\n\(Self.startupError)\r\n".utf8)[...])
+        f.store.processExited(f.id, terminal: originalTerminal, code: 1)
+        #expect(f.store.runtimes[f.id]?.startupFailure != nil)
+        #expect(f.store.sessionContext(f.id)?.session.recoveredDraft == draft)
+
+        f.store.relaunch(f.id)
+        #expect(f.store.runtimes[f.id]?.terminal !== originalTerminal)
+        #expect(f.store.runtimes[f.id]?.startupFailure == nil)
+        #expect(f.store.sessionContext(f.id)?.session.recoveredDraft == draft)
+        #expect(f.store.sessionContext(f.id)?.session.handoffFrom == .claude)
+        #expect(f.store.selection == .session(f.id))
+        #expect(f.store.scratchProject?.allSessions.count == 1)
+        let launch = try #require(f.world.processes.launches.last)
+        #expect(launch.args.contains { $0.contains("Queda revisar la vista de rutas") })
+        #expect(!launch.args.contains { $0.contains(draft) })
+        #expect(!launch.args.contains(InterruptedWork.prompt))
+        #expect(!f.store.history.load(f.id).contains { $0.text.contains(draft) })
+
+        let reopened = f.world.makeStore()
+        #expect(reopened.sessionContext(f.id)?.session.recoveredDraft == draft)
+        reopened.activate(f.id)
+        // Un reintento sin otro borrador tampoco borra el anterior.
+        let newTerminal = try #require(reopened.runtimes[f.id]?.terminal)
+        // Una cita restaurada por Hive no es otro borrador del proceso nuevo.
+        newTerminal.feed(text: "\r\nUnsent draft:\r\nEsto es una cita vieja\r\n\r\n\(Self.startupError)\r\n")
+        newTerminal.receive(Array("\r\n\(Self.startupError)\r\n".utf8)[...])
+        reopened.processExited(f.id, terminal: newTerminal, code: 1)
+        #expect(reopened.sessionContext(f.id)?.session.recoveredDraft == draft)
+        // La salida tardía de una terminal vieja no reemplaza el borrador actual.
+        f.store.processExited(f.id, terminal: originalTerminal, code: 1)
+        #expect(f.store.runtimes[f.id]?.status == .idle)
+        reopened.discardRecoveredDraft(f.id)
+        #expect(f.world.makeStore().sessionContext(f.id)?.session.recoveredDraft == nil)
+    }
+
+    @Test("La salida real de Codex se recupera antes de que desaparezca su terminal")
+    func realStartupFailure() async throws {
+        let world = TestWorld()
+        let processes = HandoffProcesses()
+        let draft = "Revisá el historial y continuá con la vista de rutas, conservando todos los detalles de este mensaje largo.\nSegunda línea 🐝"
+        processes.failNextLaunchWith = "Unsent draft:\n\(draft)\n\n\(Self.startupError)\n"
+        var environment = world.environment
+        environment.processes = processes
+        let store = AppStore(environment: environment)
+        defer { store.shutdown() }
+        let branch = try #require(store.scratchProject?.branches.first)
+        store.requestNewSession(branchId: branch.id, kind: .codex)
+        let id = try #require(store.scratchProject?.allSessions.last?.id)
+        store.activate(id)
+        try #require(await waitUntil { store.runtimes[id]?.status.isExited == true })
+        #expect(store.runtimes[id]?.startupFailure != nil)
+        #expect(store.sessionContext(id)?.session.recoveredDraft == draft)
+        #expect(world.makeStore().sessionContext(id)?.session.recoveredDraft == draft)
+    }
+
+    @Test("La recuperación une bytes partidos y no depende del ancho de la terminal")
+    func splitStartupOutput() throws {
+        let terminal = HiveTerminalView(frame: NSRect(x: 0, y: 0, width: 260, height: 100))
+        terminal.capturesStartupOutput = true
+        terminal.feed(text: "Unsent draft:\r\nCita anterior\r\n\r\n\(Self.startupError)\r\n")
+        #expect(terminal.codexStartupFailure() == nil)
+        let draft = "Revisá las rutas 🐝 y conservá este mensaje aunque ocupe varias líneas de la terminal."
+        for byte in "\r\nUnsent draft:\r\n\(draft)\r\n\r\n\(Self.startupError)\r\n".utf8 {
+            terminal.receive([byte][...])
+        }
+        #expect(terminal.codexStartupFailure()?.unsentDraft == draft)
+    }
+
     @Test("Con procesos reales, termina el anterior antes de lanzar el nuevo y evita cambios duplicados")
     func realProcessHandoff() async throws {
         let world = TestWorld()
@@ -198,12 +277,19 @@ struct StoreAgentSwitchTests {
 private final class HandoffProcesses: ProcessStarting {
     var terminals: [HiveTerminalView] = []
     var overlapped = false
+    var failNextLaunchWith: String?
 
     func resolve(_ binary: String, path: String) -> String? { "/bin/sh" }
 
     func start(_ terminal: HiveTerminalView, executable: String, args: [String], environment: [String], directory: String) {
         overlapped = overlapped || terminals.contains { $0.isProcessRunning }
         terminals.append(terminal)
+        if let output = failNextLaunchWith {
+            failNextLaunchWith = nil
+            terminal.startProcess(executable: executable, args: ["-c", "printf '%s' \"$HIVE_TEST_FAILURE\"; exit 1"],
+                                  environment: environment + ["HIVE_TEST_FAILURE=\(output)"], currentDirectory: directory)
+            return
+        }
         let script = "printf '\\033[2J\\033[3J\\033[HAgente listo\\n'; exec /bin/cat"
         terminal.startProcess(executable: executable, args: ["-c", script], environment: environment, currentDirectory: directory)
     }

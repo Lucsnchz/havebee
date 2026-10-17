@@ -180,30 +180,157 @@ struct UsageBadge: View {
 
 /// Barritas con los límites de las cuentas («Claude 5h 23% · sem 87%») y, abajo, cuándo se reinicia el
 /// más usado («La semanal se reinicia el jue 14:00»).
-/// No muestra nada mientras no haya datos. `compact`: para el riel angosto de la vista compacta, un logo
-/// con el límite más usado de cada cuenta. `insets` solo se suman si hay algo que mostrar.
+/// Un clic abre las IAs instaladas y el detalle de uso. Sin porcentajes queda el acceso «IAs».
+/// `compact`: para el riel angosto, un logo con el límite más usado de cada cuenta.
 struct UsageSummary: View {
     @Environment(AppStore.self) private var store
     var monitor: UsageMonitor = .shared
     var now: () -> Date = Date.init
     var compact = false
     var insets = EdgeInsets()
+    @State private var showsAgents = false
+    @State private var hovering = false
 
     var body: some View {
         let date = now()
         let rows = [monitor.claude, monitor.codex].compactMap { $0 }.filter { !$0.activeLimits(now: date).isEmpty }
-        VStack(alignment: compact ? .center : .leading, spacing: compact ? 8 : 7) {
-            ForEach(rows, id: \.agent) { snapshot in
-                if compact {
-                    UsageRailRow(snapshot: snapshot, now: date)
-                } else {
-                    UsageAccountRow(snapshot: snapshot, now: date)
+        Button {
+            showsAgents = true
+        } label: {
+            VStack(alignment: compact ? .center : .leading, spacing: compact ? 8 : 7) {
+                if rows.isEmpty {
+                    Label(compact ? "IAs" : "IAs y uso", systemImage: "chart.bar")
+                        .font(HiveFont.meta)
+                        .foregroundStyle(Theme.secondaryText)
+                }
+                ForEach(rows, id: \.agent) { snapshot in
+                    if compact {
+                        UsageRailRow(snapshot: snapshot, now: date)
+                    } else {
+                        UsageAccountRow(snapshot: snapshot, now: date)
+                    }
                 }
             }
+            .frame(maxWidth: .infinity, minHeight: 26, alignment: compact ? .center : .leading)
+            .padding(.vertical, 4)
+            .background(Color.primary.opacity(hovering ? 0.07 : 0),
+                        in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .contentShape(Rectangle())
         }
-        .frame(maxWidth: .infinity, alignment: compact ? .center : .leading)
-        .padding(rows.isEmpty ? EdgeInsets() : insets)
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help("Ver todas las IAs disponibles y sus límites de uso")
+        .accessibilityLabel("IAs y límites de uso")
+        .accessibilityValue(rows.map { UsageRailRow.helpText($0.agent, limits: $0.activeLimits(now: date), now: date) }
+            .joined(separator: ". "))
+        .popover(isPresented: $showsAgents) {
+            AgentUsagePopover(monitor: monitor, now: now)
+                .environment(store)
+        }
+        .padding(insets)
         .task { monitor.attach(store) }
+    }
+}
+
+/// Todas las IAs de Hive, aunque alguna no esté instalada o todavía no informe sus límites.
+struct AgentUsagePopover: View {
+    @Environment(AppStore.self) private var store
+    var monitor: UsageMonitor = .shared
+    var now: () -> Date = Date.init
+
+    var body: some View {
+        let availability = AgentAvailability.shared(for: store)
+        let date = now()
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("IAs y uso")
+                        .font(HiveFont.heading)
+                    Text("Agentes instalados y límites de sus cuentas")
+                        .font(HiveFont.meta)
+                        .foregroundStyle(Theme.secondaryText)
+                }
+                Spacer(minLength: 12)
+                Button {
+                    availability.refresh()
+                    monitor.refresh()
+                } label: {
+                    Label("Actualizar", systemImage: "arrow.clockwise")
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .help("Volver a consultar las IAs instaladas y sus datos de uso")
+            }
+            Divider()
+            ForEach(SessionKind.allCases.filter(\.isAgent)) { kind in
+                AgentUsageRow(kind: kind, installed: availability.checked ? availability.isInstalled(kind) : nil,
+                              snapshot: UsageMonitor.latest(kind, in: monitor.sessions), now: date)
+            }
+        }
+        .padding(16)
+        .frame(width: 370)
+        .task {
+            availability.refreshIfStale()
+            monitor.attach(store)
+            monitor.refresh()
+        }
+    }
+}
+
+private struct AgentUsageRow: View {
+    let kind: SessionKind
+    let installed: Bool?
+    let snapshot: UsageSnapshot?
+    let now: Date
+
+    var body: some View {
+        let limits = snapshot?.activeLimits(now: now) ?? []
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                AgentLogo(kind: kind, size: 20)
+                    .accessibilityHidden(true)
+                Text(kind.label)
+                    .font(HiveFont.heading)
+                Spacer()
+                Text(installed.map { $0 ? "Instalado" : "No instalado" } ?? "Comprobando…")
+                    .font(HiveFont.meta)
+                    .foregroundStyle(Theme.secondaryText)
+            }
+            if limits.isEmpty {
+                Text(kind == .claude || kind == .codex ? "Sin datos de uso recientes" : "Límites de uso aún no disponibles en Hive")
+                    .font(HiveFont.secondary)
+                    .foregroundStyle(Theme.secondaryText)
+            } else {
+                // Claude y Codex informan dos ventanas como máximo (principal y secundaria).
+                // Mantiene cada barra en su lugar cuando cambian los porcentajes.
+                if let first = limits.first { limitDetail(first) }
+                if limits.count > 1, let second = limits.last { limitDetail(second) }
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func limitDetail(_ limit: UsageLimit) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                Text(limit.longLabel.capitalized)
+                Spacer()
+                Text("\(Int(limit.usedPercent.rounded())) % usado")
+                    .monospacedDigit()
+            }
+            .font(HiveFont.secondary)
+            ProgressView(value: limit.usedPercent, total: 100)
+                .tint(UsageMonitor.color(limit.usedPercent))
+                .accessibilityLabel("\(kind.defaultName), \(limit.longLabel)")
+                .accessibilityValue("\(Int(limit.usedPercent.rounded())) % usado")
+            if let reset = limit.resetsAt {
+                Text(UsageReader.resetText(reset, now: now))
+                    .font(HiveFont.meta)
+                    .foregroundStyle(Theme.secondaryText)
+            }
+        }
     }
 }
 

@@ -18,17 +18,7 @@ public enum ConversationTerminalRenderer {
         let width = max(12, min(columns - 8, 92))
         let rule = String(repeating: "─", count: width)
         var lines: [String] = []
-        var titleReply = false
-        for entry in entries {
-            // Los prompts auxiliares de titulación de Codex no forman parte de la charla.
-            // Se omiten solo de la presentación: los archivos originales permanecen intactos.
-            if entry.role == .user, CodexTitleGeneration.isRequest(entry.text) { titleReply = true; continue }
-            if titleReply, entry.role == .assistant {
-                titleReply = false
-                if let object = JSONValue.parse(entry.text)?.object, object.count == 1, object["title"]?.string != nil { continue }
-            } else {
-                titleReply = false
-            }
+        for entry in CodexInternalTurn.removingFromHistory(entries, defaultAgent: agent) {
             let time = entry.date.formatted(date: .omitted, time: .shortened)
             if entry.role == .marker {
                 let label = HistoryStore.markerTitle(entry.text)

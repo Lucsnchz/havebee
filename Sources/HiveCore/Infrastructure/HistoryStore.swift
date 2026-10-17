@@ -65,6 +65,10 @@ public struct HistoryStore: Sendable {
     }
 
     public func load(_ sessionId: UUID) -> [HistoryEntry] {
+        CodexInternalTurn.removingFromHistory(loadUnfiltered(sessionId))
+    }
+
+    private func loadUnfiltered(_ sessionId: UUID) -> [HistoryEntry] {
         guard let text = try? String(contentsOf: jsonlURL(sessionId), encoding: .utf8) else { return [] }
         let segments = transcriptSegments(sessionId).sorted { $0.since < $1.since }
         return text.split(separator: "\n").compactMap {
@@ -235,7 +239,38 @@ public struct HistoryStore: Sendable {
                                             text: message.text, date: message.date ?? .distantPast, agent: source.agent))
             }
         }
-        return HistoryExport.timeline(log: load(sessionId), full: full.map(\.entry))
+        return CodexInternalTurn.removingFromHistory(HistoryExport.timeline(log: load(sessionId), full: full.map(\.entry)))
+    }
+
+    /// Limpia los turnos auxiliares guardados por versiones anteriores, también del Markdown que
+    /// lee la IA. Conserva los originales antes de escribir y solo se llama antes de lanzar el proceso.
+    @discardableResult
+    public func repairCodexInternalTurns(session: Session, place: String) throws -> Bool {
+        let original = loadUnfiltered(session.id)
+        let cleaned = CodexInternalTurn.removingFromHistory(original)
+        guard cleaned.count != original.count else { return false }
+        let raw = try Data(contentsOf: jsonlURL(session.id))
+        // Si hubiera una línea dañada, no reescribimos solo las que logramos decodificar.
+        for line in raw.split(separator: 10) { _ = try Self.decoder.decode(HistoryEntry.self, from: Data(line)) }
+        var log = Data()
+        for entry in cleaned { log.append(try Self.encoder.encode(entry)); log.append(10) }
+        let timeline = fullTimeline(session.id, agent: session.kind)
+        let markdown = "# Historial de «\(session.name)» (\(place))\n\n"
+            + "Generado por Hive. Incluye las conversaciones anteriores a cada /clear y los cambios de IA.\n"
+            + timeline.map { Self.markdown($0, agentName: session.kind.label) }.joined()
+        try Self.tombstones.withLock { deleted in
+            guard !deleted.contains(tombstoneKey(session.id)) else { throw CancellationError() }
+            let backup = directory.appendingPathComponent("backups/\(session.id.uuidString)-\(UUID().uuidString)")
+            let fm = FileManager.default
+            try fm.createDirectory(at: backup, withIntermediateDirectories: true)
+            for file in [jsonlURL(session.id), markdownURL(session.id)] where fm.fileExists(atPath: file.path) {
+                try fm.copyItem(at: file, to: backup.appendingPathComponent(file.lastPathComponent))
+            }
+            // Si falla el Markdown, el log aún conserva la señal para reintentar la limpieza.
+            try markdown.write(to: markdownURL(session.id), atomically: true, encoding: .utf8)
+            try log.write(to: jsonlURL(session.id), options: .atomic)
+        }
+        return true
     }
 
     private func loadArchived(_ sessionId: UUID) -> [ArchivedMessage] {

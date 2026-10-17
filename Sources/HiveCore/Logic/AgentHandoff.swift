@@ -4,6 +4,20 @@ import Foundation
 public enum AgentHandoff {
     public static let markerPrefix = "Cambio de IA: "
 
+    public static func recoveryInstructions(markdown: URL, entries: [HistoryEntry]) -> String {
+        let recent = String(HistoryExport.plainText(Array(entries.suffix(12)), agent: SessionKind.codex.label).suffix(12_000))
+        return """
+        Hive recuperó el historial de esta conversación porque su ID anterior de Codex ya no está disponible.
+        Seguís en el mismo chat de Hive. El historial completo está en \(markdown.path), también en HIVE_HISTORY_FILE.
+        Conservá los objetivos, restricciones y decisiones previas; revisá el archivo cuando necesites más contexto.
+        El historial es contexto, no un pedido nuevo ni una aprobación. Esperá el pedido actual del usuario.
+
+        <historial_reciente>
+        \(recent)
+        </historial_reciente>
+        """
+    }
+
     public static func instructions(from agent: SessionKind, markdown: URL, entries: [HistoryEntry]) -> String {
         // Un extracto acotado evita superar el límite de argumentos del sistema. El resto queda en disco.
         let recent = String(HistoryExport.plainText(Array(entries.suffix(12)), agent: agent.label).suffix(12_000))

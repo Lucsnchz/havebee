@@ -33,6 +33,9 @@ struct SessionDetailView: View {
                         if !active && rt.isRunning {
                             MovedHeadBanner(project: ctx.project, branch: ctx.branch)
                         }
+                        if let draft = ctx.session.recoveredDraft {
+                            RecoveredDraftBanner(sessionId: sessionId, draft: draft)
+                        }
                         TerminalContainer(terminal: rt.terminal)
                             .background(terminalBackground)
                             .disabled(rt.isSwitchingAgent)
@@ -49,7 +52,8 @@ struct SessionDetailView: View {
                                 }
                             }
                         if case .exited(let code) = rt.status {
-                            ExitedBar(code: code, kind: ctx.session.kind, processStarted: rt.terminal?.hasStartedProcess ?? false) {
+                            ExitedBar(code: code, kind: ctx.session.kind, processStarted: rt.terminal?.hasStartedProcess ?? false,
+                                      startupFailure: rt.startupFailure) {
                                 store.relaunch(sessionId)
                             }
                         }
@@ -86,25 +90,42 @@ struct SessionDetailView: View {
                     if usage.sessions[sessionId]?.agent == ctx.session.kind, usage.sessions[sessionId]?.contextPercent != nil {
                         UsageBadge(sessionId: sessionId, monitor: usage)
                     }
+                }
+                ToolbarItemGroup {
                     SessionPanelToggles(sidePanel: $sidePanel, showsChanges: !ctx.project.isScratch)
+                        .padding(.leading, 8)
                     NewSessionMenu(branchId: ctx.branch.id, kind: ctx.session.kind)
+                        .labelStyle(.titleAndIcon)
+                        .padding(.leading, 4)
+                }
+                ToolbarItemGroup {
                     if !ctx.project.isScratch {
                         SessionCommandsMenu(project: ctx.project, branch: ctx.branch)
+                            .labelStyle(.titleAndIcon)
+                            .padding(.leading, 8)
                         if let url = site?.value(for: ctx.project.directory(for: ctx.branch)) {
                             OpenSiteButton(project: ctx.project, branch: ctx.branch, url: url)
+                                .labelStyle(.titleAndIcon)
                         }
                         if let info = remote?.value(for: ctx.project.path) {
                             RemoteActionsMenu(project: ctx.project, branch: ctx.branch, info: info)
+                                .labelStyle(.titleAndIcon)
                         }
                     }
+                }
+                ToolbarItemGroup {
                     Button {
                         rt.terminal?.openFindBar()
                     } label: {
-                        Label("Buscar en la terminal", systemImage: "magnifyingglass")
+                        Label("Buscar", systemImage: "magnifyingglass")
                     }
+                    .labelStyle(.titleAndIcon)
+                    .padding(.leading, 8)
                     .help("Buscar en la terminal, también en el scroll (⌘F)")
+                    .accessibilityLabel("Buscar en la terminal")
                     .disabled(rt.terminal == nil)
                     SessionMoreMenu(session: ctx.session, runtime: rt, directory: ctx.project.directory(for: ctx.branch))
+                        .labelStyle(.titleAndIcon)
                 }
             }
             .task(id: sessionId) {
@@ -237,11 +258,13 @@ private struct SessionPanelToggles: View {
             Toggle(isOn: panel("history")) {
                 Label("Historial", systemImage: "clock.arrow.circlepath")
             }
+            .labelStyle(.titleAndIcon)
             .help("Todo lo que se habló en esta sesión, también lo anterior a cada /clear")
             if showsChanges {
                 Toggle(isOn: panel("changes")) {
                     Label("Cambios", systemImage: GitCounters.changesSymbol)
                 }
+                .labelStyle(.titleAndIcon)
                 .help("Cambios de git de esta rama")
             }
         }
@@ -336,7 +359,7 @@ private struct SessionMoreMenu: View {
             }
             Button("Archivar") { store.requestArchive(session.id) }
         } label: {
-            Label("Más", systemImage: "ellipsis.circle")
+            Label("Acciones", systemImage: "ellipsis.circle")
         }
         .help("Más acciones de la sesión")
     }
@@ -374,13 +397,28 @@ private struct ExitedBar: View {
     let kind: SessionKind
     /// Si la terminal llegó a lanzar el proceso (entonces el programa existía).
     let processStarted: Bool
+    let startupFailure: CodexStartupFailure?
     let onResume: () -> Void
     @State private var missing = false
     @State private var copied = false
 
     var body: some View {
         HStack(spacing: 10) {
-            if missing {
+            if startupFailure != nil {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(Theme.danger)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Codex no pudo iniciar").fontWeight(.semibold)
+                    Text("Se agotó el tiempo al consultar tu cuenta. Podés reintentar en este mismo chat.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+                Button("Reintentar", action: onResume)
+                    .buttonStyle(.hiveProminent)
+                    .keyboardShortcut(.defaultAction)
+            } else if missing {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(Theme.danger)
                 Text("No encuentro \(kind.label)")

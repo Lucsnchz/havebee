@@ -72,7 +72,7 @@ private struct ProjectRail: View {
                          shortcut: HiveCommands.Shortcut.project(index))
                     .padding(.top, 10)
             }
-            // Los límites de las cuentas, en chiquito (nada mientras no haya datos).
+            // Los límites de las cuentas y el acceso al panel de IAs.
             UsageSummary(compact: true, insets: EdgeInsets(top: 12, leading: 0, bottom: 0, trailing: 0))
             Button {
                 store.addProjectInteractive()
@@ -304,6 +304,7 @@ private struct ProjectTabBar: View {
                     .truncationMode(.middle)
             }
             .frame(maxWidth: 170, alignment: .leading)
+            .fixedSize(horizontal: true, vertical: false)
             .padding(.horizontal, 12)
             .help(project.path.tildePath)
             .accessibilityElement(children: .ignore)
@@ -312,17 +313,20 @@ private struct ProjectTabBar: View {
             OverviewTab(project: project, namespace: underline)
             Divider().frame(height: 18)
             ScrollViewReader { proxy in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 4) {
-                        ForEach(Array(tabs.enumerated()), id: \.element.id) { index, tab in
-                            SessionTab(project: project, branch: tab.branch, session: tab.session, showBranch: showBranch,
-                                       shortcut: HiveCommands.Shortcut.tab(index), namespace: underline)
-                                .id(tab.id)
+                GeometryReader { geometry in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        SessionTabsLayout(availableWidth: max(0, geometry.size.width - 12)) {
+                            ForEach(Array(tabs.enumerated()), id: \.element.id) { index, tab in
+                                SessionTab(project: project, branch: tab.branch, session: tab.session, showBranch: showBranch,
+                                           shortcut: HiveCommands.Shortcut.tab(index), namespace: underline)
+                                    .id(tab.id)
+                            }
                         }
+                        .padding(.horizontal, 6)
+                        .frame(minHeight: geometry.size.height)
                     }
-                    .padding(.horizontal, 6)
                 }
-                .onChange(of: store.selection) { _, selection in
+                .onChange(of: store.selection, initial: true) { _, selection in
                     // La pestaña elegida con el teclado (⌘1…⌘9, ⇧⌘]) siempre queda a la vista.
                     if case .session(let id)? = selection, tabs.contains(where: { $0.id == id }) {
                         withAnimation(.snappy) { proxy.scrollTo(id) }
@@ -334,6 +338,45 @@ private struct ProjectTabBar: View {
         }
         .frame(height: 40)
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+}
+
+/// Cada título usa su ancho natural. Si no entran todos, reparte el espacio libre entre los
+/// largos; los cortos dejan lugar a los demás. Con muchas pestañas conserva un ancho legible
+/// y deja desplazarse, en vez de achicarlas hasta convertirlas en íconos.
+private struct SessionTabsLayout: Layout {
+    let availableWidth: CGFloat
+    private let spacing: CGFloat = 4
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let widths = widths(for: subviews)
+        let height = subviews.map { $0.sizeThatFits(.unspecified).height }.max() ?? 0
+        return CGSize(width: widths.reduce(0, +) + spacing * CGFloat(max(0, widths.count - 1)), height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let widths = widths(for: subviews)
+        var x = bounds.minX
+        for (index, subview) in subviews.enumerated() {
+            subview.place(at: CGPoint(x: x, y: bounds.midY), anchor: .leading,
+                          proposal: ProposedViewSize(width: widths[index], height: bounds.height))
+            x += widths[index] + spacing
+        }
+    }
+
+    private func widths(for subviews: Subviews) -> [CGFloat] {
+        let natural = subviews.map { $0.sizeThatFits(.unspecified).width }
+        var widths = natural
+        var remaining = max(0, availableWidth - spacing * CGFloat(max(0, subviews.count - 1)))
+        var count = subviews.count
+        // Primero reserva lo que necesitan los títulos cortos; el resto comparte lo que queda.
+        for index in natural.indices.sorted(by: { natural[$0] < natural[$1] }) {
+            let width = min(natural[index], max(220, remaining / CGFloat(count)))
+            widths[index] = width
+            remaining -= width
+            count -= 1
+        }
+        return widths
     }
 }
 
@@ -404,7 +447,6 @@ struct SessionTab: View {
     var body: some View {
         let selected = store.selection == .session(session.id)
         let rt = store.runtimes[session.id]
-        let dormant = (rt?.status ?? .dormant) == .dormant
         Button {
             withAnimation(.snappy) { store.select(.session(session.id)) }
         } label: {
@@ -431,15 +473,15 @@ struct SessionTab: View {
                     .layoutPriority(1)
                 }
                 Spacer(minLength: 0)
-                // El lugar del estado no ocupa nada si la sesión duerme (salvo con el puntero encima).
+                // Reserva el cierre aunque la sesión duerma: el título no salta al pasar el mouse.
                 statusSlot(rt: rt)
-                    .frame(width: dormant && !hovering ? 0 : 16)
+                    .frame(width: 16)
             }
             .font(.system(size: 12, weight: selected ? .semibold : .regular))
             .foregroundStyle(selected ? .primary : .secondary)
             .padding(.leading, 12)
-            .padding(.trailing, dormant && !hovering ? 12 : 8)
-            .frame(minWidth: 96, maxWidth: 220, minHeight: 30)
+            .padding(.trailing, 8)
+            .frame(minWidth: 96, minHeight: 30)
             .background {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(selected ? Color.primary.opacity(0.09) : (hovering ? Color.primary.opacity(0.05) : .clear))
