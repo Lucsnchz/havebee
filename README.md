@@ -1,5 +1,7 @@
 # Havebee
 
+<img src="Resources/AppIcon.png" width="96" alt="Havebee honeycomb icon">
+
 **Your projects. Your agents. One hive.**
 
 A native macOS workspace for AI coding agents. Keep projects, Git worktrees and
@@ -12,6 +14,8 @@ publishes the official versions.
 
 [Guía completa en español](docs/README.es.md) · [Contributing](CONTRIBUTING.md) ·
 [Governance](GOVERNANCE.md) · [Security](SECURITY.md)
+
+Canonical repository: [github.com/Lucsnchz/havebee](https://github.com/Lucsnchz/havebee).
 
 ## What it does
 
@@ -46,9 +50,11 @@ Requirements:
 - For Laravel setup: PHP, Composer and the project's frontend package manager;
   Laravel Herd is optional.
 
-Clone this repository, open its directory, then run:
+Clone the repository and build the app:
 
 ```bash
+git clone https://github.com/Lucsnchz/havebee.git
+cd havebee
 scripts/build-app.sh
 open build/Hive.app
 ```

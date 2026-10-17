@@ -2,7 +2,7 @@
 
 ## Report a vulnerability privately
 
-Use **Security → Report a vulnerability** in the canonical GitHub repository
+Use [Security → Report a vulnerability](https://github.com/Lucsnchz/havebee/security/advisories/new)
 to send a private vulnerability report to the maintainer. If that button is
 unavailable, open an issue that only requests a private contact channel; do not
 include the vulnerability or sensitive details in the public issue.

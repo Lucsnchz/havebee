@@ -1,7 +1,9 @@
 # Project governance
 
 Havebee is a maintainer-led open-source project created by **Luciano Sánchez**.
-Luciano is the initial sole maintainer and repository administrator.
+Luciano ([@Lucsnchz](https://github.com/Lucsnchz)) is the initial sole maintainer
+and repository administrator. The canonical repository is
+[Lucsnchz/havebee](https://github.com/Lucsnchz/havebee).
 
 ## Decisions and access
 

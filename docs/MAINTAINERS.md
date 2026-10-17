@@ -6,7 +6,8 @@ permissions automatically.
 
 ## Repository access
 
-Keep the canonical repository under the maintainer's account. Community members
+The canonical repository is [Lucsnchz/havebee](https://github.com/Lucsnchz/havebee).
+Keep it under the maintainer's account. Community members
 contribute through forks; they do not need collaborator access. Adding a
 collaborator with write access changes who can push and merge, so review the
 governance and branch rules before doing so.
@@ -27,8 +28,8 @@ Configure these controls in GitHub after the first push:
   where available. Keep Actions tokens read-only and require approval before
   running workflows from outside contributors.
 
-Set `CODEOWNERS` to the verified GitHub account once the canonical account is
-known. Code ownership requests reviews; branch rules and repository access
+`CODEOWNERS` names the verified maintainer account, `@Lucsnchz`.
+Code ownership requests reviews; branch rules and repository access
 determine who can merge.
 
 ## Reviewing a contribution
