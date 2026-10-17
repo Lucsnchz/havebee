@@ -4,3 +4,16 @@ build/
 *.xcodeproj
 xcuserdata/
 .DS_Store
+
+# Local credentials and private workspace data must never be published.
+.env
+.env.*
+!.env.example
+!.env.sample
+.mcp.json
+.claude/settings.local.json
+auth.json
+*.p12
+*.pfx
+*.jks
+*.keystore

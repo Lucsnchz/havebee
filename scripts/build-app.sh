@@ -7,14 +7,17 @@ cd "$(dirname "$0")/.."
 
 [ -f Resources/AppIcon.icns ] || swift scripts/make-icon.swift
 
-swift build -c release
+swift build -c release --force-resolved-versions
 
 APP=build/Hive.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$(swift build -c release --show-bin-path)/Hive" "$APP/Contents/MacOS/Hive"
+cp "$(swift build -c release --force-resolved-versions --show-bin-path)/Hive" "$APP/Contents/MacOS/Hive"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+cp Resources/Credits.rtf "$APP/Contents/Resources/Credits.rtf"
+cp LICENSE THIRD_PARTY_NOTICES.md "$APP/Contents/Resources/"
+cp -R LICENSES "$APP/Contents/Resources/LICENSES"
 codesign --force --sign - "$APP" >/dev/null
 echo "Listo: $(pwd)/$APP"
 

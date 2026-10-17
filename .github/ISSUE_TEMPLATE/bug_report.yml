@@ -1,0 +1,36 @@
+name: Bug report
+description: Report a reproducible problem with the app.
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        English and Spanish are welcome. For vulnerabilities, follow SECURITY.md
+        instead of posting details here. Remove credentials, private conversations
+        and customer information from all attachments.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Include what you expected and what actually happened.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: How can we reproduce it?
+      description: Use a minimal example with synthetic data.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Versions
+      description: App commit or version, macOS, processor and relevant agent or tool versions.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs or screenshots
+      description: Optional. Review attachments for private information before submitting.

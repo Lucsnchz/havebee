@@ -2,7 +2,7 @@
 
 Qué se hizo en esta ronda, qué falta y cómo probarlo. Cubre todo lo que hay desde el commit `405d9ae` hasta la punta de la rama `ultra/integration`: más de 200 commits, sin push. Los tests pasaron de unos 200 a **862**, y la app compila con cero warnings.
 
-Para el uso diario está el [README](../README.md). Este archivo es el registro de la ronda.
+Para el uso diario está la [guía en español](README.es.md). Este archivo es el registro de la ronda.
 
 ---
 

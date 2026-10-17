@@ -1,0 +1,23 @@
+name: Feature request
+description: Propose an improvement and explain the problem it solves.
+title: "[Feature] "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem should this solve?
+      description: English and Spanish are welcome. Describe a concrete workflow.
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed behavior
+      description: Explain what the user would do and what the app should do.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and scope
+      description: Optional. Mention alternatives, tradeoffs or a smaller first version.

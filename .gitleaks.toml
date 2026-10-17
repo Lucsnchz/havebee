@@ -1,0 +1,11 @@
+title = "Havebee secret scanning"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Empty fake certificate filenames in HerdSitesTests, not key material"
+condition = "AND"
+paths = ['''(^|/)Tests/HiveCoreTests/HerdSitesTests\.swift$''']
+regexTarget = "line"
+regexes = ['''for name in \["ecommerce\.test\.crt", "ecommerce\.test\.key", "emplag-512\.test\.crt"(?:, "Mayusculas\.test\.crt")?\] \{''']

@@ -13,9 +13,9 @@ if [ "${1:-}" = "--snapshots" ]; then
 fi
 
 if [ $# -gt 0 ]; then
-  swift test --filter "$1"
+  swift test --force-resolved-versions --filter "$1"
 else
-  swift test
+  swift test --force-resolved-versions
 fi
 
 if [ -n "${HIVE_SNAPSHOTS:-}" ]; then
