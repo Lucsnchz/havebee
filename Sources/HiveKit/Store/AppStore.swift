@@ -10,11 +10,19 @@ public final class AppStore {
     public static let shared = AppStore(environment: .live())
 
     public internal(set) var projects: [Project] = []
-    public internal(set) var selection: SidebarItem?
-    /// Sube cada vez que elegís algo, aunque sea lo que ya estaba elegido. La vista compacta lo lee:
-    /// si alguna vez se quedara mostrando el proyecto anterior (la ventana de SwiftUI no se enteró
-    /// del cambio), volver a tocar el mismo la redibuja, sin tener que pasar por otro y volver.
-    public internal(set) var navigationVersion = 0
+    /// Lo elegido en el sidebar o el riel. Observation avisa de un cambio antes de guardarlo, y si el
+    /// aviso le llega a SwiftUI en medio de una actualización (la acción de un botón), redibuja ahí
+    /// mismo y lee la selección anterior: las pestañas y la terminal se quedaban en el proyecto
+    /// anterior mientras el riel marcaba el nuevo. Por eso leerla también lee `navigationVersion`,
+    /// que sube recién con el valor nuevo guardado y vuelve a avisar a quien la leyó.
+    public internal(set) var selection: SidebarItem? {
+        get { _ = navigationVersion; return storedSelection }
+        set { storedSelection = newValue; navigationVersion &+= 1 }
+    }
+    private var storedSelection: SidebarItem?
+    /// Sube con cada cambio de selección y al volver a elegir lo que ya estaba elegido, que así
+    /// redibuja todo lo que depende de ella.
+    private(set) var navigationVersion = 0
     /// La sesión cuya terminal tiene que tomar el foco apenas se vea: la pide una acción explícita
     /// (⌘K, ⌘J, una pestaña, el aviso, una sesión nueva o ⏎ en el sidebar). Recorrer el sidebar con
     /// las flechas no la pide, así la próxima flecha no le llega al agente.
@@ -276,8 +284,10 @@ public final class AppStore {
     // MARK: - Selección y sidebar
 
     public func select(_ item: SidebarItem?) {
-        navigationVersion &+= 1
-        guard item != selection else { return }
+        guard item != selection else {
+            navigationVersion &+= 1
+            return
+        }
         selection = item
         if case .session(let id)? = item, let ctx = sessionContext(id) {
             lastSessionByProject[ctx.project.id] = id

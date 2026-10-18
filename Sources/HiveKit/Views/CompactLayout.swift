@@ -9,10 +9,7 @@ struct CompactLayout: View {
 
     var body: some View {
         // El riel, las pestañas y el detalle salen de esta misma lectura de la selección: nunca
-        // muestran proyectos distintos. Antes cada uno la leía por su lado, y alguna vez el riel
-        // marcaba el proyecto que tocaste mientras las pestañas y la terminal seguían en el anterior.
-        // Volver a tocar lo elegido sube `navigationVersion` y redibuja todo desde acá.
-        let _ = store.navigationVersion
+        // muestran proyectos distintos.
         let selection = store.selection
         let current = store.currentProjectId
         HStack(spacing: 0) {

@@ -97,4 +97,37 @@ struct RailClickTests {
         #expect(store.selection == selection)
         #expect(store.navigationVersion == version + 1, "antes \(version), después \(store.navigationVersion)")
     }
+
+    @Test("Quien redibuja en medio del cambio de selección termina viendo la nueva")
+    func rereadDuringChange() async throws {
+        let world = TestWorld()
+        let repos = [GitRepo(name: "tienda"), GitRepo(name: "plagas")]
+        let store = world.makeStore()
+        for repo in repos { await store.addProject(at: repo.path) }
+        let ids = store.repoProjects.map(\.id)
+        store.select(.project(ids[0]))
+
+        let reader = SelectionReader(store: store)
+        reader.read()
+        store.select(.project(ids[1]))
+        #expect(reader.seen.first == .project(ids[0]))
+        #expect(reader.seen.last == .project(ids[1]), "leyó \(reader.seen)")
+    }
+}
+
+/// Hace lo que SwiftUI cuando el aviso de un cambio le llega en medio de una actualización (la
+/// acción de un botón): redibuja ahí mismo, antes de que se guarde el valor nuevo, y se vuelve a
+/// suscribir. Así las pestañas y la terminal se quedaban en el proyecto anterior.
+@MainActor
+private final class SelectionReader {
+    let store: AppStore
+    var seen: [SidebarItem?] = []
+
+    init(store: AppStore) { self.store = store }
+
+    func read() {
+        seen.append(withObservationTracking { store.selection } onChange: { [self] in
+            MainActor.assumeIsolated { read() }
+        })
+    }
 }
