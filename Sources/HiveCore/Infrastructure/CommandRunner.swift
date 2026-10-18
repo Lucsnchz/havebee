@@ -83,28 +83,15 @@ public struct ProcessCommandRunner: CommandRunning {
         var env = ProcessInfo.processInfo.environment
         for (key, value) in extra { env[key] = value }
         process.environment = env
-        // stdout y stderr van a dos archivos temporales, que nunca se llenan: el proceso escribe los
-        // dos en paralelo sin depender de que alguien lea, y no hace falta ningún hilo lector. Leer
-        // pipes con GCD trababa el proceso cuando había muchas llamadas en paralelo y se agotaban los
-        // hilos; y con un pipe, un nieto que hereda la salida (ssh, un hook) impediría cortar a tiempo.
-        let tmp = FileManager.default.temporaryDirectory
-        let id = UUID().uuidString
-        let outFile = tmp.appendingPathComponent("hive-stdout-\(id)")
-        let errFile = tmp.appendingPathComponent("hive-stderr-\(id)")
-        guard FileManager.default.createFile(atPath: outFile.path, contents: nil),
-              FileManager.default.createFile(atPath: errFile.path, contents: nil),
-              let outHandle = try? FileHandle(forWritingTo: outFile),
-              let errHandle = try? FileHandle(forWritingTo: errFile) else {
-            try? FileManager.default.removeItem(at: outFile)
-            try? FileManager.default.removeItem(at: errFile)
-            return CommandResult(status: -1, stderr: "No pude crear un archivo temporal.")
-        }
-        defer {
-            try? FileManager.default.removeItem(at: outFile)
-            try? FileManager.default.removeItem(at: errFile)
-        }
-        process.standardOutput = outHandle
-        process.standardError = errHandle
+        // stdout y stderr van a pipes que lee este mismo hilo mientras espera al proceso. No se usan
+        // archivos temporales: la revisión de git crea y borra decenas por segundo, y macOS contó
+        // 34 GB escritos en 14 horas. Tampoco hilos lectores de GCD, que con muchas llamadas en
+        // paralelo se agotaban y trababan el proceso. Y si un nieto hereda la salida (ssh, un hook),
+        // no se espera a que la suelte: alcanza con que termine el proceso.
+        let output = Pipe()
+        let errors = Pipe()
+        process.standardOutput = output
+        process.standardError = errors
         process.standardInput = FileHandle.nullDevice
         // Esperamos con un semáforo y no con `waitUntilExit()`: ese hace girar el run loop del hilo
         // actual y, en el principal, ejecuta otro trabajo pendiente en medio de esta llamada.
@@ -112,34 +99,34 @@ public struct ProcessCommandRunner: CommandRunning {
         process.terminationHandler = { _ in exited.signal() }
         let cancellable = Self.cancelsWithTask
         if cancellable && Task.isCancelled {
-            try? outHandle.close()
-            try? errHandle.close()
             return CommandResult(status: CommandResult.cancelledStatus, stderr: "Se canceló.")
         }
         do {
             try process.run()
         } catch {
-            try? outHandle.close()
-            try? errHandle.close()
             return CommandResult(status: -1, stderr: error.localizedDescription)
         }
-        try? outHandle.close()
-        try? errHandle.close()
-        let outcome = Self.wait(for: exited, timeout: timeout, cancellable: cancellable)
+        // Process ya cerró nuestra copia de los extremos de escritura: cada pipe llega al final
+        // cuando el hijo (y lo que lanzó) lo suelta.
+        var reader = OutputReader(output: output.fileHandleForReading, errors: errors.fileHandleForReading)
+        defer { reader.close() }
+        let outcome = Self.wait(for: exited, timeout: timeout, cancellable: cancellable, reading: &reader)
         if outcome != .exited {
             // terminate() le manda SIGTERM al hijo y a lo que lanzó: Process lo deja en su propio grupo.
             process.terminate()
             // Si no se va con SIGTERM, lo matamos con todo su grupo (ssh, un hook de git), que si
             // no quedaría vivo.
-            if exited.wait(timeout: .now() + 2) == .timedOut {
+            if !reader.read(until: .now() + 2, orExit: exited) {
                 let pid = process.processIdentifier
                 kill(-pid, SIGKILL)
                 kill(pid, SIGKILL)
-                _ = exited.wait(timeout: .now() + 2)
+                _ = reader.read(until: .now() + 2, orExit: exited)
             }
         }
-        let outData = (try? Data(contentsOf: outFile)) ?? Data()
-        let errData = (try? Data(contentsOf: errFile)) ?? Data()
+        // Lo que dejó antes de terminar ya está en los pipes.
+        reader.readAvailable()
+        let outData = reader.output
+        let errData = reader.errors
         switch outcome {
         case .timedOut:
             let seconds = String(format: "%g", timeout ?? 0)
@@ -159,23 +146,74 @@ public struct ProcessCommandRunner: CommandRunning {
 
     private enum Outcome { case exited, timedOut, cancelled }
 
-    /// Espera a que termine, como mucho `timeout` segundos. Si es cancelable, cada décima de segundo
-    /// se fija si cancelaron la tarea.
-    private static func wait(for exited: DispatchSemaphore, timeout: TimeInterval?, cancellable: Bool) -> Outcome {
+    /// Espera a que termine, como mucho `timeout` segundos, leyendo su salida mientras tanto. Si es
+    /// cancelable, cada décima de segundo se fija si cancelaron la tarea.
+    private static func wait(for exited: DispatchSemaphore, timeout: TimeInterval?, cancellable: Bool,
+                             reading reader: inout OutputReader) -> Outcome {
         let deadline = timeout.map { DispatchTime.now() + max($0, 0) }
-        guard cancellable else {
-            guard let deadline else {
-                exited.wait()
-                return .exited
-            }
-            return exited.wait(timeout: deadline) == .timedOut ? .timedOut : .exited
-        }
         while true {
             var slice = DispatchTime.now() + 0.1
             if let deadline, deadline < slice { slice = deadline }
-            if exited.wait(timeout: slice) == .success { return .exited }
-            if Task.isCancelled { return .cancelled }
+            if reader.read(until: slice, orExit: exited) { return .exited }
+            if cancellable && Task.isCancelled { return .cancelled }
             if let deadline, DispatchTime.now() >= deadline { return .timedOut }
+        }
+    }
+}
+
+/// Lee stdout y stderr de un proceso desde el hilo que lo espera, sin bloquearse en ninguno de los
+/// dos: si uno se llenara mientras se espera el otro, el proceso quedaría trabado escribiendo.
+private struct OutputReader {
+    private(set) var output = Data()
+    private(set) var errors = Data()
+    private let handles: [FileHandle]
+    private var open = [true, true]
+    private var buffer = [UInt8](repeating: 0, count: 65_536)
+
+    init(output: FileHandle, errors: FileHandle) {
+        handles = [output, errors]
+        for handle in handles {
+            let fd = handle.fileDescriptor
+            _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
+        }
+    }
+
+    /// Lee hasta `limit` y vuelve antes, con true, si el proceso terminó.
+    mutating func read(until limit: DispatchTime, orExit exited: DispatchSemaphore) -> Bool {
+        while open.contains(true) {
+            if exited.wait(timeout: .now()) == .success { return true }
+            let now = DispatchTime.now()
+            guard now < limit else { return false }
+            let remaining = (limit.uptimeNanoseconds - now.uptimeNanoseconds) / 1_000_000
+            var fds = (0..<2).map { pollfd(fd: open[$0] ? handles[$0].fileDescriptor : -1, events: Int16(POLLIN), revents: 0) }
+            // Con un nieto que tiene la salida abierta no llega el final: cada décima se revisa si terminó.
+            guard poll(&fds, 2, Int32(max(1, min(remaining, 100)))) > 0 else { continue }
+            for i in 0..<2 where open[i] && fds[i].revents != 0 { drain(i) }
+        }
+        // Sin salida abierta solo queda esperar a que termine.
+        return exited.wait(timeout: limit) == .success
+    }
+
+    /// Lee lo que haya sin esperar más.
+    mutating func readAvailable() {
+        for i in 0..<2 where open[i] { drain(i) }
+    }
+
+    func close() {
+        for handle in handles { try? handle.close() }
+    }
+
+    private mutating func drain(_ index: Int) {
+        let fd = handles[index].fileDescriptor
+        while true {
+            let count = buffer.withUnsafeMutableBytes { Darwin.read(fd, $0.baseAddress, $0.count) }
+            if count > 0 {
+                if index == 0 { output.append(contentsOf: buffer[0..<count]) } else { errors.append(contentsOf: buffer[0..<count]) }
+            } else if count == 0 || errno != EINTR {
+                // 0 es el final; EAGAIN, que por ahora no hay más.
+                if count == 0 || errno != EAGAIN { open[index] = false }
+                return
+            }
         }
     }
 }
