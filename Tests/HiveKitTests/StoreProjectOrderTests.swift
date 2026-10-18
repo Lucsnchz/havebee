@@ -90,6 +90,45 @@ struct StoreProjectOrderTests {
         #expect(HiveNavigator.orderedProjects(store).map(\.name) == ["fijado", "hoy", "viejo", "Terminales"])
     }
 
+    @Test("Con el puntero sobre el riel el orden no cambia solo; lo que cambiás vos, sí")
+    func holdOrderWhileHovering() throws {
+        let names = { (store: AppStore) in store.visibleProjects.map(\.project.name) }
+        let w = try RielWorld()
+        let store = w.makeStore()
+        let session = try #require(w.old.activeSessions.first)
+        store.holdProjectOrder(true)
+        store.runtimes[session.id]?.unseen = true
+        #expect(names(store) == ["fijado", "hoy", "viejo", "Terminales"])
+
+        // Al sacar el puntero, «viejo» sube a los activos.
+        store.holdProjectOrder(false)
+        #expect(names(store) == ["fijado", "viejo", "hoy", "Terminales"])
+
+        // Fijar con el menú del riel se aplica aunque el puntero siga encima.
+        store.runtimes[session.id]?.unseen = false
+        store.holdProjectOrder(true)
+        store.setPinned(true, project: w.old.id)
+        #expect(names(store) == ["fijado", "viejo", "hoy", "Terminales"])
+        #expect(store.visibleProjects[1].group == .pinned)
+    }
+
+    @Test("Si el orden recién cambió solo, ⌃⌘N sigue un segundo con el que estabas mirando")
+    func shortcutsKeepRecentOrder() async throws {
+        let w = try RielWorld()
+        let store = w.makeStore()
+        let session = try #require(w.old.activeSessions.first)
+        store.runtimes[session.id]?.unseen = true
+        #expect(await waitUntil { store.menuProjects.map(\.name) == ["fijado", "viejo", "hoy", "Terminales"] })
+        #expect(HiveNavigator.orderedProjects(store).map(\.name) == ["fijado", "hoy", "viejo", "Terminales"])
+        w.world.now = w.world.now.addingTimeInterval(1.5)
+        #expect(HiveNavigator.orderedProjects(store).map(\.name) == ["fijado", "viejo", "hoy", "Terminales"])
+
+        // Lo que cambiás vos vale enseguida.
+        store.setPinned(true, project: w.today.id)
+        #expect(await waitUntil { store.menuProjects.map(\.name) == ["fijado", "hoy", "viejo", "Terminales"] })
+        #expect(HiveNavigator.orderedProjects(store).map(\.name) == ["fijado", "hoy", "viejo", "Terminales"])
+    }
+
     @Test("Una sesión prendida (o que te espera) sube su proyecto a los activos, aunque sea vieja")
     func liveSessionIsActive() throws {
         let w = try RielWorld()

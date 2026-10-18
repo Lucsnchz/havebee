@@ -113,6 +113,9 @@ private struct ProjectRail: View {
             }
             return true
         } isTargeted: { dropTargeted = $0 }
+        // Con el puntero encima, los proyectos no cambian de lugar solos: el clic cae donde apuntás.
+        .onHover { store.holdProjectOrder($0) }
+        .onDisappear { store.holdProjectOrder(false) }
     }
 }
 

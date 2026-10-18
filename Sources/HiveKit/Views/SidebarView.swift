@@ -83,6 +83,9 @@ struct SidebarView: View {
                     .allowsHitTesting(false)
             }
         }
+        // Con el puntero encima, los proyectos no cambian de lugar solos: el clic cae donde apuntás.
+        .onHover { store.holdProjectOrder($0) }
+        .onDisappear { store.holdProjectOrder(false) }
     }
 
     private func projectRows(_ items: [ProjectOrdering.Item], group: ProjectOrdering.Group) -> some View {

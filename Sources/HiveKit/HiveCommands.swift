@@ -487,9 +487,9 @@ enum HiveNavigator {
     }
 
     /// Los proyectos en el orden en que se ven (fijados, activos, apagados y «Terminales»): el de
-    /// ⌃⌘1…⌃⌘9 y el de ⌥⌘↓ / ⌥⌘↑.
+    /// ⌃⌘1…⌃⌘9 y el de ⌥⌘↓ / ⌥⌘↑. Si recién cambió solo, el de un segundo antes (ver `shortcutProjects`).
     static func orderedProjects(_ store: AppStore) -> [Project] {
-        store.visibleProjects.map(\.project)
+        store.shortcutProjects
     }
 
     static func goToProject(_ store: AppStore, index: Int) {

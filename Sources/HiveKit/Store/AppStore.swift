@@ -55,6 +55,12 @@ public final class AppStore {
     /// Los proyectos del menú Ir (⌃⌘1…⌃⌘9), en el orden en que se ven. Es una copia de
     /// `visibleProjects` que cambia solo cuando cambian el orden o los nombres (ver `trackMenuProjects`).
     public internal(set) var menuProjects: [MenuProject] = []
+    /// Las reglas del orden mientras tenés el puntero sobre el riel o el árbol (ver `holdProjectOrder`).
+    var heldOrdering: ProjectOrdering?
+    /// El orden que se veía antes de que cambiara solo, y hasta cuándo lo siguen ⌃⌘1…⌃⌘9 (ver `shortcutProjects`).
+    @ObservationIgnored var previousOrder: (ids: [UUID], until: Date)?
+    /// Lo último que decidiste vos del orden, para saber si el próximo cambio fue solo.
+    @ObservationIgnored var lastManualOrder: ManualProjectOrder?
 
     // Diálogos y hojas abiertas.
     /// Alertas en cola: se muestran de a una y en orden.
