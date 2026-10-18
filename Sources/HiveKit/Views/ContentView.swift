@@ -20,7 +20,7 @@ struct ContentView: View {
                     SidebarView()
                         .navigationSplitViewColumnWidth(min: 220, ideal: 280, max: 440)
                 } detail: {
-                    DetailView()
+                    DetailView(selection: store.selection)
                 }
             case .compact:
                 CompactLayout()
@@ -65,9 +65,11 @@ struct ContentView: View {
 
 struct DetailView: View {
     @Environment(AppStore.self) private var store
+    /// Lo elegido, leído por quien la muestra (ver `CompactLayout`).
+    let selection: SidebarItem?
 
     var body: some View {
-        switch store.selection {
+        switch selection {
         case .session(let id)? where store.sessionContext(id) != nil:
             SessionDetailView(sessionId: id)
         case .branch(let id)? where store.branchContext(id) != nil:

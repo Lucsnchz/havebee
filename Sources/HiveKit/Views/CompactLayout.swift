@@ -8,14 +8,21 @@ struct CompactLayout: View {
     @Environment(AppStore.self) private var store
 
     var body: some View {
+        // El riel, las pestañas y el detalle salen de esta misma lectura de la selección: nunca
+        // muestran proyectos distintos. Antes cada uno la leía por su lado, y alguna vez el riel
+        // marcaba el proyecto que tocaste mientras las pestañas y la terminal seguían en el anterior.
+        // Volver a tocar lo elegido sube `navigationVersion` y redibuja todo desde acá.
+        let _ = store.navigationVersion
+        let selection = store.selection
+        let current = store.currentProjectId
         HStack(spacing: 0) {
-            ProjectRail()
+            ProjectRail(current: current)
             Divider()
-            if let id = store.currentProjectId, let project = store.project(id) {
+            if let id = current, let project = store.project(id) {
                 VStack(spacing: 0) {
                     ProjectTabBar(project: project)
                     Divider()
-                    DetailView()
+                    DetailView(selection: selection)
                 }
             } else {
                 EmptyDetailView()
@@ -28,6 +35,8 @@ struct CompactLayout: View {
 
 private struct ProjectRail: View {
     @Environment(AppStore.self) private var store
+    /// El proyecto abierto, leído por `CompactLayout` junto con lo que muestra a la derecha.
+    let current: UUID?
     @State private var dropTargeted = false
     /// El proyecto que se está arrastrando para reordenar el riel.
     @State private var dragging: UUID?
@@ -39,7 +48,7 @@ private struct ProjectRail: View {
         let items = store.visibleProjects
         let pinnedCount = items.filter { $0.group == .pinned }.count
         VStack(spacing: 0) {
-            HomeRailItem()
+            HomeRailItem(selected: current == nil)
                 .padding(.top, 12)
             Divider()
                 .padding(.horizontal, 16)
@@ -52,7 +61,8 @@ private struct ProjectRail: View {
                             if index == pinnedCount && pinnedCount > 0 {
                                 RailDivider()
                             }
-                            RailItem(project: item.project, isActive: item.isActive, shortcut: HiveCommands.Shortcut.project(index))
+                            RailItem(project: item.project, isCurrent: item.id == current, isActive: item.isActive,
+                                     shortcut: HiveCommands.Shortcut.project(index))
                                 // Arrastrar para reordenar, dentro de su grupo (fijar es con el menú).
                                 .onDrag {
                                     dragging = item.id
@@ -68,7 +78,7 @@ private struct ProjectRail: View {
             }
             Divider().padding(.horizontal, 16)
             if let index = items.firstIndex(where: { $0.group == .scratch }) {
-                RailItem(project: items[index].project, isActive: items[index].isActive,
+                RailItem(project: items[index].project, isCurrent: items[index].id == current, isActive: items[index].isActive,
                          shortcut: HiveCommands.Shortcut.project(index))
                     .padding(.top, 10)
             }
@@ -126,10 +136,11 @@ extension CompactLayout {
 /// «Inicio» arriba del riel: lo que te espera en todos los proyectos.
 private struct HomeRailItem: View {
     @Environment(AppStore.self) private var store
+    /// Sin proyecto abierto (lo decide `CompactLayout`).
+    let selected: Bool
     @State private var hovering = false
 
     var body: some View {
-        let selected = store.selection == nil
         let activity = store.activity(of: store.projects.flatMap(\.activeSessions))
         Button {
             store.select(nil)
@@ -183,6 +194,8 @@ private struct RailIndicator: View {
 struct RailItem: View {
     @Environment(AppStore.self) private var store
     let project: Project
+    /// Es el proyecto abierto (lo decide `CompactLayout`, igual que lo que se ve a la derecha).
+    let isCurrent: Bool
     /// Tiene algo prendido o se usó hoy. Si no, se ve atenuado (sin aro: no hay nada que mostrar).
     var isActive = true
     /// ⌃⌘N para ir a este proyecto (los nueve primeros).
@@ -190,7 +203,7 @@ struct RailItem: View {
     @State private var hovering = false
 
     var body: some View {
-        let selected = store.currentProjectId == project.id
+        let selected = isCurrent
         let activity = store.activity(of: project)
         Button {
             store.openProject(project.id)
