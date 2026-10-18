@@ -12,7 +12,7 @@ struct ModelTests {
         #expect(SessionKind.shell.binary == nil)
         #expect(SessionKind.grok.binary == "grok")
         #expect(SessionKind.allCases.filter(\.isAgent) == [.claude, .codex, .gemini, .grok])
-        #expect(SessionKind.allCases.filter(\.reportsConversation) == [.claude, .codex])
+        #expect(SessionKind.allCases.filter(\.reportsConversation) == [.claude, .codex, .grok])
         #expect(SessionKind.claude.label == "Claude Code")
         #expect(SessionKind.shell.defaultName == "Terminal")
         #expect(SessionKind.shell.installHint.isEmpty)

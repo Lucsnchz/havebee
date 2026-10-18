@@ -49,8 +49,9 @@ public enum SessionKind: String, Codable, CaseIterable, Identifiable, Sendable {
 
     public var isAgent: Bool { self != .shell }
 
-    /// Agentes que avisan a Hive lo que hablan (hooks de Claude, notify de Codex).
-    public var reportsConversation: Bool { self == .claude || self == .codex }
+    /// Agentes que avisan a Hive lo que hablan (hooks de Claude y Grok, notify de Codex): tienen
+    /// historial completo y se puede pasar la conversación de uno a otro.
+    public var reportsConversation: Bool { self == .claude || self == .codex || self == .grok }
 }
 
 public struct Session: Identifiable, Codable, Hashable, Sendable {

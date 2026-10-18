@@ -245,7 +245,7 @@ struct HistoryPanel: View {
             let log = history.load(id)
             guard kind.reportsConversation else { return (log, log) }
             var live: [URL] = []
-            if let agentId, let current = kind == .claude ? agents.claudeTranscriptURL(agentId) : agents.codexRolloutURL(agentId),
+            if let agentId, let current = agents.transcriptURL(agentId, agent: kind),
                !live.contains(where: { $0.standardizedFileURL == current.standardizedFileURL }) {
                 live.append(current)
             }

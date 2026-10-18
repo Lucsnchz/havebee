@@ -40,25 +40,51 @@ struct GrokTests {
 
     @Test("Nueva: arranca con su ID y sin pantalla alternativa; con la sesión guardada, la retoma")
     func launch() {
-        let fresh = LaunchPlanner.plan(context())
+        let id = "0f6c1b52-0000-4000-8000-000000000001"
+        let fresh = LaunchPlanner.plan(context { $0.historyHint = false })
         #expect(fresh.binary == "grok")
-        #expect(fresh.args == ["--session-id", "0f6c1b52-0000-4000-8000-000000000001", "--no-alt-screen"])
-        #expect(fresh.agentSessionId == "0f6c1b52-0000-4000-8000-000000000001")
+        #expect(fresh.args == ["--session-id", id, "--no-alt-screen"])
+        #expect(fresh.agentSessionId == id)
         // El puente de eventos va en el entorno: los hooks personales lo llaman.
         #expect(fresh.environment["HIVE_EVENT_BIN"] == paths.eventBin.path)
         #expect(fresh.environment["HIVE_EVENTS_DIR"] == paths.eventsDir.path)
         #expect(fresh.environment["HIVE_SESSION_ID"] != nil)
 
         // Ya la lanzamos con ese ID pero nunca le escribiste: se vuelve a crear con el mismo.
-        #expect(LaunchPlanner.plan(context(agentId: "g-1")).args == ["--session-id", "g-1", "--no-alt-screen"])
-        let resumed = LaunchPlanner.plan(context(agentId: "g-1") { $0.grokConversationExists = true })
+        #expect(LaunchPlanner.plan(context(agentId: "g-1") { $0.historyHint = false }).args == ["--session-id", "g-1", "--no-alt-screen"])
+        let resumed = LaunchPlanner.plan(context(agentId: "g-1") { $0.grokConversationExists = true; $0.historyHint = false })
         #expect(resumed.args == ["--resume", "g-1", "--no-alt-screen"])
         #expect(resumed.agentSessionId == "g-1")
 
         // Con el ajuste de la pantalla alternativa apagado, Grok usa la suya.
-        #expect(LaunchPlanner.plan(context { $0.claudeInline = false }).args == ["--session-id", "0f6c1b52-0000-4000-8000-000000000001"])
-        // No recibe la ayuda del historial (no avisa sus mensajes completos).
-        #expect(!fresh.args.contains("--append-system-prompt"))
+        #expect(LaunchPlanner.plan(context { $0.claudeInline = false; $0.historyHint = false }).args == ["--session-id", id])
+    }
+
+    @Test("Como Claude y Codex: sabe dónde está su historial y lo recibe al cambiar de IA")
+    func history() {
+        let base = context()
+        let markdown = HistoryStore(directory: paths.historyDir).markdownURL(base.session.id)
+        let plain = LaunchPlanner.plan(base)
+        #expect(SessionKind.grok.reportsConversation)
+        #expect(plain.environment["HIVE_HISTORY_FILE"] == markdown.path)
+        #expect(plain.args == ["--session-id", "0f6c1b52-0000-4000-8000-000000000001",
+                               "--rules", HistoryStore.agentHint(markdown: markdown), "--no-alt-screen"])
+        #expect(!plain.args.contains("--append-system-prompt"))
+
+        // Viene de Claude: el extracto va en --rules y lo anterior queda en el scroll, aun con la
+        // pantalla alternativa elegida.
+        let earlier = [HistoryEntry(date: .reference, role: .user, text: "Revisá el login", agent: .claude),
+                       HistoryEntry(date: .reference, role: .assistant, text: "Revisado.", agent: .claude)]
+        let handoff = AgentHandoff.instructions(from: .claude, markdown: markdown, entries: earlier)
+        var from = base
+        from.session.handoffFrom = .claude
+        from.handoffContext = handoff
+        from.historyEntries = earlier
+        from.claudeInline = false
+        let switched = LaunchPlanner.plan(from)
+        #expect(switched.args == ["--session-id", "0f6c1b52-0000-4000-8000-000000000001", "--rules", handoff, "--no-alt-screen"])
+        #expect(handoff.contains("Claude Code: Revisado."))
+        #expect(switched.restoredHistory == earlier)
     }
 
     // MARK: - Sesiones guardadas

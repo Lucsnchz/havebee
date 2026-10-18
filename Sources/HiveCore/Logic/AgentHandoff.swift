@@ -49,8 +49,7 @@ extension HistoryStore {
             conversationId = agents.discoverCodexThread(cwd: directory, since: since, excluding: claimedIds, now: now)
         }
         if let conversationId {
-            let transcript = session.kind == .claude ? agents.claudeTranscriptURL(conversationId) : agents.codexRolloutURL(conversationId)
-            if let transcript {
+            if let transcript = agents.transcriptURL(conversationId, agent: session.kind) {
                 recordTranscript(sessionId: session.id, agent: session.kind, conversationId: conversationId,
                                  path: transcript.path, now: session.lastLaunchedAt ?? session.createdAt)
             }

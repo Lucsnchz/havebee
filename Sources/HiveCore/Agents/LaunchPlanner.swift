@@ -158,12 +158,15 @@ public enum LaunchPlanner {
             // por los hooks personales que instala `AgentStorage.installGrokHooks`.
             let agentId = ctx.session.agentSessionId ?? ctx.newAgentId
             var args = ctx.grokConversationExists ? ["--resume", agentId] : ["--session-id", agentId]
+            // --rules se suma a su prompt de sistema, como --append-system-prompt en Claude.
+            if let hint { args += ["--rules", hint] }
             // Sin pantalla alternativa, la charla queda en el scroll para leerla y copiarla.
-            if ctx.claudeInline { args.append("--no-alt-screen") }
+            let restored = ConversationScrollback.previousEntries(ctx.historyEntries, resuming: ctx.grokConversationExists)
+            if ctx.claudeInline || ctx.session.handoffFrom != nil || !restored.isEmpty { args.append("--no-alt-screen") }
             let continuing = ctx.resumeInterruptedWork && ctx.grokConversationExists
             if continuing { args.append(InterruptedWork.prompt) }
             return LaunchPlan(binary: "grok", args: args, environment: env, agentSessionId: agentId,
-                              continuesInterruptedWork: continuing)
+                              restoredHistory: restored, continuesInterruptedWork: continuing)
         }
     }
 }

@@ -35,6 +35,27 @@ private struct SwitchFixture {
 struct StoreAgentSwitchTests {
     private static let startupError = "Error: account/read failed during TUI bootstrap: account/read failed: workspace routing discovery timed out (code -32603)"
 
+    @Test("Claude → Grok → Codex: cada una recibe lo que se habló con las anteriores")
+    func throughGrok() async throws {
+        let f = try SwitchFixture()
+        f.event("claude", "UserPromptSubmit", ["prompt": "Revisá el checkout"])
+        f.event("claude", "Stop", ["last_assistant_message": "El checkout valida stock."])
+        try await f.switchTo(.grok)
+        let grok = try #require(f.world.processes.launches.last)
+        #expect(grok.executable == "/fake/bin/grok")
+        let rules = try #require(grok.args.firstIndex(of: "--rules").map { grok.args[$0 + 1] })
+        #expect(rules.contains("cambió de Claude Code a vos") && rules.contains("El checkout valida stock."))
+        #expect(grok.args.last == "--no-alt-screen")
+
+        let agentId = try #require(f.store.sessionContext(f.id)?.session.agentSessionId)
+        f.event("grok", "UserPromptSubmit", ["sessionId": .string(agentId), "prompt": "Ahora los tests"])
+        f.event("grok", "Stop", ["sessionId": .string(agentId), "lastAssistantMessage": "Los tests pasan."])
+        try await f.switchTo(.codex)
+        let codex = try #require(f.world.processes.launches.last)
+        #expect(codex.args.contains { $0.contains("cambió de Grok a vos") && $0.contains("Grok: Los tests pasan.")
+                                      && $0.contains("El checkout valida stock.") })
+    }
+
     @Test("Un timeout al pasar de Claude a Codex conserva contexto y borrador al reintentar y reabrir")
     func startupFailureRecovery() async throws {
         let f = try SwitchFixture()

@@ -36,6 +36,16 @@ public struct AgentStorage: Sendable {
         claudeTranscriptURL(id) != nil
     }
 
+    /// El transcript que Hive sabe leer de una conversación: el de Claude o el rollout de Codex. De
+    /// Grok, el historial sale solo de sus hooks.
+    public func transcriptURL(_ id: String, agent: SessionKind) -> URL? {
+        switch agent {
+        case .claude: claudeTranscriptURL(id)
+        case .codex: codexRolloutURL(id)
+        default: nil
+        }
+    }
+
     /// El transcript de una conversación de Claude (<config>/projects/<carpeta>/<id>.jsonl), si existe.
     public func claudeTranscriptURL(_ id: String) -> URL? {
         guard !id.isEmpty else { return nil }

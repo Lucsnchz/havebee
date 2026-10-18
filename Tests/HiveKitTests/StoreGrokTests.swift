@@ -23,7 +23,9 @@ struct StoreGrokTests {
         let launch = try #require(s.world.processes.launches.last)
         #expect(launch.executable == "/fake/bin/grok")
         let agentId = try #require(s.store.sessionContext(session.id)?.session.agentSessionId)
-        #expect(launch.args == ["--session-id", agentId, "--no-alt-screen"])
+        // Como Claude y Codex, sabe dónde está el historial de la sesión.
+        let hint = HistoryStore.agentHint(markdown: s.store.history.markdownURL(session.id))
+        #expect(launch.args == ["--session-id", agentId, "--rules", hint, "--no-alt-screen"])
         // Los hooks personales quedan instalados en la carpeta de Grok (la del mundo de prueba).
         #expect(FileManager.default.fileExists(atPath: s.world.agents.grokHome.appendingPathComponent("hooks/hive.json").path))
 
@@ -44,7 +46,7 @@ struct StoreGrokTests {
         let saved = s.world.agents.grokHome.appendingPathComponent("sessions/app/\(agentId)")
         try FileManager.default.createDirectory(at: saved, withIntermediateDirectories: true)
         s.store.relaunch(session.id)
-        #expect(s.world.processes.launches.last?.args == ["--resume", agentId, "--no-alt-screen"])
+        #expect(s.world.processes.launches.last?.args == ["--resume", agentId, "--rules", hint, "--no-alt-screen"])
     }
 
     @Test("Sin Grok instalado, la sesión queda terminada y no se lanza nada")
