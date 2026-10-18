@@ -21,6 +21,7 @@ struct SessionDetailView: View {
     var body: some View {
         if let ctx = store.sessionContext(sessionId), let rt = store.runtimes[sessionId] {
             let active = store.isActive(ctx.branch, in: ctx.project)
+            let drift = store.agentDrift(sessionId)
             // Panel propio en lugar de `.inspector`: el inspector se mete debajo de la barra de
             // herramientas y deja un hueco vacío arriba.
             HSplitView {
@@ -58,13 +59,13 @@ struct SessionDetailView: View {
                             }
                         }
                     }
-                    SessionStatusBar(project: ctx.project, branch: ctx.branch)
+                    SessionStatusBar(project: ctx.project, branch: ctx.branch, drift: drift)
                 }
                 .frame(minWidth: 380, maxWidth: .infinity, maxHeight: .infinity)
                 .background(terminalBackground)
 
                 if sidePanel == "changes" && !ctx.project.isScratch {
-                    ChangesPanel(project: ctx.project, branch: ctx.branch)
+                    ChangesPanel(project: ctx.project, branch: ctx.branch, drift: drift)
                         .frame(minWidth: 240, idealWidth: 320, maxWidth: 560, maxHeight: .infinity)
                 } else if sidePanel == "history" {
                     HistoryPanel(session: ctx.session)
@@ -72,7 +73,8 @@ struct SessionDetailView: View {
                 }
             }
             .navigationTitle(ctx.session.name)
-            .navigationSubtitle(ctx.project.isScratch ? ctx.project.name : "\(ctx.project.name) › \(ctx.branch.name)")
+            .navigationSubtitle(ctx.project.isScratch ? ctx.project.name
+                                : "\(ctx.project.name) › \(ctx.branch.name)" + (drift.map { " → \($0.branchName)" } ?? ""))
             .toolbar {
                 ToolbarItem(placement: .navigation) {
                     HStack(spacing: 6) {

@@ -207,6 +207,16 @@ public final class AppStore {
 
     public func mainHead(of projectId: UUID) -> String { mainHeads[projectId] ?? "" }
 
+    /// Dónde trabaja el agente de una sesión, si se fue de su rama (ver `AgentDrift`). Solo mientras
+    /// corre: una sesión dormida no está trabajando en ningún lado.
+    public func agentDrift(_ sessionId: UUID) -> AgentDrift? {
+        guard let ctx = sessionContext(sessionId), let rt = runtimes[sessionId], rt.isRunning else { return nil }
+        return AgentDrift.of(ctx.branch, in: ctx.project, cwd: rt.workingDirectory, head: mainHeads[ctx.project.id])
+    }
+
+    /// El estado de git de la carpeta donde trabaja el agente.
+    public func gitStatus(for drift: AgentDrift) -> GitStatus? { dirStatus[drift.directory] }
+
     /// El worktree de la rama ya no está en disco.
     public func isMissing(_ branch: Branch) -> Bool {
         guard branch.mode == .worktree, let path = branch.worktreePath else { return false }

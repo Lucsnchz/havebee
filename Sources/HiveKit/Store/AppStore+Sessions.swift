@@ -137,6 +137,8 @@ extension AppStore {
         rt.terminal = terminal
         rt.events = events
         rt.hooksSeen = false
+        // Al relanzarse, el agente vuelve a arrancar en la carpeta de su rama.
+        rt.workingDirectory = nil
         rt.workingSince = started && plan.continuesInterruptedWork ? now : nil
         rt.backgroundAgents = 0
         rt.status = started ? (plan.continuesInterruptedWork ? .working : .idle) : .exited(nil)

@@ -8,6 +8,8 @@ struct SessionStatusBar: View {
     @AppStorage("sessionSidePanel") private var sidePanel = ""
     let project: Project
     let branch: Branch
+    /// El agente se pasó a otra rama: se muestra esa, con sus commits y cambios.
+    var drift: AgentDrift? = nil
 
     static let height: CGFloat = 24
 
@@ -40,12 +42,20 @@ struct SessionStatusBar: View {
             }
             .foregroundStyle(.secondary)
         } else {
-            let status = store.gitStatus(for: branch, in: project)
+            let status = drift.map(store.gitStatus(for:)) ?? store.gitStatus(for: branch, in: project)
             HStack(spacing: 6) {
                 Image(systemName: "arrow.triangle.branch")
-                Text(status?.branch ?? branch.name)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                if let drift {
+                    Text(branch.name)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    DriftedBranch(drift: drift, maxLength: 40)
+                        .help(DriftedBranch.description(drift, from: branch))
+                } else {
+                    Text(status?.branch ?? branch.name)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
                 if let status {
                     if status.ahead > 0 {
                         separator
@@ -131,5 +141,29 @@ private struct CommandChip: View {
             CommandRunPanel(run: run)
                 .frame(width: 560)
         }
+    }
+}
+
+/// «→ mensajes»: la rama a la que se pasó el agente (ver `AgentDrift`), en la pestaña, el árbol y la
+/// barra de estado, al lado de la rama de la sesión.
+struct DriftedBranch: View {
+    let drift: AgentDrift
+    var maxLength = 20
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: "arrow.right")
+                .font(.system(size: 8, weight: .bold))
+                .accessibilityHidden(true)
+            Text(drift.branchName.middleTruncated(max: maxLength))
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .foregroundStyle(Theme.info)
+    }
+
+    /// La explicación al pasar el mouse: dónde está y adónde vuelve si se reinicia.
+    static func description(_ drift: AgentDrift, from branch: Branch) -> String {
+        "El agente trabaja en «\(drift.branchName)» (\(drift.directory.tildePath)). Si reiniciás la sesión, vuelve a «\(branch.name)»."
     }
 }

@@ -336,23 +336,30 @@ struct SessionRow: View {
 
     var body: some View {
         let rt = store.runtimes[session.id]
+        let drift = store.agentDrift(session.id)
         HStack(spacing: 7) {
             AgentLogo(kind: session.kind, size: 15)
             Text(session.name)
                 .lineLimit(1)
+            // El agente se pasó a otra rama: la sesión sigue acá, pero trabaja allá.
+            if let drift {
+                DriftedBranch(drift: drift, maxLength: 16)
+                    .font(.system(size: 10.5))
+            }
             Spacer(minLength: 4)
             if let rt {
                 StatusIndicator(status: rt.status, unseen: rt.unseen, kind: session.kind)
             }
         }
-        // Al pasar el mouse, lo que pide el agente si espera tu permiso.
-        .help(Self.helpText(notice: rt?.notice) ?? "")
+        // Al pasar el mouse, lo que pide el agente si espera tu permiso (o dónde trabaja).
+        .help(Self.helpText(notice: rt?.notice) ?? drift.map { DriftedBranch.description($0, from: branch) } ?? "")
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilityText(rt))
+        .accessibilityLabel(accessibilityText(rt, drift: drift))
     }
 
-    private func accessibilityText(_ rt: SessionRuntime?) -> String {
+    private func accessibilityText(_ rt: SessionRuntime?, drift: AgentDrift?) -> String {
         var text = "\(session.name), \(session.kind.label)"
+        if let drift { text += ", el agente trabaja en \(drift.branchName)" }
         if let rt, rt.status != .dormant {
             text += ", " + StatusIndicator.accessibilityText(status: rt.status, unseen: rt.unseen, kind: session.kind)
         }

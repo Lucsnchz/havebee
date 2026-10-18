@@ -447,6 +447,7 @@ struct SessionTab: View {
     var body: some View {
         let selected = store.selection == .session(session.id)
         let rt = store.runtimes[session.id]
+        let drift = store.agentDrift(session.id)
         Button {
             withAnimation(.snappy) { store.select(.session(session.id)) }
         } label: {
@@ -456,16 +457,18 @@ struct SessionTab: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .layoutPriority(1)
-                if showBranch {
+                // Si el agente se pasó a otra rama, se ve siempre: «main → mensajes».
+                if showBranch || drift != nil {
                     HStack(spacing: 3) {
                         Image(systemName: "arrow.triangle.branch")
                             .font(.system(size: 9, weight: .semibold))
                             .foregroundStyle((branch.color ?? project.tint).color)
                         // Acortada por el medio: el principio y el final son lo que distingue a una rama.
-                        Text(branch.name.middleTruncated(max: 24))
+                        Text(branch.name.middleTruncated(max: drift == nil ? 24 : 14))
                             .lineLimit(1)
                             .truncationMode(.middle)
                             .foregroundStyle(.secondary)
+                        if let drift { DriftedBranch(drift: drift) }
                     }
                     .font(.system(size: 10.5))
                     // La misma prioridad que el nombre: con un nombre largo (el automático, del
@@ -494,8 +497,8 @@ struct SessionTab: View {
         .buttonStyle(.plain)
         .simultaneousGesture(TapGesture(count: 2).onEnded { store.beginRename(.session(session.id)) })
         .onHover { hovering = $0 }
-        .help(helpText)
-        .accessibilityLabel(accessibilityText(rt: rt))
+        .help(helpText(drift: drift))
+        .accessibilityLabel(accessibilityText(rt: rt, drift: drift))
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityAction(named: "Archivar") { store.requestArchive(session.id) }
         .accessibilityAction(named: "Renombrar") { store.beginRename(.session(session.id)) }
@@ -522,15 +525,17 @@ struct SessionTab: View {
         }
     }
 
-    private var helpText: String {
-        let place = project.isScratch ? session.name : "\(session.name) · \(branch.name)"
+    private func helpText(drift: AgentDrift?) -> String {
+        var place = project.isScratch ? session.name : "\(session.name) · \(branch.name)"
+        if let drift { place += " · " + DriftedBranch.description(drift, from: branch) }
         return shortcut.map { "\(place) (\($0)) · doble clic para renombrar" } ?? "\(place) · doble clic para renombrar"
     }
 
     /// «Claude 1, rama main, Tu turno».
-    private func accessibilityText(rt: SessionRuntime?) -> String {
+    private func accessibilityText(rt: SessionRuntime?, drift: AgentDrift?) -> String {
         var parts = [session.name]
         if !project.isScratch { parts.append("rama \(branch.name)") }
+        if let drift { parts.append("el agente trabaja en \(drift.branchName)") }
         if let rt, rt.status != .dormant { parts.append(rt.status.label(for: session.kind)) }
         return parts.joined(separator: ", ")
     }

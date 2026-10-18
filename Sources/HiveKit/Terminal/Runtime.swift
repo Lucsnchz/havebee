@@ -40,6 +40,8 @@ public final class SessionRuntime {
     public internal(set) var backgroundAgents = 0
     /// Último evento del agente o de sus subagentes (para soltar el «segundo plano» si se cortan).
     @ObservationIgnored var lastEventAt = Date.distantPast
+    /// La carpeta que informó el agente en su último evento (nil hasta el primero de cada ejecución).
+    public internal(set) var workingDirectory: String?
 
     init(sessionId: UUID, kind: SessionKind) {
         self.sessionId = sessionId

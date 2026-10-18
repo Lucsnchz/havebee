@@ -265,17 +265,19 @@ struct ChangesPanel: View {
     @Environment(AppStore.self) private var store
     let project: Project
     let branch: Branch
+    /// El agente se pasó a otra rama: se muestran los cambios de esa carpeta.
+    var drift: AgentDrift? = nil
 
     var body: some View {
-        let status = store.gitStatus(for: branch, in: project)
+        let status = drift.map(store.gitStatus(for:)) ?? store.gitStatus(for: branch, in: project)
         VStack(spacing: 0) {
-            UpstreamSummary(status: status, branchName: branch.name)
+            UpstreamSummary(status: status, branchName: drift?.branchName ?? branch.name)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
             Divider()
             if let status {
                 ScrollView {
-                    ChangesList(status: status, directory: project.directory(for: branch))
+                    ChangesList(status: status, directory: drift?.directory ?? project.directory(for: branch))
                         .padding(.vertical, 4)
                 }
             } else {

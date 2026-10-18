@@ -76,6 +76,8 @@ public struct AgentEventOutcome: Equatable, Sendable {
     /// Subagentes o workflows que siguen trabajando con el agente principal quieto (nil: no cambia).
     /// El Stop dice cuántos quedan; un turno nuevo del agente principal lo vuelve a 0.
     public var backgroundAgents: Int?
+    /// La carpeta donde está trabajando el agente principal (cambia si se pasa a otro worktree).
+    public var cwd: String?
 
     public init(status: SessionStatus? = nil, notification: String? = nil, agentSessionId: String? = nil,
                 history: [(role: HistoryEntry.Role, text: String)] = [], reply: String? = nil, touchesActivity: Bool = false,
@@ -94,7 +96,7 @@ public struct AgentEventOutcome: Equatable, Sendable {
             && a.history.map(\.role) == b.history.map(\.role) && a.history.map(\.text) == b.history.map(\.text)
             && a.reply == b.reply && a.touchesActivity == b.touchesActivity
             && a.transcript?.conversationId == b.transcript?.conversationId && a.transcript?.path == b.transcript?.path
-            && a.permissionRequest == b.permissionRequest && a.backgroundAgents == b.backgroundAgents
+            && a.permissionRequest == b.permissionRequest && a.backgroundAgents == b.backgroundAgents && a.cwd == b.cwd
     }
 }
 
@@ -228,6 +230,8 @@ public enum AgentEventInterpreter {
         default:
             break
         }
+        // Dónde trabaja el agente principal; un subagente puede correr en su propio worktree.
+        if !fromSubagent, let cwd = payload["cwd"]?.string, !cwd.isEmpty { outcome.cwd = cwd }
         // Los textos vacíos no van al historial.
         outcome.history = outcome.history.compactMap { entry in
             let text = entry.text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -303,6 +307,7 @@ public enum AgentEventInterpreter {
         default:
             break
         }
+        if !fromSubagent, let cwd = text("cwd") { outcome.cwd = cwd }
         outcome.history = outcome.history.compactMap { entry in
             let text = entry.text.trimmingCharacters(in: .whitespacesAndNewlines)
             return text.isEmpty ? nil : (entry.role, text)

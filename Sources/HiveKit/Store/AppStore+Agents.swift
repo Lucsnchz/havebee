@@ -92,6 +92,7 @@ extension AppStore {
                 scheduleSave()
             }
             if let agents = outcome.backgroundAgents { rt.backgroundAgents = agents }
+            if let cwd = outcome.cwd, rt.workingDirectory != cwd { rt.workingDirectory = cwd }
             if let status = outcome.status { setStatus(rt, status, notify: outcome.notification) }
             if let request = outcome.permissionRequest, rt.status == .attention { rt.pendingPermission = request }
         }
