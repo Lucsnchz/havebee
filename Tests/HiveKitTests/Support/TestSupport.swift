@@ -1,16 +1,41 @@
 import Foundation
 import HiveCore
 
-/// Carpeta temporal que se borra sola.
+/// Las carpetas temporales de una corrida de tests van todas dentro de una, con el pid del proceso:
+/// se borra al salir, y al empezar se borran las de corridas que no llegaron a hacerlo (una que se
+/// cortó). Antes quedaban miles sueltas: muchos stores siguen vivos hasta el final de la corrida, y
+/// el deinit de su carpeta no llega a correr.
+enum TestTemp {
+    // realpath del sistema: /var → /private/var, igual que las rutas que devuelve git.
+    // (resolvingSymlinksInPath de Foundation hace lo contrario y deja /var.)
+    static let root: URL = {
+        let base = URL(fileURLWithPath: TempDir.realPath(NSTemporaryDirectory()), isDirectory: true)
+        removeAbandoned(in: base)
+        let root = base.appendingPathComponent("\(prefix)\(getpid())", isDirectory: true)
+        try! FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        atexit { try? FileManager.default.removeItem(at: TestTemp.root) }
+        return root
+    }()
+
+    private static let prefix = "hive-tests-"
+
+    /// Las de corridas cuyo proceso ya no existe.
+    private static func removeAbandoned(in base: URL) {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: base.path)) ?? []
+        for name in names where name.hasPrefix(prefix) {
+            guard let pid = pid_t(name.dropFirst(prefix.count)), pid != getpid(), kill(pid, 0) != 0, errno == ESRCH else { continue }
+            try? FileManager.default.removeItem(at: base.appendingPathComponent(name, isDirectory: true))
+        }
+    }
+}
+
+/// Carpeta temporal que se borra sola (o con la de la corrida, ver `TestTemp`).
 final class TempDir: @unchecked Sendable {
     let url: URL
     var path: String { url.path }
 
     init(_ name: String = "hive-test") {
-        // realpath del sistema: /var → /private/var, igual que las rutas que devuelve git.
-        // (resolvingSymlinksInPath de Foundation hace lo contrario y deja /var.)
-        url = URL(fileURLWithPath: Self.realPath(NSTemporaryDirectory()), isDirectory: true)
-            .appendingPathComponent("\(name)-\(UUID().uuidString)", isDirectory: true)
+        url = TestTemp.root.appendingPathComponent("\(name)-\(UUID().uuidString)", isDirectory: true)
         try! FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     }
 

@@ -297,5 +297,9 @@ struct ProcessAndPathTests {
         #expect(Date().timeIntervalSince(start) < 3)
         #expect(LoginShell.resolvePATH(shell: "/no/existe") == nil)
         #expect(!LoginShell.path.isEmpty)
+        // Lo que imprimen los archivos de arranque del shell no se mezcla con el PATH.
+        let chatty = dir.write("charlatan.sh", "#!/bin/sh\necho 'hola desde el .zshrc'\nexec /bin/sh \"$@\"\n")
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: chatty.path)
+        #expect(LoginShell.resolvePATH(shell: chatty.path) == path)
     }
 }

@@ -12,22 +12,20 @@ public enum LoginShell {
 
     /// El PATH que ve una terminal nueva (shell de login interactivo). Una app abierta desde
     /// Finder arranca con un PATH mínimo, así que sin esto no encontraríamos `claude` ni `codex`.
-    public static func resolvePATH(shell: String = path, timeout: TimeInterval = 8) -> String? {
-        let file = FileManager.default.temporaryDirectory.appendingPathComponent("hive-path-\(UUID().uuidString)")
-        defer { try? FileManager.default.removeItem(at: file) }
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: shell)
-        process.arguments = ["-l", "-i", "-c", "printf '%s' \"$PATH\" > \(shellQuote(file.path))"]
-        process.standardInput = FileHandle.nullDevice
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        do { try process.run() } catch { return nil }
-        let deadline = Date().addingTimeInterval(timeout)
-        while process.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.05) }
-        if process.isRunning { process.terminate(); return nil }
-        guard let value = try? String(contentsOf: file, encoding: .utf8), !value.isEmpty else { return nil }
-        return value
+    /// Llega por la salida, entre marcas, así no se mezcla con lo que impriman los archivos de
+    /// arranque del shell. Antes iba a un archivo temporal que quedaba tirado si Hive se cerraba
+    /// (o dejaba de esperar) antes de que el shell terminara de arrancar.
+    public static func resolvePATH(shell: String = path, timeout: TimeInterval = 8,
+                                   runner: CommandRunning = ProcessCommandRunner()) -> String? {
+        let script = "printf '\(pathMarker)%s\(pathMarker)' \"$PATH\""
+        let r = runner.run(shell, ["-l", "-i", "-c", script], cwd: nil, environment: [:], timeout: timeout)
+        guard r.ok else { return nil }
+        let parts = r.stdout.components(separatedBy: pathMarker)
+        guard parts.count >= 3, !parts[parts.count - 2].isEmpty else { return nil }
+        return parts[parts.count - 2]
     }
+
+    private static let pathMarker = "__HIVE_PATH__"
 
     /// PATH razonable mientras no tenemos el real.
     public static func fallbackPATH(home: String = NSHomeDirectory(), inherited: String? = ProcessInfo.processInfo.environment["PATH"]) -> String {
