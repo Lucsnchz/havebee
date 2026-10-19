@@ -187,12 +187,14 @@ Principios:
   - `InterruptRule` decide cuándo preguntar antes de cortar una sesión, y `ConflictPrompt` arma la confirmación de un conflicto.
   - `BranchSituation` dice qué se puede hacer en una rama (worktree, principal, inactiva, a medias o sin carpeta).
   - `GitTimeouts` elige cuánto puede tardar cada llamada a git.
+  - `GitLayout` y `GitStaleness` deciden qué hay que volver a leer de git según dónde avisó macOS que hubo cambios.
   - `SessionTitle` arma el nombre automático y `HistoryExport` arma la línea de tiempo del historial.
   - `WorktreeIncludes`, `HerdSites`, `EnvFile`, `ProjectScripts`, `SiteURL` y `RemoteHost` preparan los worktrees y los enlaces a Herd y a GitLab.
   - `ClearPreserver` es el filtro de `/clear`.
   - `ProjectTree` agrupa las consultas y los cambios sobre el árbol de proyectos.
-- **Los efectos van detrás de protocolos inyectados** (`AppEnvironment`): `GitClient` (git real o falso), `CommandRunning`, `ProcessStarting`, `SessionNotifying`, el reloj y el calendario, la carpeta de datos (`HivePaths`) y la de cada agente (`AgentStorage`). En la app se usa `AppEnvironment.live()`; en los tests, carpetas temporales y versiones falsas.
-- **Nada bloquea el hilo principal:** git, el lanzamiento de las sesiones y las lecturas de disco corren en segundo plano. `ProcessCommandRunner` espera con un semáforo (no con `waitUntilExit`, que gira el run loop y provoca reentrada), manda stdout y stderr a archivos para que nada se trabe, corta lo que se pasa de su límite de tiempo con todo su grupo de procesos y se puede cancelar a pedido (`CancellableWork`).
+- **Los efectos van detrás de protocolos inyectados** (`AppEnvironment`): `GitClient` (git real o falso), `DirectoryWatching` (los avisos de cambios en carpetas), `CommandRunning`, `ProcessStarting`, `SessionNotifying`, el reloj y el calendario, la carpeta de datos (`HivePaths`) y la de cada agente (`AgentStorage`). En la app se usa `AppEnvironment.live()`; en los tests, carpetas temporales y versiones falsas.
+- **Nada bloquea el hilo principal:** git, el lanzamiento de las sesiones y las lecturas de disco corren en segundo plano. `ProcessCommandRunner` espera con un semáforo (no con `waitUntilExit`, que gira el run loop y provoca reentrada), lee stdout y stderr por pipes desde ese mismo hilo (sin archivos temporales ni hilos lectores), corta lo que se pasa de su límite de tiempo con todo su grupo de procesos y se puede cancelar a pedido (`CancellableWork`).
+- **git se lee solo donde algo cambió:** `FSEventsDirectoryWatcher` anota en qué carpetas de los repos avisó macOS que hubo cambios. La revisión de cada 10 s corre `git status` solo en esas carpetas, y si cambió algo en `.git` (un commit, un checkout) relee la rama, las ramas y los worktrees de ese repo. Cada 5 minutos lee todo igual, por si macOS no avisó algo; lo mismo cuando Hive cambia git.
 - **JSON tipado** (`JSONValue`, `Sendable`) en lugar de `[String: Any]`.
 - `AppStore.init` solo carga el estado; los servicios en segundo plano arrancan con `start()`.
 

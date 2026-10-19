@@ -57,6 +57,40 @@ final class FakeProcesses: ProcessStarting {
     }
 }
 
+/// Avisos de cambios en carpetas que da el test: `change` hace de macOS.
+final class FakeDirectories: DirectoryWatching, @unchecked Sendable {
+    private let lock = NSLock()
+    private var watched: Set<String> = []
+    private var pending = DirectoryChanges()
+
+    /// Las carpetas que mira el store.
+    var roots: Set<String> { lock.withLock { watched } }
+
+    func watch(_ roots: Set<String>) {
+        lock.withLock {
+            guard roots != watched else { return }
+            watched = roots
+            pending = DirectoryChanges(all: true)
+        }
+    }
+
+    func drain() -> DirectoryChanges {
+        lock.withLock {
+            defer { pending = DirectoryChanges() }
+            return pending
+        }
+    }
+
+    func change(_ root: String) {
+        lock.withLock { _ = pending.roots.insert(root) }
+    }
+
+    /// macOS perdió avisos.
+    func loseEvents() {
+        lock.withLock { pending.all = true }
+    }
+}
+
 /// Todo lo que el store ve del mundo, controlable desde los tests.
 @MainActor
 final class TestWorld {
@@ -81,6 +115,8 @@ final class TestWorld {
     var launchesInBackground = false
     /// git real por defecto; los tests de carreras ponen uno con demoras (`DelayedGit`).
     var git: GitClient = GitCLI()
+    /// Sin avisos de cambios por defecto: cada revisión de git lee todo.
+    var directories: DirectoryWatching = UnwatchedDirectories()
 
     init() {
         paths = HivePaths(root: dir.url.appendingPathComponent("Hive"))
@@ -103,7 +139,8 @@ final class TestWorld {
             now: { [weak self] in self?.now ?? .reference },
             saveDelay: 0,
             stopGrace: 0.2,
-            launchesInBackground: launchesInBackground)
+            launchesInBackground: launchesInBackground,
+            directories: directories)
     }
 
     func makeStore() -> AppStore { AppStore(environment: environment) }

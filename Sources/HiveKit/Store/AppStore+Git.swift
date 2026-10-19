@@ -242,55 +242,80 @@ extension AppStore {
         return nil
     }
 
-    /// Pide una revisión de git en segundo plano. Corre una a la vez; si llega un pedido con una
-    /// pasada en curso, no se pierde: al terminar se hace otra.
+    /// Pide una revisión de git completa en segundo plano: después de que Hive cambió git, o cuando
+    /// hace falta todo al día sin esperar los avisos de macOS. Corre una a la vez; si llega un pedido
+    /// con una pasada en curso, no se pierde: al terminar se hace otra.
     public func refreshGit() {
-        requestRefresh(onlyWorking: false)
+        requestRefresh(.all)
     }
 
-    /// Revisión periódica (cada 10 s): con la app activa revisa todo; en segundo plano, cada 60 s y
-    /// solo las carpetas donde hay agentes trabajando.
+    /// Pide leer de git solo lo que cambió desde la última revisión (ver `GitStaleness`).
+    public func refreshGitChanges() {
+        requestRefresh(.changed)
+    }
+
+    /// Cada cuánto se lee todo igual, con la app activa, por si macOS no avisó algún cambio (en un
+    /// disco de red no avisa los que vienen de otra máquina).
+    static let fullGitRefreshInterval: TimeInterval = 300
+
+    /// Revisión periódica (cada 10 s): con la app activa lee lo que cambió, y todo cada 5 minutos; en
+    /// segundo plano, cada 60 s y solo lo que cambió en las carpetas donde hay agentes trabajando.
     func periodicGitRefresh() {
+        let now = environment.now()
         if environment.isAppActive() {
-            refreshGit()
+            requestRefresh(now.timeIntervalSince(lastFullGitRefresh) >= Self.fullGitRefreshInterval ? .all : .changed)
             return
         }
-        let now = environment.now()
         guard now.timeIntervalSince(lastBackgroundRefresh) >= 60 else { return }
         lastBackgroundRefresh = now
-        requestRefresh(onlyWorking: true)
+        requestRefresh(.working)
     }
 
-    private func requestRefresh(onlyWorking: Bool) {
+    private func requestRefresh(_ scope: GitRefreshScope) {
         guard refreshTask == nil else {
             // Una revisión parcial en segundo plano no hace falta repetirla.
-            if !onlyWorking { refreshPending = true }
+            if scope > .working { refreshPending = max(refreshPending ?? scope, scope) }
             return
         }
         refreshTask = Task { [weak self] in
-            var onlyWorking = onlyWorking
-            repeat {
-                self?.refreshPending = false
-                await self?.refreshGitNow(onlyWorking: onlyWorking)
-                onlyWorking = false
-            } while self?.refreshPending == true
+            var next: GitRefreshScope? = scope
+            while let scope = next {
+                self?.refreshPending = nil
+                await self?.refreshGitNow(scope)
+                next = self?.refreshPending
+            }
             self?.refreshTask = nil
         }
     }
 
     /// Revisa git (estado de cada carpeta, rama de la carpeta principal y worktrees nuevos) y espera.
-    /// `onlyWorking`: solo las carpetas con sesiones trabajando, sin buscar worktrees nuevos.
-    func refreshGitNow(onlyWorking: Bool = false) async {
+    func refreshGitNow(_ scope: GitRefreshScope = .all) async {
         let generation = gitGeneration
+        // Primero se anota lo que avisó macOS: lo que cambie mientras se lee lo anota la próxima.
+        let layout = gitLayout()
+        environment.directories.watch(layout.roots)
+        staleGit.record(environment.directories.drain(), in: layout)
         var dirs = gitDirectories()
         var heads = repoProjects.map { ($0.id, $0.path) }
-        if onlyWorking {
+        if scope == .all {
+            lastFullGitRefresh = environment.now()
+        } else {
+            dirs = dirs.intersection(staleGit.statuses)
+            heads = heads.filter { staleGit.repositories.contains($0.1) }
+        }
+        if scope == .working {
             let busy = workingDirectories()
             dirs = dirs.intersection(busy)
             heads = heads.filter { busy.contains($0.1) }
-            guard !dirs.isEmpty else { return }
         }
-        let scan = await GitScan.run(dirs: Array(dirs), heads: heads, worktrees: !onlyWorking, git: git)
+        if scope != .all {
+            guard !dirs.isEmpty || !heads.isEmpty else { return }
+        }
+        // En segundo plano se lee la rama pero no las ramas ni los worktrees: el repo sigue pendiente.
+        staleGit.clear(statuses: dirs, repositories: scope == .working ? [] : heads.map(\.1))
+        let scan = await GitScan.run(dirs: Array(dirs), heads: heads, worktrees: scope != .working, git: git)
+        // git no pudo leer una carpeta que existe (tardó demasiado, por ejemplo): se reintenta en la próxima.
+        for dir in dirs where scan.statuses[dir] == nil && !scan.missing.contains(dir) { staleGit.markStatus(dir) }
         // Fusionamos por clave: lo que se sumó durante la revisión (un proyecto, un worktree) no se pierde.
         var status = dirStatus
         for dir in dirs { status[dir] = scan.statuses[dir] }
@@ -305,7 +330,10 @@ extension AppStore {
         if missingWorktrees != missing { missingWorktrees = missing }
         // Hive cambió git mientras leíamos (o lo está cambiando ahora): lo leído puede ser viejo o estar a
         // mitad de camino. La pasada que pide ese cambio al terminar lo corrige.
-        guard generation == gitGeneration, gitOperations == 0 else { return }
+        guard generation == gitGeneration, gitOperations == 0 else {
+            if scope != .working { for (_, path) in heads { staleGit.markRepository(path) } }
+            return
+        }
         applyHeads(scan.heads)
         for (id, branches) in scan.branches where repositoryBranches[id] != branches { repositoryBranches[id] = branches }
         var found = false
@@ -412,6 +440,13 @@ extension AppStore {
         return dirs
     }
 
+    /// Los repos como carpetas para mirar (ver `GitLayout`).
+    func gitLayout() -> GitLayout {
+        GitLayout(repositories: repoProjects.map { p in
+            GitLayout.Repository(path: p.path, worktrees: p.branches.compactMap { $0.mode == .worktree ? $0.worktreePath : nil })
+        })
+    }
+
     /// Carpetas de las que se guarda el estado de git: la principal de cada repo y cada worktree.
     func gitDirectories() -> Set<String> {
         var dirs = Set<String>()
@@ -421,6 +456,19 @@ extension AppStore {
         }
         return dirs
     }
+}
+
+/// Qué lee una revisión de git. Cada caso incluye lo del anterior.
+enum GitRefreshScope: Int, Comparable {
+    /// Lo que cambió en las carpetas con agentes trabajando, sin buscar ramas ni worktrees nuevos
+    /// (con la app en segundo plano).
+    case working
+    /// Lo que cambió, en todas las carpetas.
+    case changed
+    /// Todo, haya cambiado o no.
+    case all
+
+    static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
 }
 
 /// Lo que leyó una revisión de git.

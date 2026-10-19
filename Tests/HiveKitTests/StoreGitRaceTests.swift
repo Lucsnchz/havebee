@@ -202,7 +202,7 @@ struct StoreGitScheduleTests {
         #expect(s.git.calls(.worktrees) == worktreeCalls) // en segundo plano no busca worktrees nuevos
     }
 
-    @Test("Con la app activa revisa todo cada vez")
+    @Test("Con la app activa y sin avisos de cambios, revisa todo cada vez")
     func foregroundRefresh() async throws {
         let s = await RaceSetup()
         s.world.appActive = true

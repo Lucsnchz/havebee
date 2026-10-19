@@ -108,8 +108,12 @@ public final class AppStore {
     @ObservationIgnored var timers: [Timer] = []
     @ObservationIgnored var dayObserver: NSObjectProtocol?
     @ObservationIgnored var refreshTask: Task<Void, Never>?
-    /// Llegó un pedido de revisión mientras otra corría: al terminar se hace otra pasada.
-    @ObservationIgnored var refreshPending = false
+    /// Llegó un pedido de revisión mientras otra corría: al terminar se hace otra pasada, la más amplia pedida.
+    @ObservationIgnored var refreshPending: GitRefreshScope?
+    /// Lo de git que cambió desde que se leyó, según los avisos de macOS (ver `GitStaleness`).
+    @ObservationIgnored var staleGit = GitStaleness()
+    /// Última revisión de git que leyó todo, haya cambiado o no.
+    @ObservationIgnored var lastFullGitRefresh = Date.distantPast
     /// Sube con cada cambio de git que hace Hive (checkout, proyecto o rama nuevos, rama quitada).
     /// Una revisión que empezó antes descarta las ramas actuales que leyó, porque pueden ser viejas.
     @ObservationIgnored var gitGeneration = 0
@@ -339,7 +343,7 @@ public final class AppStore {
 
     public func appBecameActive() {
         if case .session(let id)? = selection, let rt = runtimes[id] { markSeen(rt) }
-        refreshGit()
+        refreshGitChanges()
     }
 
     func markSeen(_ rt: SessionRuntime) {

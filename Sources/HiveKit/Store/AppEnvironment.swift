@@ -55,13 +55,17 @@ public struct AppEnvironment {
     public var launchesInBackground: Bool
     /// Dónde empieza y termina el día (para ordenar los proyectos por «usados hoy»).
     public var calendar: Calendar
+    /// Avisa en qué carpetas de los repos cambió algo, así la revisión de git lee solo eso. En los
+    /// tests, por defecto no mira nada y la revisión lee todo cada vez.
+    public var directories: DirectoryWatching
 
     public init(paths: HivePaths, git: GitClient, agents: AgentStorage, notifier: SessionNotifying, processes: ProcessStarting,
                 settings: @escaping () -> AppSettings, inheritedEnvironment: [String: String], home: URL, loginShell: String,
                 cachedLoginPATH: String?, resolveLoginPATH: @escaping @Sendable () -> String?, storeLoginPATH: @escaping (String) -> Void,
                 logos: @escaping @Sendable (String) -> [String], isAppActive: @escaping () -> Bool, setDockBadge: @escaping (String?) -> Void,
                 now: @escaping () -> Date, saveDelay: TimeInterval, stopGrace: TimeInterval = 3,
-                launchesInBackground: Bool = true, calendar: Calendar = .autoupdatingCurrent) {
+                launchesInBackground: Bool = true, calendar: Calendar = .autoupdatingCurrent,
+                directories: DirectoryWatching = UnwatchedDirectories()) {
         self.paths = paths
         self.git = git
         self.agents = agents
@@ -82,6 +86,7 @@ public struct AppEnvironment {
         self.stopGrace = stopGrace
         self.launchesInBackground = launchesInBackground
         self.calendar = calendar
+        self.directories = directories
     }
 
     public static func live() -> AppEnvironment {
@@ -109,6 +114,7 @@ public struct AppEnvironment {
             now: Date.init,
             saveDelay: 0.4,
             stopGrace: 3,
-            launchesInBackground: true)
+            launchesInBackground: true,
+            directories: FSEventsDirectoryWatcher())
     }
 }

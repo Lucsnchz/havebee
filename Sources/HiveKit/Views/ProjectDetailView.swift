@@ -72,7 +72,7 @@ struct ProjectDetailView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .navigationTitle(project.name)
-            .task { store.refreshGit() }
+            .task { store.refreshGitChanges() }
             .navigationSubtitle(head.isEmpty ? "HEAD desacoplado" : "en \(head)")
             .toolbar {
                 ToolbarItemGroup {
