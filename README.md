@@ -71,7 +71,9 @@ scripts/build-app.sh --install
 ```
 
 This produces a locally signed development build, not an Apple-notarized
-download. The build script includes the project and third-party license notices
+download. Official releases are built with `scripts/release.sh` (universal,
+Developer ID signed and notarized) and update themselves through Sparkle; see
+[Publicar una versión](docs/README.es.md#publicar-una-versión). The build script includes the project and third-party license notices
 inside the app bundle. Build with the checked-in `Package.resolved`.
 
 ## Development

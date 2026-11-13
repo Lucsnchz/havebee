@@ -14,6 +14,71 @@ scripts/build-app.sh --install   # compila y copia Havebee.app a /Applications
 
 Sin `--install` solo deja la app en `build/Havebee.app`. Para instalar una versión nueva, primero cerrá la app. Si tenías la instalación vieja (`Hive.app`), se reemplaza por `Havebee.app`: tus sesiones, ajustes e historial siguen en la misma carpeta (`~/Library/Application Support/Hive`).
 
+## Actualizaciones y descargas
+
+La app se actualiza sola con [Sparkle](https://sparkle-project.org): una vez por día lee
+`https://havebee.com/downloads/appcast.xml`, baja la versión nueva en segundo plano y la instala al
+cerrar Havebee. Cada descarga se verifica con la clave pública EdDSA de `Resources/Info.plist`; la
+clave privada está en el llavero de la Mac que publica (cuenta `havebee`). Desde el menú Havebee →
+«Buscar actualizaciones…» se busca a mano, y en Ajustes → General se apagan las búsquedas o la
+instalación automática.
+
+En el servidor (`forge@137.184.243.149`, carpeta `/home/forge/havebee.com/downloads`, que la web
+sirve como `https://havebee.com/downloads/`) quedan:
+
+- `Havebee-<versión>.dmg`: cada versión publicada.
+- `Havebee.dmg`: enlace a la última (el botón de descarga de la web).
+- `appcast.xml`: el canal de Sparkle, con todas las versiones.
+- `latest.json`: la última versión, para la web (`version`, `build`, `url`, `size`, `sha256`,
+  `minimumSystemVersion`, `publishedAt`, `notes`).
+
+### Publicar una versión
+
+1. Subí `CFBundleShortVersionString` en `Resources/Info.plist` (por ejemplo, de 0.2.0 a 0.2.1) y
+   commiteá. El número de build sale solo de la cantidad de commits, así que siempre crece.
+2. Corré:
+
+   ```bash
+   scripts/release.sh --notes "Qué cambió" --publish
+   ```
+
+   Las notas pueden ir en un archivo con `--notes-file`; las líneas que empiezan con «- » se
+   muestran como lista. Sin `--publish` deja todo en `build/release/` para revisarlo.
+
+El script compila la app para Apple Silicon e Intel, la firma con hardened runtime, la notariza con
+Apple y le graba el ticket. Después arma el DMG, lo firma, lo notariza y calcula su firma EdDSA para
+Sparkle. Con `--publish` sube primero el DMG y recién después el appcast y `latest.json`, así nadie
+ve una versión que todavía no terminó de subir. Al final crea la etiqueta `v<versión>`; subila con
+`git push origin v<versión>`.
+
+**Una sola vez, antes de la primera versión pública:**
+
+1. **Certificado Developer ID:** Xcode → Settings → Accounts → tu cuenta → Manage Certificates →
+   «+» → **Developer ID Application**. Tiene que aparecer en
+   `security find-identity -v -p codesigning` como
+   `Developer ID Application: Luciano Sanchez (L3VMKAPR6J)`.
+2. **Perfil de notarización:** creá una contraseña específica para apps en
+   [appleid.apple.com](https://appleid.apple.com) (Inicio de sesión y seguridad → Contraseñas
+   específicas para apps) y guardala en el llavero:
+
+   ```bash
+   xcrun notarytool store-credentials havebee --apple-id TU_APPLE_ID --team-id L3VMKAPR6J
+   ```
+
+3. **Respaldo de la clave de Sparkle:** si se pierde, las apps instaladas no aceptan más
+   actualizaciones. Exportala y guardala en un lugar seguro (por ejemplo, 1Password):
+
+   ```bash
+   .build/artifacts/sparkle/Sparkle/bin/generate_keys --account havebee -x havebee-sparkle.key
+   ```
+
+Para probar sin certificado: `scripts/release.sh --unsigned --notes "prueba"` firma ad hoc y no se
+puede publicar. Ad hoc no lleva hardened runtime: la validación de librerías exige que la app y
+Sparkle compartan un Team ID, y una firma ad hoc no tiene. Con `--skip-notarize` y
+`DEVELOPER_ID="Apple Development: …"` se prueba la firma con hardened runtime sin notarizar.
+`HAVEBEE_BUNDLE_ID` cambia el identificador de una copia de prueba, para que no comparta ajustes con
+la app instalada, y `--base-url` apunta las descargas a un servidor local.
+
 ## Cómo se usa
 
 - **Proyecto**: la carpeta de un repo git (⌘O o «Agregar proyecto», podés elegir varias). Al agregarlo se suma la rama actual; si elegís la carpeta de un worktree, se agrega el repo principal.
