@@ -46,12 +46,21 @@ public struct PermissionRequestKey: Equatable, Sendable {
         self.init(toolName: payload["tool_name"]?.string ?? "", input: payload["tool_input"])
     }
 
+    /// Herramientas que esperan tu respuesta y vuelven con la entrada cambiada: AskUserQuestion le
+    /// suma tus `answers` y en ExitPlanMode podés editar el plan antes de aprobarlo. Nunca corren de
+    /// a varias en paralelo, así que alcanza con el nombre.
+    static let answeredByYou: Set<String> = ["AskUserQuestion", "ExitPlanMode"]
+
     /// Si un hook de herramienta es de la misma que pidió permiso. Si falta la entrada en alguno de
-    /// los dos, alcanza con el nombre.
+    /// los dos, alcanza con el nombre. Una aprobación puede devolver la entrada con campos de más
+    /// (`updatedInput`): sigue siendo la misma si conserva todos los del pedido.
     public func matches(_ payload: JSONValue) -> Bool {
         guard (payload["tool_name"]?.string ?? "") == toolName else { return false }
         guard let input, let other = payload["tool_input"] else { return true }
-        return input == other
+        if Self.answeredByYou.contains(toolName) { return true }
+        if input == other { return true }
+        guard let asked = input.object, let ran = other.object else { return false }
+        return asked.allSatisfy { ran[$0.key] == $0.value }
     }
 }
 

@@ -123,5 +123,30 @@ struct IntegracionFinalCoreTests {
         // Si falta la entrada, alcanza con el nombre de la herramienta.
         #expect(PermissionRequestKey(toolName: "Bash", input: nil).matches(bash))
         #expect(!PermissionRequestKey(toolName: "Bash", input: nil).matches(read))
+        // Otro Bash en paralelo, con otro comando, no es el que pidió permiso.
+        #expect(!pending!.matches(["tool_name": "Bash", "tool_input": ["command": "ls"]]))
+        // La aprobación devolvió la entrada con un campo de más: es el mismo pedido.
+        #expect(pending!.matches(["tool_name": "Bash", "tool_input": ["command": "php artisan migrate", "timeout": .number(120000)]]))
+    }
+
+    @Test("Después de contestar una pregunta o aprobar un plan, la sesión vuelve a «Trabajando»", arguments: ["AskUserQuestion", "ExitPlanMode"])
+    func answeredQuestionResumesWork(tool: String) {
+        let id = UUID()
+        func event(_ name: String, _ payload: JSONValue) -> HiveEvent {
+            HiveEvent(sessionId: id, source: "claude", name: name, payload: payload)
+        }
+        let input: JSONValue = tool == "AskUserQuestion"
+            ? ["questions": [["question": "¿Publico la web?", "header": "Web", "options": [["label": "Sí"], ["label": "No"]]]]]
+            : ["plan": "1. Migrar\n2. Probar"]
+        let asked = AgentEventInterpreter.interpret(event("PermissionRequest", ["tool_name": .string(tool), "tool_input": input]),
+                                                    status: .working, agentSessionId: nil)
+        #expect(asked.status == .attention)
+        // Claude Code manda la herramienta con tu respuesta adentro (o con el plan que editaste).
+        let answered: JSONValue = tool == "AskUserQuestion"
+            ? ["questions": input["questions"]!, "answers": ["¿Publico la web?": "Sí"]]
+            : ["plan": "1. Migrar\n2. Probar\n3. Publicar"]
+        let done = AgentEventInterpreter.interpret(event("PostToolUse", ["tool_name": .string(tool), "tool_input": answered]),
+                                                   status: .attention, agentSessionId: nil, pendingPermission: asked.permissionRequest)
+        #expect(done.status == .working)
     }
 }
