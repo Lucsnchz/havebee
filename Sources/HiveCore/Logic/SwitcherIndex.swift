@@ -182,7 +182,8 @@ public enum SwitcherIndex {
                                           haystack: "nueva rama crear branch worktree \(project.name)", recency: .distantPast))
             }
             for branch in project.branches {
-                let place = project.isScratch ? project.name : "\(project.name) › \(branch.name)"
+                // La rama, acortada por el medio: si la fila no entra, que no se pierda el proyecto.
+                let place = project.isScratch ? project.name : "\(project.name) › \(branch.name.middleTruncated(max: 28))"
                 let recency = branch.activeSessions.map(\.recency).max() ?? .distantPast
                 for kind in SessionKind.allCases {
                     let subtitle = missingAgents.contains(kind) ? "No instalado · \(kind.installHint)"

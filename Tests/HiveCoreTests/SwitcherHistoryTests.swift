@@ -43,7 +43,11 @@ struct SwitcherHistoryTests {
 
     @Test("Las filas del historial no muestran las marcas de Markdown", arguments: [
         ("## Listo\n\nAgregué la **validación** de stock:\n\n- Si no alcanza, tira `OutOfStock`.\n- Los 12 tests pasan.",
-         "Listo\n\nAgregué la validación de stock:\n\n• Si no alcanza, tira OutOfStock.\n• Los 12 tests pasan."),
+         "Listo:\n\nAgregué la validación de stock:\n\n• Si no alcanza, tira OutOfStock.\n• Los 12 tests pasan."),
+        // Un título (o una línea entera en negrita) seguido de texto lleva «:», salvo que ya termine en un signo.
+        ("**Listo**\nAgregué el test.", "Listo:\nAgregué el test."),
+        ("**Listo.**\nAgregué el test.", "Listo.\nAgregué el test."),
+        ("**Ojo** con **esto**", "Ojo con esto"),
         ("Cambié el\n```php\nif ($item->stock < $qty) {\n```\ny listo", "Cambié el\nif ($item->stock < $qty) {\ny listo"),
         ("Pasos:\n  * uno\n  + dos\n### Notas", "Pasos:\n  • uno\n  • dos\nNotas"),
         // Un « - » o un « * » en medio de una línea no es una viñeta, ni un «#» pegado es un título.

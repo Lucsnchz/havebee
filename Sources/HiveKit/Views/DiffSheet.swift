@@ -142,7 +142,7 @@ struct DiffSheet: View {
                 Button(copied ? "Copiado" : "Copiar diff") { copyDiff(file) }
                     .disabled(diff?.raw.isEmpty ?? true)
                     .help("Copiar el diff de este archivo, por ejemplo para pegárselo a la IA")
-                Button("Abrir en editor") { openInEditor(file) }
+                Button("Abrir en el editor") { openInEditor(file) }
                 Button("Cerrar") { dismiss() }
             }
             .font(.system(size: 12.5))

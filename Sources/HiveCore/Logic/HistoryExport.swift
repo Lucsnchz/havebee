@@ -51,11 +51,36 @@ public enum HistoryExport {
     /// medio de una («$precio - $descuento») queda como está. Los «_» también: son parte de nombres
     /// como `rate_limit` o `__construct`.
     public static func withoutMarkdown(_ text: String) -> String {
-        text.replacingOccurrences(of: #"(?m)^([ \t]*)#{1,6}[ \t]+"#, with: "$1", options: .regularExpression)
+        headingsAsLabels(text)
             .replacingOccurrences(of: #"(?m)^([ \t]*)[-*+][ \t]+"#, with: "$1• ", options: .regularExpression)
             .replacingOccurrences(of: #"\*\*(\S(?:.*?\S)?)\*\*"#, with: "$1", options: .regularExpression)
             .replacingOccurrences(of: #"```[A-Za-z0-9_+-]*\s*"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: "`", with: "")
+    }
+
+    /// Los títulos («## Listo», o una línea entera en negrita, como los usa Claude) sin sus marcas y,
+    /// si les sigue texto, con «:» al final: al juntar las líneas en una fila, «Listo Agregué la
+    /// validación» se leía como un error.
+    private static func headingsAsLabels(_ text: String) -> String {
+        var lines = text.components(separatedBy: "\n")
+        for index in lines.indices {
+            let line = lines[index]
+            let indent = line.prefix { $0 == " " || $0 == "\t" }
+            let body = line.dropFirst(indent.count).trimmingCharacters(in: .whitespaces)
+            let hashes = body.prefix { $0 == "#" }.count
+            var title: String
+            if (1...6).contains(hashes), let space = body.dropFirst(hashes).first, space == " " || space == "\t" {
+                title = body.dropFirst(hashes).trimmingCharacters(in: .whitespaces)
+            } else if body.count > 4, body.hasPrefix("**"), body.hasSuffix("**"), !body.dropFirst(2).dropLast(2).contains("**") {
+                title = String(body.dropFirst(2).dropLast(2))
+            } else {
+                continue
+            }
+            let followed = lines[(index + 1)...].contains { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+            if followed, let last = title.last, !".:;!?…".contains(last) { title += ":" }
+            lines[index] = indent + title
+        }
+        return lines.joined(separator: "\n")
     }
 
     /// Junta la copia completa (textos intermedios de los transcripts) con el registro de Hive:

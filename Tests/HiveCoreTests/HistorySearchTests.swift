@@ -134,7 +134,7 @@ struct HistorySearchTests {
         - El total queda en `$precio - $descuento`.
         """), sessionId: id, agentName: "Claude Code")
         let hit = try #require(store.search("validacion").first)
-        #expect(hit.snippet.hasPrefix("Listo Agregué la validación de stock: • Si no alcanza, tira OutOfStock. • El total"))
+        #expect(hit.snippet.hasPrefix("Listo: Agregué la validación de stock: • Si no alcanza, tira OutOfStock. • El total"))
         let total = try #require(store.search("descuento").first)
         #expect(total.snippet.hasSuffix("• El total queda en $precio - $descuento."))
         // Si lo que buscás tiene una marca, el fragmento queda tal cual (si no, no se encontraría en él).
