@@ -213,7 +213,9 @@ struct SessionAgentMenu: View {
             Label {
                 Text(session.kind.defaultName)
             } icon: {
-                AgentLogo(kind: session.kind, size: 16)
+                // En la barra, macOS saca la imagen del menú y la dibuja a su tamaño propio, sin el
+                // `.frame` de `AgentLogo`: el asterisco de Claude salía de 128 puntos. Esta ya mide 16.
+                Image(nsImage: AgentLogo.menuImage(session.kind))
             }
         }
         .labelStyle(.titleAndIcon)

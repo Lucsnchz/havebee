@@ -402,4 +402,18 @@ struct LogoTests {
         #expect(AgentLogo.image(.shell) == nil)
         #expect(AgentLogo.menuImage(.shell).isTemplate)
     }
+
+    @Test("El logo de los menús ya viene de 16 puntos: en la barra, macOS no respeta el `.frame` de la vista")
+    func menuImageSize() throws {
+        for kind in SessionKind.allCases where AgentLogo.image(kind) != nil {
+            #expect(AgentLogo.menuImage(kind).size == NSSize(width: 16, height: 16), "\(kind.label)")
+        }
+        // El menú de la barra para cambiar de IA usa esa imagen, no `AgentLogo`.
+        let source = try String(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../Sources/HiveKit/Views/SessionDetailView.swift").standardizedFileURL, encoding: .utf8)
+        let menu = try #require(source.range(of: "struct SessionAgentMenu").map { String(source[$0.lowerBound...]) })
+        let label = try #require(menu.range(of: "Text(session.kind.defaultName)").map { String(menu[$0.upperBound...].prefix(400)) })
+        #expect(label.contains("AgentLogo.menuImage(session.kind)"))
+        #expect(!label.contains("AgentLogo(kind:"))
+    }
 }
