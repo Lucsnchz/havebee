@@ -58,11 +58,15 @@ if $INSTALL; then
   DEST=/Applications
   [ -w "$DEST" ] || DEST="$HOME/Applications"
   mkdir -p "$DEST"
-  # Si está abierta (con el nombre nuevo o el viejo), hay que cerrarla antes de reemplazarla.
-  if pgrep -xq Havebee || pgrep -xq Hive; then
-    echo "Cerrá Havebee antes de instalar (las sesiones se pueden reanudar después)." >&2
-    exit 1
-  fi
+  # Si está abierta (con el nombre nuevo o el viejo), hay que cerrarla antes de reemplazarla. Con ps
+  # y no con pgrep: desde la terminal de un agente (sandbox) pgrep no ve la app y daría «cerrada».
+  RUNNING=$(ps -axo comm=)
+  for name in Havebee Hive; do
+    if grep -qxF "$DEST/$name.app/Contents/MacOS/$name" <<<"$RUNNING"; then
+      echo "Cerrá Havebee antes de instalar (las sesiones se pueden reanudar después)." >&2
+      exit 1
+    fi
+  done
   rm -rf "$DEST/Havebee.app.new"
   cp -R "$APP" "$DEST/Havebee.app.new"
   rm -rf "$DEST/Havebee.app"
