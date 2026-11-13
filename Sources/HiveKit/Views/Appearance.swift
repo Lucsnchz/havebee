@@ -169,8 +169,7 @@ struct StatusRing: View {
                 if reduceMotion {
                     shape.strokeBorder(color, lineWidth: width)
                 } else {
-                    SpinningGradient(color: color)
-                        .mask(shape.strokeBorder(lineWidth: width))
+                    SpinningRing(color: color, lineWidth: width, cornerRadius: size * 0.27 + gap)
                         .transition(.opacity)
                 }
             }
@@ -179,23 +178,6 @@ struct StatusRing: View {
         .padding(-(gap + width))
         .allowsHitTesting(false)
         .accessibilityHidden(true)
-    }
-}
-
-/// Degradé angular fijo que gira con `rotationEffect`: lo interpola Core Animation, sin volver a
-/// armar la vista 30 veces por segundo como hacía el TimelineView.
-private struct SpinningGradient: View {
-    let color: Color
-    @State private var spinning = false
-
-    var body: some View {
-        AngularGradient(colors: [color.opacity(0), color.opacity(0.3), color, color.opacity(0)],
-                        center: .center)
-            // Más grande que el aro: al girar, las esquinas siguen cubiertas.
-            .scaleEffect(1.5)
-            .rotationEffect(.degrees(spinning ? 360 : 0))
-            .animation(.linear(duration: 1.4).repeatForever(autoreverses: false), value: spinning)
-            .onAppear { spinning = true }
     }
 }
 

@@ -156,23 +156,16 @@ struct StatusGlyphView: View {
     }
 }
 
-/// Arco miel que gira: «trabajando». Lo anima Core Animation (no redibuja la vista en cada cuadro);
-/// con «Reducir movimiento» queda un aro fijo.
+/// Arco miel que gira: «trabajando». Lo hace girar Core Animation (ver `SpinningLayerView`); con
+/// «Reducir movimiento» queda un aro fijo.
 struct WorkingGlyph: View {
     var size: CGFloat = 10
     var lineWidth: CGFloat = 1.8
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var spinning = false
 
     var body: some View {
-        Circle()
-            .trim(from: 0, to: reduceMotion ? 1 : 0.7)
-            .stroke(Theme.accent, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+        SpinningArc(color: Theme.accent, lineWidth: lineWidth, spins: !reduceMotion)
             .frame(width: size, height: size)
-            .rotationEffect(.degrees(spinning ? 360 : 0))
-            .animation(reduceMotion ? nil : .linear(duration: 0.9).repeatForever(autoreverses: false), value: spinning)
-            .onAppear { spinning = !reduceMotion }
-            .onChange(of: reduceMotion) { _, reduce in spinning = !reduce }
             .accessibilityHidden(true)
     }
 }
