@@ -62,6 +62,7 @@ struct SettingsGeneralPane: View {
     @AppStorage(AppSettings.claudeInlineKey) private var claudeInline = true
     @AppStorage(AppSettings.historyHintKey) private var historyHint = true
     @AppStorage(AppSettings.showClaudeUsageKey) private var showClaudeUsage = true
+    private let updates = AppUpdates.shared
     let dataFolder: URL
     var agents: AgentStorage?
     /// El aviso de que el notify de Codex no se pudo leer (nil si está bien o no hay).
@@ -104,6 +105,25 @@ struct SettingsGeneralPane: View {
                     } icon: {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundStyle(Theme.danger)
+                    }
+                }
+            }
+            if updates.isAvailable {
+                Section {
+                    Toggle(isOn: Binding(get: { updates.automaticChecks }, set: { updates.setAutomaticChecks($0) })) {
+                        Text("Buscar actualizaciones automáticamente")
+                        Text("Una vez por día. También desde el menú Havebee → «Buscar actualizaciones…».")
+                    }
+                    Toggle(isOn: Binding(get: { updates.automaticDownloads }, set: { updates.setAutomaticDownloads($0) })) {
+                        Text("Descargarlas e instalarlas solas")
+                        Text("Se instalan al cerrar Havebee, sin cortar lo que esté corriendo.")
+                    }
+                    .disabled(!updates.automaticChecks)
+                } header: {
+                    Text("Actualizaciones")
+                } footer: {
+                    if let version = AppUpdates.versionText(Bundle.main.infoDictionary) {
+                        SettingsFooter("Versión instalada: \(version).")
                     }
                 }
             }

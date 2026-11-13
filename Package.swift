@@ -11,6 +11,8 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/migueldeicaza/SwiftTerm", from: "1.2.0"),
+        // Actualizaciones automáticas (solo el ejecutable: HiveKit y los tests no la cargan).
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.10.1"),
     ],
     targets: [
         // Dominio, lógica pura e infraestructura sin UI. Concurrencia estricta de Swift 6.
@@ -30,9 +32,14 @@ let package = Package(
         // Punto de entrada de la app.
         .executableTarget(
             name: "Hive",
-            dependencies: ["HiveKit"],
+            dependencies: [
+                "HiveKit",
+                .product(name: "Sparkle", package: "Sparkle"),
+            ],
             path: "Sources/Hive",
-            swiftSettings: [.swiftLanguageMode(.v5)]
+            swiftSettings: [.swiftLanguageMode(.v5)],
+            // Sparkle.framework va en Havebee.app/Contents/Frameworks.
+            linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
         ),
         .testTarget(
             name: "HiveCoreTests",

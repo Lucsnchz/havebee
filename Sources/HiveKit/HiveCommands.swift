@@ -12,6 +12,13 @@ struct HiveCommands: Commands {
     @AppStorage(FontSize.key) private var fontSize = FontSize.standard
 
     var body: some Commands {
+        // En el menú de la app, debajo de «Acerca de Havebee» (solo en la app empaquetada).
+        CommandGroup(after: .appInfo) {
+            if AppUpdates.shared.isAvailable {
+                Button("Buscar actualizaciones…") { AppUpdates.shared.checkForUpdates() }
+                    .disabled(!AppUpdates.shared.canCheck)
+            }
+        }
         CommandGroup(replacing: .newItem) {
             Button("Agregar proyecto…") { store.addProjectInteractive() }
                 .hiveShortcut(.addProject)

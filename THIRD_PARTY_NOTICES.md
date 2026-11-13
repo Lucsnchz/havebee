@@ -2,7 +2,7 @@
 
 The project license does not replace the licenses of third-party components.
 Full upstream license texts and applicable notices are included in `LICENSES/`
-and copied into `Hive.app/Contents/Resources/` by `scripts/build-app.sh`.
+and copied into `Havebee.app/Contents/Resources/` by `scripts/build-app.sh`.
 
 ## Swift packages
 
@@ -16,10 +16,14 @@ notices are included for completeness.
 | [swift-png](https://github.com/tayloraswift/swift-png) | 4.5.1 / `8a0bcd4df5e4b307c804937776a56dd6ecdf6396` | [Apache-2.0](LICENSES/swift-png-Apache-2.0.txt), [NOTICE](LICENSES/swift-png-NOTICE.txt) |
 | [h](https://github.com/rarestype/h) | 1.0.1 / `aa3626829160917d4378330617971977cbd78f5b` | [Apache-2.0](LICENSES/h-Apache-2.0.txt), [NOTICE](LICENSES/h-NOTICE.txt) |
 | [swift-argument-parser](https://github.com/apple/swift-argument-parser) | 1.8.2 / `6a52f3251125d74daf04fcbd5e6f08a75d074382` | [Apache-2.0](LICENSES/swift-argument-parser-Apache-2.0.txt) |
+| [Sparkle](https://github.com/sparkle-project/Sparkle) | 2.10.1 / `ab7d71291238df6e0492143b120c9b696a35f603` | [MIT and bundled notices](LICENSES/Sparkle-MIT.txt) |
 
 SwiftTerm's notice credits Miguel de Icaza, the xterm.js authors, SourceLair
 Private Company and Christopher Jeffrey. The full notices are preserved in its
 license file. The swift-png and h packages credit diana ma (@tayloraswift).
+Sparkle is embedded as `Sparkle.framework` (automatic updates). Its license file
+also carries the notices of the code it bundles (bsdiff, sais, ed25519 and
+others), all preserved verbatim.
 
 ## Embedded agent logos
 
