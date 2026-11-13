@@ -14,6 +14,10 @@ struct VisualTextsTests {
         #expect(GitCounters.changesSymbol == "plusminus")
         #expect(ChangesList.unstagedTitle(hasStaged: true) == "Sin preparar")
         #expect(ChangesList.unstagedTitle(hasStaged: false) == "Cambios")
+        // Un archivo con una parte preparada y otra no está en los dos grupos, con una fila distinta en cada uno.
+        let half = GitChange(code: "MM", path: "tests/InformesTabTest.php")
+        #expect(half.isStaged && half.isUnstaged)
+        #expect(half.stagedRowID != half.unstagedRowID)
         // La lista del diff usa los mismos nombres que el panel.
         #expect(DiffSheet.sectionTitle(staged: true, hasStaged: true) == "PREPARADOS")
         #expect(DiffSheet.sectionTitle(staged: false, hasStaged: true) == "SIN PREPARAR")

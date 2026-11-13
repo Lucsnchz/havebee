@@ -20,7 +20,7 @@ struct ChangesList: View {
             if !staged.isEmpty {
                 ListHeader(title: "Preparados", count: staged.count, expanded: $showStaged)
                 if showStaged {
-                    ForEach(staged) { change in
+                    ForEach(staged, id: \.stagedRowID) { change in
                         ChangeRow(change: change, staged: true, directory: directory) {
                             store.openDiff(directory: directory, status: status, change: change, staged: true)
                         }
@@ -41,7 +41,7 @@ struct ChangesList: View {
                         .padding(.horizontal, showsHeader ? 28 : 14)
                         .padding(.vertical, 6)
                 } else {
-                    ForEach(unstaged) { change in
+                    ForEach(unstaged, id: \.unstagedRowID) { change in
                         ChangeRow(change: change, staged: false, directory: directory, indent: showsHeader ? 26 : 12) {
                             store.openDiff(directory: directory, status: status, change: change, staged: false)
                         }
@@ -50,6 +50,19 @@ struct ChangesList: View {
             }
         }
     }
+}
+
+/// La fila de un archivo en un grupo de `ChangesList`. Un archivo con una parte preparada y otra no
+/// está en los dos grupos, y dos filas de la misma lista no pueden compartir id: SwiftUI avisaba
+/// («is used by multiple child views») y podía mostrar una fila en lugar de la otra.
+struct ChangeRowID: Hashable {
+    let path: String
+    let staged: Bool
+}
+
+extension GitChange {
+    var stagedRowID: ChangeRowID { ChangeRowID(path: path, staged: true) }
+    var unstagedRowID: ChangeRowID { ChangeRowID(path: path, staged: false) }
 }
 
 extension ChangesList {
