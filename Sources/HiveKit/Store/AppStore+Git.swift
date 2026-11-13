@@ -158,6 +158,7 @@ extension AppStore {
                 p.branches[i].setupCommand = branch.setupCommand
                 p.branches[i].setupFirstSession = branch.setupFirstSession
                 p.branches[i].herdSite = branch.herdSite
+                p.branches[i].ownDatabase = branch.ownDatabase
                 branch = p.branches[i]
             } else {
                 p.branches.append(branch)

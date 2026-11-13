@@ -375,6 +375,25 @@ public enum MCPCatalog {
         public var id: String { name }
     }
 
+    /// El MCP de Herd para este proyecto, si Herd está instalado.
+    public static func herdMCP(projectPath: String, home: URL) -> Item? {
+        let herd = home.appendingPathComponent("Library/Application Support/Herd/bin/herd-mcp.phar").path
+        guard FileManager.default.fileExists(atPath: herd) else { return nil }
+        return Item(name: "herd", detail: "Laravel Herd: sitios, PHP, servicios y logs locales.",
+                    config: ["command": "php", "args": [.string(herd)], "env": ["SITE_PATH": .string(projectPath)]])
+    }
+
+    /// El MCP de Nightwatch, solo si el proyecto lo usa (laravel/nightwatch). Conexión directa con login:
+    /// Claude, Codex y Gemini hablan HTTP y la primera vez abren el navegador para entrar con tu cuenta.
+    public static func nightwatch(projectPath: String) -> Item? {
+        let composer = FileManager.default.contents(atPath: (projectPath as NSString).appendingPathComponent("composer.json")).flatMap(JSONValue.parse)
+        guard composer?["require"]?["laravel/nightwatch"] != nil || composer?["require-dev"]?["laravel/nightwatch"] != nil else { return nil }
+        return Item(name: "nightwatch", detail: "Laravel Nightwatch: errores y rendimiento de producción. La primera vez te pide entrar con tu cuenta.",
+                    config: ["type": "http", "url": .string(nightwatchURL)])
+    }
+
+    public static let nightwatchURL = "https://nightwatch.laravel.com/mcp"
+
     public static func suggestions(projectPath: String, home: URL, existing: [MCPServer]) -> [Item] {
         let fm = FileManager.default
         func exists(_ path: String) -> Bool { fm.fileExists(atPath: (projectPath as NSString).appendingPathComponent(path)) }
@@ -383,13 +402,8 @@ public enum MCPCatalog {
         if exists("artisan") {
             items.append(Item(name: "laravel-boost", detail: "Laravel Boost: docs, base de datos, rutas y logs de tu app (requiere laravel/boost).",
                               config: ["command": "php", "args": ["artisan", "boost:mcp"]]))
-            let herd = home.appendingPathComponent("Library/Application Support/Herd/bin/herd-mcp.phar").path
-            if fm.fileExists(atPath: herd) {
-                items.append(Item(name: "herd", detail: "Laravel Herd: sitios, PHP, servicios y logs locales.",
-                                  config: ["command": "php", "args": [.string(herd)], "env": ["SITE_PATH": .string(projectPath)]]))
-            }
-            items.append(Item(name: "nightwatch", detail: "Laravel Nightwatch: errores y rendimiento en producción.",
-                              config: ["command": "npx", "args": ["-y", "mcp-remote", "https://nightwatch.laravel.com/mcp"]]))
+            if let herd = herdMCP(projectPath: projectPath, home: home) { items.append(herd) }
+            if let nightwatch = nightwatch(projectPath: projectPath) { items.append(nightwatch) }
         }
         let package = (fm.contents(atPath: (projectPath as NSString).appendingPathComponent("package.json"))).flatMap(JSONValue.parse)
         let deps = (package?["dependencies"]?.object ?? [:]).merging(package?["devDependencies"]?.object ?? [:]) { a, _ in a }

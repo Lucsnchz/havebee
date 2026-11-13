@@ -4,7 +4,7 @@ import SwiftUI
 /// Alto mínimo de las tarjetas de rama (y de «Nueva rama», para que la fila quede pareja).
 private let branchCardHeight: CGFloat = 76
 
-/// Resumen de un proyecto: sus ramas (lo de todos los días), los comandos y los MCP.
+/// Resumen de un proyecto: sus ramas (lo de todos los días), Laravel y agentes, los comandos y los MCP.
 struct ProjectDetailView: View {
     @Environment(AppStore.self) private var store
     let projectId: UUID
@@ -47,6 +47,13 @@ struct ProjectDetailView: View {
                             DetailSection("Ramas remotas") {
                                 branchList(catalog.remoteOnly, project: project, remote: true)
                             }
+                        }
+                    }
+
+                    if LaravelKitSection.isLaravel(project.path) {
+                        DetailSection("Laravel y agentes") {
+                            LaravelKitSection(project: project)
+                                .id(project.id)
                         }
                     }
 

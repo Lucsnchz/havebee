@@ -10,12 +10,16 @@ public struct HerdSites: Equatable, Sendable {
     public var links: [String: String]
     /// Hosts con certificado (`herd secure`), como "ecommerce.test".
     public var securedHosts: Set<String>
+    /// Carpeta con los certificados (`<host>.crt` y `<host>.key`). Nil si no se leyó de la configuración.
+    public var certificatesDirectory: String?
 
-    public init(tld: String = "test", parkedPaths: [String] = [], links: [String: String] = [:], securedHosts: Set<String> = []) {
+    public init(tld: String = "test", parkedPaths: [String] = [], links: [String: String] = [:], securedHosts: Set<String> = [],
+                certificatesDirectory: String? = nil) {
         self.tld = tld
         self.parkedPaths = parkedPaths
         self.links = links
         self.securedHosts = securedHosts
+        self.certificatesDirectory = certificatesDirectory
     }
 
     /// Carpeta de datos de Herd: ~/Library/Application Support/Herd.
@@ -48,7 +52,7 @@ public struct HerdSites: Equatable, Sendable {
             .filter { $0.hasSuffix(".crt") }
             // Los hosts no distinguen mayúsculas: `herd secure Ecommerce` deja «Ecommerce.test.crt».
             .map { String($0.dropLast(".crt".count)).lowercased() }
-        return HerdSites(tld: tld, parkedPaths: parked, links: links, securedHosts: Set(secured))
+        return HerdSites(tld: tld, parkedPaths: parked, links: links, securedHosts: Set(secured), certificatesDirectory: certificates)
     }
 
     /// Host con el que Herd sirve una carpeta: primero un link que apunte a ella y, si no, el

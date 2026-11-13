@@ -51,6 +51,10 @@ struct NewBranchSheet: View {
     @State private var isLaravel = false
     @State private var setupDetails = false
     @State private var setupURL: String?
+    /// Copiar la base del principal para la rama (se recuerda para la próxima).
+    @AppStorage("worktreeOwnDatabase") private var ownDatabase = true
+    /// La copia que se haría, si el proyecto usa SQLite o MySQL en esta Mac.
+    @State private var databasePreview: WorktreeDatabase?
 
     var body: some View {
         let project = store.project(projectId)
@@ -222,10 +226,20 @@ struct NewBranchSheet: View {
                         Text(herd == nil ? "Composer, clave si falta, storage y assets. MCP heredados para esta rama."
                              : "Sitio propio en Herd, mismo PHP, Composer, storage y assets. MCP para esta rama.")
                             .font(.caption).foregroundStyle(.secondary)
-                        Text("Conserva la conexión del .env. No ejecuta migraciones; la IA espera a que termine.")
+                        Text(databaseInUse ? "No ejecuta migraciones; la IA espera a que termine."
+                             : "Conserva la conexión del .env. No ejecuta migraciones; la IA espera a que termine.")
                             .font(.caption).foregroundStyle(.secondary)
                         if runSetup, let setupURL {
                             Label(setupURL, systemImage: "globe").font(.caption).foregroundStyle(Theme.info)
+                        }
+                        if let databasePreview, copyIgnored {
+                            Toggle("Base de datos propia", isOn: $ownDatabase)
+                                .disabled(!runSetup)
+                                .padding(.top, 4)
+                            Text(ownDatabase ? Self.databaseCaption(databasePreview, worktreePath: location == .sibling ? siblingPath : nestedPath)
+                                 : "Usa la misma base que el proyecto principal: lo que migre esta rama lo ven todas.")
+                                .font(.caption).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                     DisclosureGroup("Comando de preparación", isExpanded: $setupDetails) {
@@ -336,11 +350,24 @@ struct NewBranchSheet: View {
     }
 
     private var refreshKey: String {
-        "\(isNew)|\(name)|\(existing)|\(storedMode)|\(location.rawValue)|\(runSetup)|\(herd != nil)"
+        "\(isNew)|\(name)|\(existing)|\(storedMode)|\(location.rawValue)|\(runSetup)|\(herd != nil)|\(ownDatabase)|\(copyIgnored)"
+    }
+
+    /// La preparación va a copiar la base: hay copia posible, está pedida y el .env viene del principal.
+    private var databaseInUse: Bool { databasePreview != nil && ownDatabase && copyIgnored && runSetup }
+
+    /// «Copia tienda a tienda_checkout: las migraciones de esta rama no tocan las otras.»
+    static func databaseCaption(_ database: WorktreeDatabase, worktreePath: String) -> String {
+        switch database.kind {
+        case .mysql:
+            "Copia «\(database.source)» a «\(database.target)»: las migraciones de esta rama no tocan las otras. Se borra con el worktree."
+        case .sqlite:
+            "Copia \((database.source as NSString).lastPathComponent) a la carpeta de la rama: las migraciones de esta rama no tocan las otras."
+        }
     }
 
     /// Lo que cambia la validación, las rutas y el comando de preparación.
-    private var derivationKey: String { "\(isNew)|\(branchName)|\(location.rawValue)" }
+    private var derivationKey: String { "\(isNew)|\(branchName)|\(location.rawValue)|\(ownDatabase)|\(copyIgnored)" }
 
     /// «ecommerce.worktrees», la carpeta de los worktrees anidados.
     private var nestedFolderName: String {
@@ -463,7 +490,8 @@ struct NewBranchSheet: View {
         let currentLocation = location
         let hasCert = ProjectScripts.securesWorktree(location: currentLocation, herdServesParent: herdServesParent, mainHasCert: mainHasCert)
         let herd = herd
-        let derived = await Task.detached(priority: .userInitiated) { () -> (error: String?, sibling: String, nested: String, setup: ProjectScripts.Script?, url: String?) in
+        let wantsDatabase = ownDatabase && copyIgnored
+        let derived = await Task.detached(priority: .userInitiated) { () -> (error: String?, sibling: String, nested: String, setup: ProjectScripts.Script?, url: String?, database: WorktreeDatabase?) in
             var error: String?
             if checkName {
                 if hive.contains(candidate) {
@@ -480,13 +508,17 @@ struct NewBranchSheet: View {
             let folder = ((currentLocation == .sibling ? sibling : nested) as NSString).lastPathComponent
             var setup = ProjectScripts.resolve(projectPath: projectPath, folder: folder, mainHasCert: hasCert).setup
             var url: String?
+            var database: WorktreeDatabase?
             if setup?.origin == .suggested, LaravelWorktreeSetup.detects(projectPath) {
-                let plan = LaravelWorktreeSetup.make(projectPath: projectPath,
-                              worktreePath: currentLocation == .sibling ? sibling : nested, herd: herd)
+                let worktreePath = currentLocation == .sibling ? sibling : nested
+                let plan = LaravelWorktreeSetup.make(projectPath: projectPath, worktreePath: worktreePath, herd: herd, ownDatabase: wantsDatabase)
                 setup = .init(command: plan.command, origin: .suggested)
                 url = plan.url
+                database = LaravelWorktreeSetup.readFile((projectPath as NSString).appendingPathComponent(".env")).flatMap {
+                    WorktreeDatabase.plan(env: $0, projectPath: projectPath, worktreePath: worktreePath)
+                }
             }
-            return (error, sibling, nested, setup, url)
+            return (error, sibling, nested, setup, url, database)
         }.value
         guard !Task.isCancelled else { return }
         nameError = derived.error
@@ -497,6 +529,7 @@ struct NewBranchSheet: View {
             setupOrigin = derived.setup?.origin
             setupURL = derived.url
         }
+        databasePreview = derived.database
         derivedKey = key
     }
 
@@ -525,7 +558,7 @@ struct NewBranchSheet: View {
                 envAppURL: worktree && location == .sibling ? siblingURL : nil,
                 setupCommand: worktree && runSetup && !setup.isEmpty ? setup : nil,
                 automaticLaravelSetup: worktree && runSetup && isLaravel && setupOrigin == .suggested && !setupEdited,
-                herd: herd)
+                herd: herd, ownDatabase: databaseInUse)
             let failure = await store.createBranch(request)
             busy = false
             if let failure { error = failure } else { dismiss() }

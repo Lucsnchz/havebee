@@ -8,6 +8,10 @@ public enum WorktreeIncludes {
 
     public static let defaultPatterns = [
         ".env", ".env.*", "auth.json", ".mcp.json", ".claude/settings.local.json",
+        // Guías y skills de los agentes (las que arma Laravel Boost, entre otras) cuando el repo no las
+        // versiona: sin ellas, el agente de la rama trabaja sin las reglas del proyecto.
+        "CLAUDE.md", "CLAUDE.local.md", "AGENTS.md", "GEMINI.md", "/boost.json", "/.ai/",
+        ".claude/skills/", ".agents/skills/", ".codex/config.toml", ".gemini/settings.json",
         "local.properties", "keystore.properties", "*.jks", "*.keystore",
     ]
 
@@ -161,13 +165,26 @@ public enum WorktreeIncludes {
         return copied
     }
 
-    /// Texto corto para avisar qué se copió: «.env, auth.json y 2 más».
+    /// Texto corto para avisar qué se copió: «.env, auth.json y 2 más». Una carpeta de skills cuenta
+    /// como una sola cosa, no como cada archivo que tiene adentro.
     public static func summary(_ files: [String], shown: Int = 2) -> String {
-        let names = files.map { $0 == ".claude/settings.local.json" ? "permisos de Claude" : $0 }
+        var names: [String] = []
+        for file in files {
+            let name = displayName(file)
+            if !names.contains(name) { names.append(name) }
+        }
         guard !names.isEmpty else { return "" }
         if names.count <= shown + 1 {
             return names.count == 1 ? names[0] : names.dropLast().joined(separator: ", ") + " y " + names[names.count - 1]
         }
         return names.prefix(shown).joined(separator: ", ") + " y \(names.count - shown) más"
+    }
+
+    static func displayName(_ file: String) -> String {
+        if file == ".claude/settings.local.json" { return "permisos de Claude" }
+        if file.hasPrefix(".claude/skills/") { return "skills de Claude" }
+        if file.hasPrefix(".agents/skills/") { return "skills de los agentes" }
+        if file.hasPrefix(".ai/") { return ".ai" }
+        return file
     }
 }

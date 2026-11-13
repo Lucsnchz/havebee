@@ -7,33 +7,53 @@ public enum CommandSuggestions {
         public let command: String
     }
 
-    public static func detect(projectPath root: String, existing: [ProjectCommand] = []) -> [Suggestion] {
+    /// - Parameter herd: la configuración de Herd. Si Herd ya sirve el proyecto, no se sugiere
+    ///   `artisan serve` (el sitio está en <carpeta>.test) y los tests de Pest 5 usan su Xdebug.
+    public static func detect(projectPath root: String, existing: [ProjectCommand] = [], herd: HerdSites? = nil) -> [Suggestion] {
         let fm = FileManager.default
         func exists(_ name: String) -> Bool { fm.fileExists(atPath: (root as NSString).appendingPathComponent(name)) }
         func json(_ name: String) -> JSONValue? { fm.contents(atPath: (root as NSString).appendingPathComponent(name)).flatMap(JSONValue.parse) }
         var found: [Suggestion] = []
+        let laravel = exists("artisan")
+        let package = json("package.json")
+        let runner: String
+        if exists("pnpm-lock.yaml") { runner = "pnpm" }
+        else if exists("yarn.lock") { runner = "yarn" }
+        else if exists("bun.lockb") || exists("bun.lock") { runner = "bun run" }
+        else { runner = "npm run" }
 
-        if let scripts = json("package.json")?["scripts"]?.object {
-            let runner: String
-            if exists("pnpm-lock.yaml") { runner = "pnpm" }
-            else if exists("yarn.lock") { runner = "yarn" }
-            else if exists("bun.lockb") || exists("bun.lock") { runner = "bun run" }
-            else { runner = "npm run" }
+        let scripts = package?["scripts"]?.object
+        if let scripts {
             for name in ["dev", "start", "serve", "watch", "build", "test", "lint", "preview"] where scripts[name] != nil {
-                found.append(Suggestion(name: name.capitalized, command: "\(runner) \(name)"))
+                // En Laravel, `dev` es Vite: con Herd es lo único que hace falta levantar para ver los cambios en vivo.
+                found.append(Suggestion(name: laravel && name == "dev" ? "Vite" : name.capitalized, command: "\(runner) \(name)"))
             }
         }
         let composer = json("composer.json")
-        if exists("artisan") {
-            found.append(Suggestion(name: "Servidor Laravel", command: "php artisan serve"))
-            found.append(Suggestion(name: "Cola", command: "php artisan queue:work"))
+        func requires(_ name: String) -> Bool { composer?["require"]?[name] != nil || composer?["require-dev"]?[name] != nil }
+        let servedByHerd = laravel && herd?.host(for: root) != nil
+        if laravel {
+            if !servedByHerd { found.append(Suggestion(name: "Servidor Laravel", command: "php artisan serve")) }
+            // `listen` y no `work`: vuelve a cargar el código en cada job, así toma lo que acaba de cambiar el agente.
+            found.append(Suggestion(name: "Cola", command: "php artisan queue:listen --tries=1"))
             found.append(Suggestion(name: "Tests", command: "php artisan test"))
-            if composer?["require"]?["laravel/pail"] != nil || composer?["require-dev"]?["laravel/pail"] != nil {
-                found.append(Suggestion(name: "Logs", command: "php artisan pail"))
+            // Pest 5 corre solo los tests que tocó el cambio (TIA). Necesita Xdebug o PCOV: Herd trae Xdebug.
+            if let pest = lockedMajor("pestphp/pest", lock: json("composer.lock")), pest >= 5 {
+                found.append(Suggestion(name: "Tests afectados", command: herd == nil ? "vendor/bin/pest --tia" : "herd coverage vendor/bin/pest --tia"))
             }
+            if requires("laravel/pail") { found.append(Suggestion(name: "Logs", command: "php artisan pail")) }
+            if requires("laravel/pint") { found.append(Suggestion(name: "Pint", command: "vendor/bin/pint --dirty")) }
         }
-        if composer?["scripts"]?["dev"] != nil {
-            found.append(Suggestion(name: "Composer dev", command: "composer run dev"))
+        if let dev = composer?["scripts"]?["dev"] {
+            let text = dev.string ?? (dev.stringArray ?? []).joined(separator: "\n")
+            if servedByHerd && text.contains("artisan serve") {
+                // `composer run dev` levantaría un `artisan serve` que con Herd sobra: lo mismo sin el servidor.
+                if let combined = herdDev(runner: runner, hasViteScript: scripts?["dev"] != nil, hasPail: requires("laravel/pail"), package: package) {
+                    found.append(combined)
+                }
+            } else {
+                found.append(Suggestion(name: "Composer dev", command: "composer run dev"))
+            }
         }
         if exists("gradlew") {
             found.append(contentsOf: gradleSuggestions(AndroidApp.read(projectPath: root)))
@@ -43,6 +63,26 @@ public enum CommandSuggestions {
         }
         let taken = Set(existing.map(\.command))
         return found.filter { !taken.contains($0.command) }
+    }
+
+    /// La versión mayor instalada de un paquete según composer.lock ("v5.3.3" → 5).
+    static func lockedMajor(_ name: String, lock: JSONValue?) -> Int? {
+        let packages = (lock?["packages"]?.array ?? []) + (lock?["packages-dev"]?.array ?? [])
+        guard let version = packages.first(where: { $0["name"]?.string == name })?["version"]?.string else { return nil }
+        return Int(version.drop { !$0.isNumber }.prefix { $0.isNumber })
+    }
+
+    /// Cola, logs y Vite juntos con concurrently, como `composer run dev` pero sin `artisan serve`.
+    static func herdDev(runner: String, hasViteScript: Bool, hasPail: Bool, package: JSONValue?) -> Suggestion? {
+        let deps = (package?["dependencies"]?.object ?? [:]).merging(package?["devDependencies"]?.object ?? [:]) { a, _ in a }
+        guard deps["concurrently"] != nil else { return nil }
+        var parts: [(name: String, color: String, command: String)] = [("queue", "#c4b5fd", "php artisan queue:listen --tries=1")]
+        if hasPail { parts.append(("logs", "#fb7185", "php artisan pail --timeout=0")) }
+        if hasViteScript { parts.append(("vite", "#fdba74", "\(runner) dev")) }
+        guard parts.count > 1 else { return nil }
+        let commands = parts.map { "\"\($0.command)\"" }.joined(separator: " ")
+        return Suggestion(name: "Dev con Herd",
+                          command: "npx concurrently -c \"\(parts.map(\.color).joined(separator: ","))\" \(commands) --names=\(parts.map(\.name).joined(separator: ",")) --kill-others")
     }
 
     /// Los comandos de Gradle que existen de verdad en el repo. Con sabores (`productFlavors`) no hay

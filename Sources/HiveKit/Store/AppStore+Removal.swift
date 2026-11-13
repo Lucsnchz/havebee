@@ -141,6 +141,7 @@ extension AppStore {
                     return false
                 }
                 await cleanHerdSite(ctx.branch, project: ctx.project, path: path)
+                await dropOwnDatabase(ctx.branch, project: ctx.project)
                 if deleteBranch, let tip = review?.tip {
                     let deletion = await Task.detached { git.deleteBranch(name, expectedTip: tip, force: true, in: repo) }.value
                     if !deletion.ok {
@@ -197,6 +198,31 @@ extension AppStore {
         }.value
         if let result, !result.ok {
             alert = AppAlert(title: "Quedó pendiente quitar el sitio de Herd", message: "El worktree se borró. Sitio: \(site).\n\(result.errorMessage)")
+        }
+    }
+
+    /// La base MySQL que la preparación copió para esta rama se va con el worktree (la de SQLite estaba
+    /// en su carpeta). Usa el usuario y la contraseña del .env del proyecto principal: es el mismo servidor.
+    private func dropOwnDatabase(_ branch: Branch, project: Project) async {
+        guard let name = WorktreeDatabase.mysqlName(stored: branch.ownDatabase) else { return }
+        let path = HerdSites.defaultRoot(home: environment.home).appendingPathComponent("bin").path + ":" + currentPATH
+        guard let mysql = environment.processes.resolve("mysql", path: path) else {
+            alert = AppAlert(title: "Quedó pendiente borrar la base «\(name)»", message: "El worktree se borró, pero no encontré el cliente de MySQL para borrar su base.")
+            return
+        }
+        let env = (try? String(contentsOfFile: (project.path as NSString).appendingPathComponent(".env"), encoding: .utf8)) ?? ""
+        func value(_ key: String, _ fallback: String) -> String {
+            let found = EnvFile.value(key, in: env) ?? ""
+            return found.isEmpty ? fallback : found
+        }
+        let args = ["--protocol=TCP", "-h", value("DB_HOST", "127.0.0.1"), "-P", value("DB_PORT", "3306"), "-u", value("DB_USERNAME", "root"),
+                    "-e", "DROP DATABASE IF EXISTS `\(name)`"]
+        let environment = ["PATH": path, "MYSQL_PWD": EnvFile.value("DB_PASSWORD", in: env) ?? ""]
+        let result = await Task.detached {
+            ProcessCommandRunner().run(mysql, args, cwd: project.path, environment: environment, timeout: 60)
+        }.value
+        if !result.ok {
+            alert = AppAlert(title: "Quedó pendiente borrar la base «\(name)»", message: "El worktree se borró.\n\(result.errorMessage)")
         }
     }
 

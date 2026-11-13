@@ -110,11 +110,13 @@ public struct NewBranchRequest: Sendable {
     public var setupCommand: String?
     public var automaticLaravelSetup: Bool
     public var herd: HerdSites?
+    /// Con la preparación automática de Laravel: copiar la base del principal para esta rama.
+    public var ownDatabase: Bool
 
     public init(projectId: UUID, name: String, isNew: Bool, base: String = "", mode: BranchMode, firstSession: SessionKind? = nil,
                 remoteRef: String? = nil, location: WorktreeLocation = .nested, copyIgnored: Bool = false,
                 envAppURL: String? = nil, setupCommand: String? = nil,
-                automaticLaravelSetup: Bool = false, herd: HerdSites? = nil) {
+                automaticLaravelSetup: Bool = false, herd: HerdSites? = nil, ownDatabase: Bool = false) {
         self.projectId = projectId
         self.name = name
         self.isNew = isNew
@@ -128,6 +130,7 @@ public struct NewBranchRequest: Sendable {
         self.setupCommand = setupCommand
         self.automaticLaravelSetup = automaticLaravelSetup
         self.herd = herd
+        self.ownDatabase = ownDatabase
     }
 }
 
@@ -209,8 +212,10 @@ public enum BranchPlanner {
             }
             let automatic = request.automaticLaravelSetup && LaravelWorktreeSetup.detects(project.path, read: fileSystem.read)
             let inheritedEnv = copied.contains(".env")
-            let plan = automatic ? LaravelWorktreeSetup.make(projectPath: project.path, worktreePath: path,
-                                                              herd: request.herd, read: fileSystem.read, exists: exists) : nil
+            // La base se copia solo si el .env vino del principal: uno nuevo de .env.example no apunta a sus datos.
+            let plan = automatic ? LaravelWorktreeSetup.make(projectPath: project.path, worktreePath: path, herd: request.herd,
+                                                              ownDatabase: request.ownDatabase && inheritedEnv,
+                                                              read: fileSystem.read, exists: exists) : nil
             var preparationError: String?
             if automatic, !missingCopies.contains(".env"), !fileSystem.exists((path as NSString).appendingPathComponent(".env")),
                let example = fileSystem.read((path as NSString).appendingPathComponent(".env.example")) {
@@ -224,8 +229,11 @@ public enum BranchPlanner {
                 let env = (path as NSString).appendingPathComponent(".env")
                 if let text = fileSystem.read(env) {
                     var updated = appURL.map { EnvFile.rewriteAppURL($0, in: text) } ?? text
-                    if automatic && inheritedEnv {
+                    if automatic && inheritedEnv && plan?.database == nil {
                         updated = EnvFile.preserveSQLiteConnection(in: updated, root: project.path, exists: fileSystem.exists)
+                    }
+                    for (key, value) in (plan?.env ?? [:]).sorted(by: { $0.key < $1.key }) {
+                        updated = EnvFile.set(key, value: value, in: updated)
                     }
                     do { if updated != text { try fileSystem.write(updated, env) } }
                     catch { preparationError = "No pude configurar .env: \(error.localizedDescription)" }
@@ -243,6 +251,7 @@ public enum BranchPlanner {
                                                  mainHasCert: false, read: fileSystem.read)
             var branch = Branch(name: name, mode: .worktree, worktreePath: path)
             branch.herdSite = plan?.site
+            branch.ownDatabase = plan?.database?.stored
             return PreparedBranch(branch: branch, copiedFiles: copied,
                                   setupCommand: setup?.isEmpty == false ? setup : nil, archiveCommand: scripts.archive?.command)
         }

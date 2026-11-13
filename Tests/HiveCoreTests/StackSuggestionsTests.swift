@@ -190,7 +190,7 @@ struct StackSuggestionsTests {
         let dir = TempDir()
         dir.write("artisan")
         dir.write("composer.json", #"{"\#(section)": {"laravel/pail": "^1.2", "php": "^8.3"}}"#)
-        #expect(commands(dir) == ["php artisan serve", "php artisan queue:work", "php artisan test", "php artisan pail"])
+        #expect(commands(dir) == ["php artisan serve", "php artisan queue:listen --tries=1", "php artisan test", "php artisan pail"])
     }
 
     @Test("Laravel sin pail no sugiere los logs")
@@ -198,7 +198,7 @@ struct StackSuggestionsTests {
         let dir = TempDir()
         dir.write("artisan")
         dir.write("composer.json", #"{"require": {"laravel/framework": "^12.0"}}"#)
-        #expect(commands(dir) == ["php artisan serve", "php artisan queue:work", "php artisan test"])
+        #expect(commands(dir) == ["php artisan serve", "php artisan queue:listen --tries=1", "php artisan test"])
         #expect(CommandSuggestions.detect(projectPath: dir.path).first { $0.command == "php artisan test" }?.name == "Tests")
     }
 
@@ -216,6 +216,6 @@ struct StackSuggestionsTests {
             ProjectCommand(name: "Logcat", command: "adb logcat --pid=$(adb shell pidof -s com.a.b)"),
         ]
         let left = commands(dir, existing: existing)
-        #expect(left == ["php artisan serve", "php artisan queue:work", "./gradlew assembleDebug", "./gradlew testDebugUnitTest", "./gradlew lint"])
+        #expect(left == ["php artisan serve", "php artisan queue:listen --tries=1", "./gradlew assembleDebug", "./gradlew testDebugUnitTest", "./gradlew lint"])
     }
 }

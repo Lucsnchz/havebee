@@ -164,10 +164,11 @@ struct CommandSuggestionsTests {
         dir.write("composer.json", #"{"scripts": {"dev": "x"}, "require-dev": {"laravel/pail": "^1.2"}}"#)
         dir.write("compose.yaml")
         let all = CommandSuggestions.detect(projectPath: dir.path)
-        #expect(all.map(\.command) == ["npm run dev", "npm run build", "php artisan serve", "php artisan queue:work",
+        #expect(all.map(\.command) == ["npm run dev", "npm run build", "php artisan serve", "php artisan queue:listen --tries=1",
                                        "php artisan test", "php artisan pail", "composer run dev", "docker compose up"])
         #expect(all.first { $0.command == "php artisan pail" }?.name == "Logs")
-        #expect(all.first?.name == "Dev")
+        // En Laravel, el `dev` de package.json es Vite.
+        #expect(all.first?.name == "Vite")
         let filtered = CommandSuggestions.detect(projectPath: dir.path, existing: [ProjectCommand(name: "x", command: "php artisan serve")])
         #expect(!filtered.map(\.command).contains("php artisan serve"))
         #expect(CommandSuggestions.detect(projectPath: TempDir().path).isEmpty)

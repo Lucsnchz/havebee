@@ -141,6 +141,8 @@ public struct Branch: Identifiable, Codable, Hashable, Sendable {
     public var setupFirstSession: SessionKind?
     /// Alias de Herd creado por la preparación automática de este worktree.
     public var herdSite: String?
+    /// Base propia que creó la preparación («mysql:tienda_checkout»): se borra con el worktree.
+    public var ownDatabase: String?
 
     public init(id: UUID = UUID(), name: String, mode: BranchMode, worktreePath: String? = nil,
                 sessions: [Session] = [], color: TintColor? = nil) {

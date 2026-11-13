@@ -127,13 +127,20 @@ struct MCPTests {
     }
 
     @Test("Catálogo según el stack del proyecto")
-    func catalog() {
+    func catalog() throws {
         let home = TempDir()
         let laravel = TempDir()
         laravel.write("artisan")
         laravel.write("package.json", #"{"devDependencies": {"vite": "1"}}"#)
         var names = MCPCatalog.suggestions(projectPath: laravel.path, home: home.url, existing: []).map(\.name)
-        #expect(names == ["laravel-boost", "nightwatch", "playwright", "chrome-devtools", "context7"])
+        #expect(names == ["laravel-boost", "playwright", "chrome-devtools", "context7"])
+
+        // Nightwatch solo si el proyecto lo usa, y con conexión directa (sin npx mcp-remote).
+        laravel.write("composer.json", #"{"require": {"laravel/nightwatch": "^1.21"}}"#)
+        let nightwatch = MCPCatalog.suggestions(projectPath: laravel.path, home: home.url, existing: []).first { $0.name == "nightwatch" }
+        #expect(nightwatch?.config["type"]?.string == "http")
+        #expect(nightwatch?.config["url"]?.string == "https://nightwatch.laravel.com/mcp")
+        #expect(MCPServer(name: "nightwatch", config: try #require(nightwatch).config).isRemote)
 
         home.write("Library/Application Support/Herd/bin/herd-mcp.phar")
         let withHerd = MCPCatalog.suggestions(projectPath: laravel.path, home: home.url, existing: [])

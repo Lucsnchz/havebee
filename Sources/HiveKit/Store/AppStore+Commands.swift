@@ -200,7 +200,8 @@ extension AppStore {
     }
 
     public func commandSuggestions(for project: Project) -> [CommandSuggestions.Suggestion] {
-        CommandSuggestions.detect(projectPath: project.path, existing: project.commands)
+        CommandSuggestions.detect(projectPath: project.path, existing: project.commands,
+                                  herd: HerdSites.parse(configRoot: HerdSites.defaultRoot(home: environment.home)))
     }
 
     // MARK: - MCP

@@ -13,6 +13,13 @@ struct WorktreeRemovalSheet: View {
 
     private var branchId: UUID? { if case .branch(let id) = removal.item { id } else { nil } }
 
+    /// «, y la base tienda_checkout…»: la copia que la preparación hizo para esta rama también se borra.
+    private var databaseNote: String {
+        guard let id = branchId, let stored = store.branchContext(id)?.branch.ownDatabase,
+              let name = WorktreeDatabase.mysqlName(stored: stored) else { return "" }
+        return ", y la base «\(name)» que Havebee copió para esta rama"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             Label("Cerrar worktree", systemImage: "externaldrive.badge.minus")
@@ -58,7 +65,7 @@ struct WorktreeRemovalSheet: View {
                     }
                 }
             }
-            Text("Borrar el worktree elimina su carpeta completa, incluidos .env y archivos ignorados. No se puede deshacer desde Havebee.")
+            Text("Borrar el worktree elimina su carpeta completa, incluidos .env y archivos ignorados\(databaseNote). No se puede deshacer desde Havebee.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Divider()
             HStack {
