@@ -15,25 +15,30 @@ public struct UsageLimit: Equatable, Sendable {
         self.resetsAt = resetsAt
     }
 
-    /// «5h», «sem» o la cantidad de horas.
+    /// Al lado de la barrita: «5 h», «semana», «1 día». Sin abreviaturas que haya que adivinar («sem»).
     public var label: String {
         switch windowMinutes {
-        case 300?: "5h"
-        case 10080?: "sem"
-        case let minutes? where minutes % 1440 == 0: "\(minutes / 1440)d"
-        case let minutes? where minutes >= 60: "\(minutes / 60)h"
-        case let minutes?: "\(minutes)m"
-        case nil: "límite"
+        case 10080?: "semana"
+        case let minutes? where minutes > 0 && minutes % 1440 == 0: Self.days(minutes)
+        case let minutes? where minutes > 0 && minutes % 60 == 0: "\(minutes / 60) h"
+        case let minutes? where minutes > 0: "\(minutes) min"
+        default: "límite"
         }
     }
 
-    /// Para la ayuda: «5 horas», «semana».
+    /// Para la ayuda y el detalle: «5 horas», «semana», «1 día».
     public var longLabel: String {
         switch windowMinutes {
-        case 300?: "5 horas"
         case 10080?: "semana"
-        default: label
+        case let minutes? where minutes > 0 && minutes % 1440 == 0: Self.days(minutes)
+        case let minutes? where minutes > 0 && minutes % 60 == 0: minutes == 60 ? "1 hora" : "\(minutes / 60) horas"
+        case let minutes? where minutes > 0: minutes == 1 ? "1 minuto" : "\(minutes) minutos"
+        default: "límite"
         }
+    }
+
+    private static func days(_ minutes: Int) -> String {
+        minutes == 1440 ? "1 día" : "\(minutes / 1440) días"
     }
 }
 
@@ -187,7 +192,7 @@ public enum UsageReader {
         }
     }
 
-    /// «se reinicia hoy 14:00», «se reinicia mañana 9:30» o «se reinicia el jue 14:00».
+    /// «se reinicia hoy 14:00», «se reinicia mañana 9:30» o «se reinicia el jueves 14:00».
     public static func resetText(_ date: Date, now: Date = Date(), calendar: Calendar = .current,
                                  locale: Locale = Locale(identifier: "es")) -> String {
         let time = date.formatted(Date.FormatStyle(locale: locale, calendar: calendar, timeZone: calendar.timeZone).hour().minute())
@@ -195,8 +200,9 @@ public enum UsageReader {
         if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now), calendar.isDate(date, inSameDayAs: tomorrow) {
             return "se reinicia mañana \(time)"
         }
-        let day = date.formatted(Date.FormatStyle(locale: locale, calendar: calendar, timeZone: calendar.timeZone).weekday(.abbreviated))
-        return "se reinicia el \(day.replacingOccurrences(of: ".", with: "")) \(time)"
+        // El día entero («el jueves»): «el jue» parecía cortado.
+        let day = date.formatted(Date.FormatStyle(locale: locale, calendar: calendar, timeZone: calendar.timeZone).weekday(.wide))
+        return "se reinicia el \(day) \(time)"
     }
 }
 

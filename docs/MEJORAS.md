@@ -164,7 +164,7 @@ Todo lo de esta sección está en el código y en `git log 405d9ae..HEAD`.
 - **Uso y límites.** Para Claude, Hive usa un statusLine propio, encadenado al tuyo si tenés uno. Para Codex, lee su `token_count`. Se ve así:
   - un anillito de contexto en la barra («72%»: gris hasta 80 %, después miel con «Conviene usar /compact» y rojo desde 95 %);
   - barritas al pie del sidebar y del riel;
-  - «La semanal se reinicia el dom 21:11».
+  - «El límite semanal se reinicia el domingo 21:11».
 
 ### Git, worktrees, Herd y GitLab
 

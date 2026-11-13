@@ -310,6 +310,31 @@ struct HomeAndWelcomeTests {
         #expect(HomeSessionGroups.build(projects: [], status: { _ in nil }).isEmpty)
     }
 
+    @Test("El Inicio pone los grupos uno al lado del otro: cada uno ocupa una columna por tarjeta, hasta tres")
+    func groupRows() async throws {
+        let demo = try await Demo()
+        let store = demo.store
+        let groups = HomeSessionGroups.build(projects: store.projects, status: { store.runtimes[$0]?.status })
+        func layout(_ groups: [HomeSessionGroups.Group], columns: Int) -> [[String]] {
+            HomeSessionGroups.rows(groups, columns: columns).map { $0.placements.map { "\($0.group.title) \($0.span)" } }
+        }
+        // Una sesión en cada grupo: los tres de «ahora» en una fila y «Recientes» abajo, a todo el ancho.
+        #expect(layout(groups, columns: 3) == [["Necesitan permiso 1", "Tu turno 1", "Trabajando 1"], ["Recientes 3"]])
+        #expect(layout(groups, columns: 2) == [["Necesitan permiso 1", "Tu turno 1"], ["Trabajando 1"], ["Recientes 2"]])
+        #expect(layout(groups, columns: 1) == [["Necesitan permiso 1"], ["Tu turno 1"], ["Trabajando 1"], ["Recientes 1"]])
+        // Un grupo con más tarjetas ocupa más columnas y, si no entra, pasa a la fila siguiente.
+        let busy = HomeSessionGroups.Group(title: "Trabajando", ring: .working, items: Array(repeating: groups[2].items[0], count: 5))
+        #expect(layout([groups[0], busy], columns: 3) == [["Necesitan permiso 1"], ["Trabajando 3"]])
+        #expect(layout([groups[0], groups[1], busy, groups[3]], columns: 3)
+                == [["Necesitan permiso 1", "Tu turno 1"], ["Trabajando 3"], ["Recientes 3"]])
+        // Cuántas entran según el ancho: tarjetas de 270 como mínimo, tres como mucho.
+        #expect(HomeSessionGroups.columns(for: 0) == 1)
+        #expect(HomeSessionGroups.columns(for: 555) == 1)
+        #expect(HomeSessionGroups.columns(for: 556) == 2)
+        #expect(HomeSessionGroups.columns(for: 842) == 3)
+        #expect(HomeSessionGroups.columns(for: 3000) == 3)
+    }
+
     @Test("La línea de resumen del Inicio arranca en mayúscula y concuerda", arguments: [
         (0, 0, "Nada te espera por ahora."),
         (1, 0, "Una sesión te espera."),

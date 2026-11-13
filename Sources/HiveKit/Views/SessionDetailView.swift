@@ -85,6 +85,9 @@ struct SessionDetailView: View {
                             AgentLogo(kind: ctx.session.kind, size: 16)
                         }
                     }
+                    // La cápsula de la barra envuelve a los dos: sin margen, el ícono pisaba su borde
+                    // (a la derecha ya lo separa la flechita del menú).
+                    .padding(.leading, 5)
                 }
                 ToolbarItemGroup {
                     StatusPill(status: rt.status, unseen: rt.unseen, kind: ctx.session.kind, background: rt.backgroundAgents > 0)

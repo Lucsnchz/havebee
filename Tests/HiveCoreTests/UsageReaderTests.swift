@@ -14,7 +14,7 @@ struct UsageReaderTests {
         let context = try #require(snapshot.contextPercent)
         #expect(abs(context - 49_700.0 / 258_400.0 * 100) < 0.001)
         #expect(snapshot.limits == [UsageLimit(windowMinutes: 10080, usedPercent: 80, resetsAt: Date(timeIntervalSince1970: 1_792_512_104))])
-        #expect(snapshot.limits.first?.label == "sem")
+        #expect(snapshot.limits.first?.label == "semana")
         #expect(snapshot.updatedAt == AgentTimestamp.parse("2026-10-12T13:00:21.000Z"))
         #expect(UsageReader.codexSnapshot(fromLines: "{\"type\":\"event_msg\"}", fallbackDate: .reference) == nil)
     }
@@ -27,7 +27,7 @@ struct UsageReaderTests {
         """
         let snapshot = try #require(UsageReader.codexSnapshot(fromLines: lines, fallbackDate: .reference))
         #expect(snapshot.contextPercent == 1)
-        #expect(snapshot.limits.map(\.label) == ["5h", "sem"])
+        #expect(snapshot.limits.map(\.label) == ["5 h", "semana"])
         #expect(snapshot.limits.first?.resetsAt == AgentTimestamp.parse("2026-10-12T11:05:00Z"))
         // Una ventana con un número fuera de rango no hace caer a Hive: queda sin duración.
         let huge = UsageReader.codexLimit(["used_percent": .number(5), "window_minutes": .number(1e300)], lineDate: .reference)
@@ -123,7 +123,7 @@ struct UsageReaderTests {
         let snapshot = try #require(UsageReader.claudeSnapshot(json, updatedAt: .reference))
         #expect(snapshot.agent == .claude)
         #expect(snapshot.contextPercent == 72.4)
-        #expect(snapshot.limits.map(\.label) == ["5h", "sem"])
+        #expect(snapshot.limits.map(\.label) == ["5 h", "semana"])
         #expect(snapshot.limits.map(\.usedPercent) == [23.5, 41.2])
         #expect(snapshot.limits.first?.resetsAt == Date(timeIntervalSince1970: 1_790_003_600))
         // Sin used_percentage se calcula con los tokens; sin límites (API key) quedan vacíos.
@@ -134,7 +134,7 @@ struct UsageReaderTests {
         #expect(computed.limits.isEmpty)
         #expect(UsageReader.claudeSnapshot(["model": ["id": "x"]], updatedAt: .reference) == nil)
         // Los límites que ya se reiniciaron no cuentan.
-        #expect(snapshot.activeLimits(now: Date(timeIntervalSince1970: 1_790_100_000)).map(\.label) == ["sem"])
+        #expect(snapshot.activeLimits(now: Date(timeIntervalSince1970: 1_790_100_000)).map(\.label) == ["semana"])
     }
 
     @Test("Claude: el script del statusLine guarda el archivo que lee Hive, aunque encadene el tuyo")
@@ -189,7 +189,7 @@ struct UsageReaderTests {
         #expect(UsageReader.date(nil) == nil)
     }
 
-    @Test("Textos: «5h», «sem» y cuándo se reinicia")
+    @Test("Textos: «5 h», «semana» y cuándo se reinicia, sin abreviaturas")
     func texts() {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "America/Argentina/Buenos_Aires")!
@@ -197,10 +197,17 @@ struct UsageReaderTests {
         let locale = Locale(identifier: "es_ES")
         #expect(UsageReader.resetText(now.addingTimeInterval(3 * 3600), now: now, calendar: calendar, locale: locale) == "se reinicia hoy 14:13")
         #expect(UsageReader.resetText(now.addingTimeInterval(86_400), now: now, calendar: calendar, locale: locale) == "se reinicia mañana 11:13")
-        #expect(UsageReader.resetText(now.addingTimeInterval(3 * 86_400), now: now, calendar: calendar, locale: locale) == "se reinicia el jue 11:13")
+        #expect(UsageReader.resetText(now.addingTimeInterval(3 * 86_400), now: now, calendar: calendar, locale: locale) == "se reinicia el jueves 11:13")
         #expect(UsageLimit(windowMinutes: 300, usedPercent: 1, resetsAt: nil).longLabel == "5 horas")
-        #expect(UsageLimit(windowMinutes: 1440, usedPercent: 1, resetsAt: nil).label == "1d")
-        #expect(UsageLimit(windowMinutes: 120, usedPercent: 1, resetsAt: nil).label == "2h")
-        #expect(UsageLimit(windowMinutes: nil, usedPercent: 1, resetsAt: nil).label == "límite")
+        func limit(_ minutes: Int?) -> UsageLimit { UsageLimit(windowMinutes: minutes, usedPercent: 1, resetsAt: nil) }
+        let cases: [(Int?, String, String)] = [
+            (300, "5 h", "5 horas"), (10080, "semana", "semana"), (1440, "1 día", "1 día"), (43_200, "30 días", "30 días"),
+            (120, "2 h", "2 horas"), (60, "1 h", "1 hora"), (90, "90 min", "90 minutos"), (1, "1 min", "1 minuto"),
+            (nil, "límite", "límite"), (0, "límite", "límite"),
+        ]
+        for (minutes, label, long) in cases {
+            #expect(limit(minutes).label == label, "\(String(describing: minutes))")
+            #expect(limit(minutes).longLabel == long, "\(String(describing: minutes))")
+        }
     }
 }

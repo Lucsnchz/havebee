@@ -179,7 +179,7 @@ struct UsageBadge: View {
 }
 
 /// Barritas con los límites de las cuentas («Claude 5h 23% · sem 87%») y, abajo, cuándo se reinicia el
-/// más usado («La semanal se reinicia el jue 14:00»).
+/// más usado («El límite semanal se reinicia el jueves 14:00»).
 /// Un clic abre las IAs instaladas y el detalle de uso. Sin porcentajes queda el acceso «IAs».
 /// `compact`: para el riel angosto, un logo con el límite más usado de cada cuenta.
 struct UsageSummary: View {
@@ -315,7 +315,8 @@ private struct AgentUsageRow: View {
     private func limitDetail(_ limit: UsageLimit) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack {
-                Text(limit.longLabel.capitalized)
+                // Solo la primera letra: `capitalized` daba «5 Horas».
+                Text(limit.longLabel.prefix(1).uppercased() + limit.longLabel.dropFirst())
                 Spacer()
                 Text("\(Int(limit.usedPercent.rounded())) % usado")
                     .monospacedDigit()
@@ -363,7 +364,7 @@ struct UsageRailRow: View {
         .accessibilityLabel(UsageRailRow.helpText(snapshot.agent, limits: limits, now: now))
     }
 
-    /// «Claude · 5 horas: 23 % usado · semana: 41 % usado, se reinicia el jue 14:00».
+    /// «Claude · 5 horas: 23 % usado · semana: 41 % usado, se reinicia el jueves 14:00».
     static func helpText(_ agent: SessionKind, limits: [UsageLimit], now: Date) -> String {
         let parts = limits.map { limit in
             var text = "\(limit.longLabel): \(Int(min(max(limit.usedPercent, 0), 100).rounded())) % usado"
@@ -382,44 +383,62 @@ struct UsageAccountRow: View {
         let limits = snapshot.activeLimits(now: now)
         let top = limits.max { $0.usedPercent < $1.usedPercent }
         VStack(alignment: .leading, spacing: 3) {
-            // En el sidebar angosto, si no entra el nombre queda solo el logo.
+            // En el sidebar angosto se van primero las barritas (el porcentaje ya tiene el color) y
+            // después el nombre: queda el logo.
             ViewThatFits(in: .horizontal) {
-                line(limits, showName: true)
-                line(limits, showName: false)
+                line(limits, showName: true, showBars: true)
+                line(limits, showName: true, showBars: false)
+                line(limits, showName: false, showBars: false)
             }
             // El porcentaje ya está arriba: abajo solo cuándo se reinicia el límite más usado.
             if let top, top.usedPercent >= 50, let resets = top.resetsAt {
-                Text(Self.resetLine(top, resets: resets, now: now))
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(Theme.secondaryText)
-                    .padding(.leading, 20)
-                    .lineLimit(1)
+                ViewThatFits(in: .horizontal) {
+                    resetText(Self.resetLine(top, resets: resets, now: now)).fixedSize()
+                    resetText(Self.shortResetLine(top, resets: resets, now: now)).fixedSize()
+                    // Si ni así entra, en dos líneas en vez de cortarse.
+                    resetText(Self.shortResetLine(top, resets: resets, now: now))
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.leading, 18)
             }
         }
         .accessibilityElement(children: .combine)
     }
 
-    /// «La semanal se reinicia el dom 21:11», «La de 5 horas se reinicia hoy 14:13».
+    /// «El límite semanal se reinicia el domingo 21:11», «El límite de 5 horas se reinicia hoy 14:13».
     static func resetLine(_ limit: UsageLimit, resets: Date, now: Date) -> String {
         "\(windowName(limit.windowMinutes)) \(UsageReader.resetText(resets, now: now))"
     }
 
-    /// El nombre de un límite según su ventana: «La semanal», «La diaria», «La de 5 horas»… Sin
-    /// ventana conocida (Codex no siempre la manda), «El límite».
+    /// Lo mismo, más corto, para el sidebar angosto: «Semana: se reinicia el domingo 21:11».
+    static func shortResetLine(_ limit: UsageLimit, resets: Date, now: Date) -> String {
+        let name = limit.longLabel.prefix(1).uppercased() + limit.longLabel.dropFirst()
+        return "\(name): \(UsageReader.resetText(resets, now: now))"
+    }
+
+    private func resetText(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 10.5))
+            .foregroundStyle(Theme.secondaryText)
+    }
+
+    /// El nombre de un límite según su ventana: «El límite semanal», «El límite de 5 horas»… Sin
+    /// ventana conocida (Codex no siempre la manda), «El límite». Antes era «La semanal», sin decir de qué.
     static func windowName(_ minutes: Int?) -> String {
         switch minutes {
-        case 10080?: "La semanal"
-        case 1440?: "La diaria"
-        case 60?: "La de una hora"
-        case 1?: "La de un minuto"
-        case let minutes? where minutes > 0 && minutes % 1440 == 0: "La de \(minutes / 1440) días"
-        case let minutes? where minutes > 60 && minutes % 60 == 0: "La de \(minutes / 60) horas"
-        case let minutes? where minutes > 0: "La de \(minutes) minutos"
+        case 10080?: "El límite semanal"
+        case 1440?: "El límite diario"
+        case 60?: "El límite de una hora"
+        case 1?: "El límite de un minuto"
+        case let minutes? where minutes > 0 && minutes % 1440 == 0: "El límite de \(minutes / 1440) días"
+        case let minutes? where minutes > 60 && minutes % 60 == 0: "El límite de \(minutes / 60) horas"
+        case let minutes? where minutes > 0: "El límite de \(minutes) minutos"
         default: "El límite"
         }
     }
 
-    private func line(_ limits: [UsageLimit], showName: Bool) -> some View {
+    private func line(_ limits: [UsageLimit], showName: Bool, showBars: Bool) -> some View {
         HStack(spacing: 6) {
             AgentLogo(kind: snapshot.agent, size: 12)
                 .help(snapshot.agent.label)
@@ -430,7 +449,7 @@ struct UsageAccountRow: View {
             }
             Spacer(minLength: 2)
             ForEach(Array(limits.enumerated()), id: \.offset) { _, limit in
-                UsageLimitBar(agent: snapshot.agent, limit: limit, now: now)
+                UsageLimitBar(agent: snapshot.agent, limit: limit, now: now, showsBar: showBars)
             }
         }
     }
@@ -440,6 +459,7 @@ private struct UsageLimitBar: View {
     let agent: SessionKind
     let limit: UsageLimit
     let now: Date
+    var showsBar = true
 
     var body: some View {
         let percent = min(max(limit.usedPercent, 0), 100)
@@ -448,12 +468,14 @@ private struct UsageLimitBar: View {
                 .font(.system(size: 10.5))
                 .foregroundStyle(.secondary)
                 .fixedSize()
-            ZStack(alignment: .leading) {
-                Capsule().fill(Color.primary.opacity(0.1))
-                Capsule().fill(UsageMonitor.color(percent))
-                    .frame(width: max(22 * percent / 100, percent > 0 ? 2 : 0))
+            if showsBar {
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.primary.opacity(0.1))
+                    Capsule().fill(UsageMonitor.color(percent))
+                        .frame(width: max(22 * percent / 100, percent > 0 ? 2 : 0))
+                }
+                .frame(width: 22, height: 4)
             }
-            .frame(width: 22, height: 4)
             Text("\(Int(percent.rounded()))%")
                 .font(.system(size: 10.5, weight: .medium).monospacedDigit())
                 .foregroundStyle(UsageMonitor.textStyle(percent))

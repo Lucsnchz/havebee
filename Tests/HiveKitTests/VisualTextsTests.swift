@@ -50,13 +50,18 @@ struct VisualTextsTests {
         let resets = now.addingTimeInterval(3 * 86_400)
         let reset = UsageReader.resetText(resets, now: now)
         #expect(UsageAccountRow.resetLine(UsageLimit(windowMinutes: 10080, usedPercent: 87, resetsAt: resets), resets: resets, now: now)
-                == "La semanal \(reset)")
+                == "El límite semanal \(reset)")
         #expect(UsageAccountRow.resetLine(UsageLimit(windowMinutes: 300, usedPercent: 60, resetsAt: resets), resets: resets, now: now)
-                == "La de 5 horas \(reset)")
+                == "El límite de 5 horas \(reset)")
         #expect(UsageAccountRow.resetLine(UsageLimit(windowMinutes: 60, usedPercent: 60, resetsAt: resets), resets: resets, now: now)
-                == "La de una hora \(reset)")
+                == "El límite de una hora \(reset)")
         #expect(!UsageAccountRow.resetLine(UsageLimit(windowMinutes: 10080, usedPercent: 87, resetsAt: resets), resets: resets, now: now)
             .contains("%"))
+        // En el sidebar angosto: «Semana: se reinicia…», «5 horas: se reinicia…».
+        #expect(UsageAccountRow.shortResetLine(UsageLimit(windowMinutes: 10080, usedPercent: 87, resetsAt: resets), resets: resets, now: now)
+                == "Semana: \(reset)")
+        #expect(UsageAccountRow.shortResetLine(UsageLimit(windowMinutes: 300, usedPercent: 60, resetsAt: resets), resets: resets, now: now)
+                == "5 horas: \(reset)")
         // Codex no siempre manda la ventana: nada de «El límite de límite».
         #expect(UsageAccountRow.resetLine(UsageLimit(windowMinutes: nil, usedPercent: 70, resetsAt: resets), resets: resets, now: now)
                 == "El límite \(reset)")
@@ -64,13 +69,13 @@ struct VisualTextsTests {
 
     @Test("Uso: el nombre de cada ventana, en palabras")
     func usageWindowNames() {
-        #expect(UsageAccountRow.windowName(10080) == "La semanal")
-        #expect(UsageAccountRow.windowName(1440) == "La diaria")
-        #expect(UsageAccountRow.windowName(300) == "La de 5 horas")
-        #expect(UsageAccountRow.windowName(60) == "La de una hora")
-        #expect(UsageAccountRow.windowName(43_200) == "La de 30 días")
-        #expect(UsageAccountRow.windowName(90) == "La de 90 minutos")
-        #expect(UsageAccountRow.windowName(1) == "La de un minuto")
+        #expect(UsageAccountRow.windowName(10080) == "El límite semanal")
+        #expect(UsageAccountRow.windowName(1440) == "El límite diario")
+        #expect(UsageAccountRow.windowName(300) == "El límite de 5 horas")
+        #expect(UsageAccountRow.windowName(60) == "El límite de una hora")
+        #expect(UsageAccountRow.windowName(43_200) == "El límite de 30 días")
+        #expect(UsageAccountRow.windowName(90) == "El límite de 90 minutos")
+        #expect(UsageAccountRow.windowName(1) == "El límite de un minuto")
         for unknown in [nil, 0, -5] as [Int?] {
             #expect(UsageAccountRow.windowName(unknown) == "El límite")
         }
