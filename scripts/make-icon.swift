@@ -6,15 +6,20 @@ let root = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathCompon
 let iconset = FileManager.default.temporaryDirectory.appendingPathComponent("Hive-\(UUID().uuidString).iconset")
 try FileManager.default.createDirectory(at: iconset, withIntermediateDirectories: true)
 
+/// Hexágono con un lado arriba y otro abajo: así las celdas se apilan en columnas rectas.
 func hexagon(center: CGPoint, radius: CGFloat) -> NSBezierPath {
     let path = NSBezierPath()
     for i in 0..<6 {
-        let angle = CGFloat(i) * .pi / 3 + .pi / 6
+        let angle = CGFloat(i) * .pi / 3
         let point = CGPoint(x: center.x + radius * cos(angle), y: center.y + radius * sin(angle))
         i == 0 ? path.move(to: point) : path.line(to: point)
     }
     path.close()
     return path
+}
+
+func color(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat, _ a: CGFloat = 1) -> NSColor {
+    NSColor(srgbRed: r, green: g, blue: b, alpha: a)
 }
 
 func render(_ size: Int) -> Data {
@@ -29,22 +34,30 @@ func render(_ size: Int) -> Data {
     let inset = s * 0.1
     let card = NSBezierPath(roundedRect: NSRect(x: inset, y: inset, width: s - inset * 2, height: s - inset * 2),
                             xRadius: s * 0.18, yRadius: s * 0.18)
-    NSGradient(starting: NSColor(srgbRed: 0.16, green: 0.16, blue: 0.19, alpha: 1),
-               ending: NSColor(srgbRed: 0.07, green: 0.07, blue: 0.09, alpha: 1))!.draw(in: card, angle: -90)
+    NSGradient(starting: color(0.16, 0.16, 0.19), ending: color(0.07, 0.07, 0.09))!.draw(in: card, angle: -90)
+    card.addClip()
 
-    // Panal: un hexágono central y seis alrededor, más tenues.
-    let honey = NSColor(srgbRed: 0.96, green: 0.72, blue: 0.24, alpha: 1)
-    let center = CGPoint(x: s / 2, y: s / 2)
-    let r = s * 0.12
-    let step = r * sqrt(3) * 1.08
-    for i in 0..<6 {
-        let angle = CGFloat(i) * .pi / 3
-        let c = CGPoint(x: center.x + step * cos(angle), y: center.y + step * sin(angle))
-        honey.withAlphaComponent(i % 2 == 0 ? 0.55 : 0.3).setFill()
-        hexagon(center: c, radius: r * 0.92).fill()
+    // Panal con una H: dos columnas de cuatro celdas y una celda en el medio, encendida. Alrededor
+    // sigue el panal, apenas marcado (en los tamaños chicos no, para que la H se lea limpia).
+    let r = s * 0.082
+    let gap = s * 0.016
+    let column = 1.5 * r + gap * 0.87
+    let row = sqrt(3) * r + gap
+    let origin = CGPoint(x: s / 2 - column, y: s / 2 - 1.5 * row)
+    func point(_ c: CGFloat, _ k: CGFloat) -> CGPoint { CGPoint(x: origin.x + c * column, y: origin.y + k * row) }
+
+    if size >= 64 {
+        color(0.96, 0.72, 0.24, 0.1).setFill()
+        let faint: [(CGFloat, CGFloat)] = [(1, 0.5), (1, 2.5), (1, -0.5), (1, 3.5)]
+            + [-0.5, 0.5, 1.5, 2.5, 3.5].flatMap { k in [(-1, k), (3, k)] }
+        for (c, k) in faint { hexagon(center: point(c, k), radius: r * 0.94).fill() }
     }
-    honey.setFill()
-    hexagon(center: center, radius: r * 1.05).fill()
+    let honey = NSGradient(starting: color(1.0, 0.82, 0.48), ending: color(0.94, 0.65, 0.16))!
+    for c in [CGFloat(0), 2] {
+        for k in 0..<4 { honey.draw(in: hexagon(center: point(c, CGFloat(k)), radius: r * 0.94), angle: -90) }
+    }
+    color(1.0, 0.95, 0.81).setFill()
+    hexagon(center: point(1, 1.5), radius: r * 0.94).fill()
 
     NSGraphicsContext.restoreGraphicsState()
     return rep.representation(using: .png, properties: [:])!
