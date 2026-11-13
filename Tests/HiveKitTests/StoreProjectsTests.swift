@@ -67,7 +67,7 @@ struct StoreProjectsTests {
         try FileManager.default.moveItem(atPath: repo.path, toPath: repo.path + "-movido")
         store.activate(session.id)
         #expect(store.alert?.title == "No encuentro la carpeta de «repo»")
-        #expect(store.alert?.message.hasSuffix("Si ya no lo usás, quitá el proyecto de Hive.") == true)
+        #expect(store.alert?.message.hasSuffix("Si ya no lo usás, quitá el proyecto de Havebee.") == true)
         #expect(!store.isMissing(project.branches[0]))
         #expect(world.processes.launches.isEmpty)
     }
@@ -172,7 +172,7 @@ struct StoreMovedHeadTests {
         await s.store.refreshGitNow()
         let alert = try #require(s.store.alert)
         #expect(alert.title == "Algo cambió la carpeta principal de «main» a «fix/bar»")
-        #expect(alert.message == "La sesión «Claude 1» quedó viendo «fix/bar» en «repo». ¿La movés a esa rama en Hive?")
+        #expect(alert.message == "La sesión «Claude 1» quedó viendo «fix/bar» en «repo». ¿La movés a esa rama en Havebee?")
         #expect(alert.actionTitle == "Mover las sesiones ahí" && alert.cancelTitle == "Dejar así")
         #expect(!alert.isDestructive)
         alert.action?()
@@ -192,7 +192,7 @@ struct StoreMovedHeadTests {
         try s.runSession(on: main.id)
         s.repo.sh("git checkout -q -b fix/bar")
         await s.store.refreshGitNow()
-        #expect(s.store.alert?.message == "Las 2 sesiones de esa rama quedaron viendo «fix/bar» en «repo». ¿Las movés a esa rama en Hive?")
+        #expect(s.store.alert?.message == "Las 2 sesiones de esa rama quedaron viendo «fix/bar» en «repo». ¿Las movés a esa rama en Havebee?")
     }
 
     @Test("Si ya hay una rama con ese nombre, le pasa las sesiones que corrían")

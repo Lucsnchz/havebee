@@ -99,7 +99,7 @@ struct SettingsGeneralPane: View {
                 }
                 if let codexNotifyWarning {
                     Label {
-                        Text("No entiendo el formato de tu notify de Codex: Hive no lo va a ejecutar")
+                        Text("No entiendo el formato de tu notify de Codex: Havebee no lo va a ejecutar")
                         Text(codexNotifyWarning)
                     } icon: {
                         Image(systemName: "exclamationmark.triangle.fill")
@@ -108,7 +108,7 @@ struct SettingsGeneralPane: View {
                 }
             }
             Section {
-                Button("Mostrar los datos de Hive en Finder") { NSWorkspace.shared.open(dataFolder) }
+                Button("Mostrar los datos de Havebee en Finder") { NSWorkspace.shared.open(dataFolder) }
             }
         }
         .formStyle(.grouped)
@@ -255,7 +255,7 @@ struct SettingsNotificationsPane: View {
             } header: {
                 Text("Avisos")
             } footer: {
-                SettingsFooter("Hive avisa cuando una sesión que no estás mirando te espera.")
+                SettingsFooter("Havebee avisa cuando una sesión que no estás mirando te espera.")
             }
         }
         .formStyle(.grouped)
@@ -272,7 +272,7 @@ struct SettingsNotificationsPane: View {
     }
 
     private var statusText: String {
-        guard Self.canAskSystem else { return "Solo desde Hive.app" }
+        guard Self.canAskSystem else { return "Solo desde Havebee.app" }
         switch status {
         case .authorized, .provisional, .ephemeral: return "Activados"
         case .denied: return "Desactivados"

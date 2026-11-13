@@ -148,7 +148,7 @@ struct AppStoreProjectTests {
         await store.addProject(at: repo.path)
         let project = try #require(store.repoProjects.first)
         let error = await store.createBranch(NewBranchRequest(projectId: project.id, name: "main", isNew: true, mode: .worktree))
-        #expect(error == "La rama «main» ya está en Hive.")
+        #expect(error == "La rama «main» ya está en Havebee.")
         #expect(await store.createBranch(NewBranchRequest(projectId: UUID(), name: "x", isNew: true, mode: .main)) == "No encontré el proyecto.")
         #expect(store.project(project.id)?.branches.count == 1)
     }
@@ -314,13 +314,13 @@ struct AppStoreProjectTests {
         #expect(worktree.worktreePath != nil)
         store.requestRemoval(.branch(worktree.id))
         #expect(store.pendingRemoval?.isWorktree == true)
-        #expect(store.pendingRemoval?.message == "Podés quitarlo de Hive conservando la carpeta, o borrar el worktree del disco.")
+        #expect(store.pendingRemoval?.message == "Podés quitarlo de Havebee conservando la carpeta, o borrar el worktree del disco.")
         store.requestRemoval(.branch(project.branches[0].id))
         #expect(store.pendingRemoval?.isWorktree == false)
         #expect(store.pendingRemoval?.message == "La rama de git no se borra.")
         store.requestRemoval(.project(project.id))
-        #expect(store.pendingRemoval?.title == "¿Quitar «repo» de Hive?")
-        #expect(store.pendingRemoval?.message == "Sus ramas, sesiones y comandos se quitan de Hive. No se borra nada del disco: la carpeta y el repo quedan como están.")
+        #expect(store.pendingRemoval?.title == "¿Quitar «repo» de Havebee?")
+        #expect(store.pendingRemoval?.message == "Sus ramas, sesiones y comandos se quitan de Havebee. No se borra nada del disco: la carpeta y el repo quedan como están.")
 
         // Con cosas corriendo, dice qué se va a detener.
         store.requestNewSession(branchId: worktree.id, kind: .shell)
@@ -330,9 +330,9 @@ struct AppStoreProjectTests {
         store.saveCommand(projectId: project.id, commandId: nil, name: "Cola", command: "php artisan queue:work")
         for command in try #require(store.project(project.id)?.commands) { store.run(command.id, projectId: project.id, branchId: worktree.id) }
         store.requestRemoval(.branch(worktree.id))
-        #expect(store.pendingRemoval?.message == "Se detienen 2 comandos y 1 sesión. Podés quitarlo de Hive conservando la carpeta, o borrar el worktree del disco.")
+        #expect(store.pendingRemoval?.message == "Se detienen 2 comandos y 1 sesión. Podés quitarlo de Havebee conservando la carpeta, o borrar el worktree del disco.")
         store.requestRemoval(.project(project.id))
-        #expect(store.pendingRemoval?.message == "Se detienen 2 comandos y 1 sesión. Sus ramas, sesiones y comandos se quitan de Hive. No se borra nada del disco: la carpeta y el repo quedan como están.")
+        #expect(store.pendingRemoval?.message == "Se detienen 2 comandos y 1 sesión. Sus ramas, sesiones y comandos se quitan de Havebee. No se borra nada del disco: la carpeta y el repo quedan como están.")
         #expect(AppStore.stoppingSummary(commands: 1, sessions: 0) == "Se detiene 1 comando.")
         #expect(AppStore.stoppingSummary(commands: 0, sessions: 3) == "Se detienen 3 sesiones.")
         #expect(AppStore.stoppingSummary(commands: 0, sessions: 0) == nil)
@@ -340,11 +340,11 @@ struct AppStoreProjectTests {
         // Eliminar una sesión avisa que se va su historial y sugiere archivarla.
         store.requestRemoval(.session(session.id))
         #expect(store.pendingRemoval?.title == "¿Eliminar «Terminal 1»?")
-        #expect(store.pendingRemoval?.message == "Se cierra su terminal y se quita de Hive. Si la querés conservar, archivala.")
+        #expect(store.pendingRemoval?.message == "Se cierra su terminal y se quita de Havebee. Si la querés conservar, archivala.")
         store.requestNewSession(branchId: worktree.id, kind: .claude)
         let claude = try #require(store.project(project.id)?.branches.last?.sessions.last)
         store.requestRemoval(.session(claude.id))
-        #expect(store.pendingRemoval?.message == "Se cierra y se borra su historial en Hive (todo lo anterior a cada /clear). No se puede deshacer. Si lo querés conservar, archivala.")
+        #expect(store.pendingRemoval?.message == "Se cierra y se borra su historial en Havebee (todo lo anterior a cada /clear). No se puede deshacer. Si lo querés conservar, archivala.")
     }
 
     @Test("Renombrar, colores, apariencia y orden")

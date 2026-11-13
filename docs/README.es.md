@@ -9,10 +9,10 @@ Qué cambió en la última ronda de mejoras, qué falta y cómo probarlo: [docs/
 ## Instalar
 
 ```bash
-scripts/build-app.sh --install   # compila y copia Hive.app a /Applications
+scripts/build-app.sh --install   # compila y copia Havebee.app a /Applications
 ```
 
-Sin `--install` solo deja la app en `build/Hive.app`. Para instalar una versión nueva, primero cerrá Hive.
+Sin `--install` solo deja la app en `build/Havebee.app`. Para instalar una versión nueva, primero cerrá la app. Si tenías la instalación vieja (`Hive.app`), se reemplaza por `Havebee.app`: tus sesiones, ajustes e historial siguen en la misma carpeta (`~/Library/Application Support/Hive`).
 
 ## Cómo se usa
 

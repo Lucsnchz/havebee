@@ -15,7 +15,7 @@ struct WelcomeView: View {
                         .resizable()
                         .interpolation(.high)
                         .frame(width: 96, height: 96)
-                    Text("Te damos la bienvenida a Hive")
+                    Text("Te damos la bienvenida a Havebee")
                         .font(.system(size: 28, weight: .bold))
                     Text("Tus sesiones de Claude Code, Codex, Gemini, Grok y la terminal, ordenadas por proyecto y rama.")
                         .font(.title3)

@@ -56,13 +56,15 @@ Clone the repository and build the app:
 git clone https://github.com/Lucsnchz/havebee.git
 cd havebee
 scripts/build-app.sh
-open build/Hive.app
+open build/Havebee.app
 ```
 
-The current executable, app bundle and local data folder still use the **Hive**
-name. Building the project does not migrate or rename existing user data.
+The app installs as **Havebee.app**. Its bundle identifier
+(`com.lucianosanchez.hive`) and local data folder (`~/Library/Application Support/Hive`)
+keep the original **Hive** name, so settings, sessions and history carry over
+from older builds without migration.
 
-To install the build, quit any running Hive instance first:
+To install the build, quit the running app first:
 
 ```bash
 scripts/build-app.sh --install

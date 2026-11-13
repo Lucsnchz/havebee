@@ -69,7 +69,7 @@ struct StoreUndoTests {
         let archivedAt = try #require(store.sessionContext(claude.id)?.session.archivedAt)
         store.requestRemoval(.session(claude.id))
         #expect(store.pendingRemoval?.offersArchive == false)
-        #expect(store.pendingRemoval?.message == "Se borra su historial en Hive (todo lo anterior a cada /clear). No se puede deshacer.")
+        #expect(store.pendingRemoval?.message == "Se borra su historial en Havebee (todo lo anterior a cada /clear). No se puede deshacer.")
         store.requestRemoval(.session(shell.id))
         #expect(store.pendingRemoval?.offersArchive == false)
         #expect(store.pendingRemoval?.message == "Se borra de las archivadas. No se puede deshacer.")

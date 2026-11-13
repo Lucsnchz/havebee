@@ -19,7 +19,7 @@ extension AppStore {
             break
         case .corrupted(let backup):
             alert = AppAlert(title: "Tu estado anterior estaba dañado",
-                             message: "Quedó una copia en \(backup.path). Hive arrancó de cero.",
+                             message: "Quedó una copia en \(backup.path). Havebee arrancó de cero.",
                              actionTitle: "Mostrar en Finder", cancelTitle: "OK",
                              action: { NSWorkspace.shared.activateFileViewerSelecting([backup]) })
         case .unreadable(let reason):
@@ -27,7 +27,7 @@ extension AppStore {
             persistenceBlocked = true
             let file = stateStore.file
             alert = AppAlert(title: "No pude leer tu estado",
-                             message: "\(reason)\n\nPara no pisarlo, Hive no va a guardar nada de lo que cambies. Revisá el archivo y volvé a abrir Hive:\n\(file.path)",
+                             message: "\(reason)\n\nPara no pisarlo, Havebee no va a guardar nada de lo que cambies. Revisá el archivo y volvé a abrir Havebee:\n\(file.path)",
                              actionTitle: "Mostrar en Finder", cancelTitle: "OK",
                              action: { NSWorkspace.shared.activateFileViewerSelecting([file]) })
         }
@@ -70,7 +70,7 @@ extension AppStore {
             guard !saveFailed else { return }
             saveFailed = true
             alert = AppAlert(title: "No pude guardar tu estado",
-                             message: "\(error.localizedDescription)\n\nLo que cambies ahora se puede perder al cerrar Hive.")
+                             message: "\(error.localizedDescription)\n\nLo que cambies ahora se puede perder al cerrar Havebee.")
         }
     }
 

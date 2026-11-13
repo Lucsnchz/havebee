@@ -31,7 +31,7 @@ struct StoreRemoveProjectUndoTests {
         #expect(store.project(project.id) == nil)
         #expect(store.runtimes[sessions[0].id] == nil)
         #expect(store.selection == nil)
-        #expect(store.undoAction?.message == "Quitaste «bevo» de Hive")
+        #expect(store.undoAction?.message == "Quitaste «bevo» de Havebee")
 
         store.performUndo()
         let restored = try #require(store.project(project.id))

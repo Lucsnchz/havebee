@@ -151,14 +151,14 @@ private struct StoreDialogs: ViewModifier {
                                 titleVisibility: .visible, presenting: store.pendingRemoval) { removal in
                 switch removal.item {
                 case .branch:
-                    Button("Quitar de Hive") { store.remove(removal.item) }
+                    Button("Quitar de Havebee") { store.remove(removal.item) }
                 case .session(let id):
                     if removal.offersArchive {
                         Button("Archivarla") { store.archive(id) }
                     }
                     Button("Eliminar sesión", role: .destructive) { store.remove(removal.item) }
                 case .project:
-                    Button("Quitar de Hive", role: .destructive) { store.remove(removal.item) }
+                    Button("Quitar de Havebee", role: .destructive) { store.remove(removal.item) }
                 }
                 Button("Cancelar", role: .cancel) {}
             } message: { removal in

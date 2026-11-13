@@ -297,7 +297,7 @@ private struct AgentUsageRow: View {
                     .foregroundStyle(Theme.secondaryText)
             }
             if limits.isEmpty {
-                Text(kind == .claude || kind == .codex ? "Sin datos de uso recientes" : "Límites de uso aún no disponibles en Hive")
+                Text(kind == .claude || kind == .codex ? "Sin datos de uso recientes" : "Límites de uso aún no disponibles en Havebee")
                     .font(HiveFont.secondary)
                     .foregroundStyle(Theme.secondaryText)
             } else {

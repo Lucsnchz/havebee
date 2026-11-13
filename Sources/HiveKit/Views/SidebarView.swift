@@ -313,7 +313,7 @@ private struct BranchRow: View {
 
     private func helpText(active: Bool, missing: Bool) -> String {
         if missing {
-            return "La carpeta del worktree ya no existe: \(branch.worktreePath?.tildePath ?? ""). La rama se va sola de Hive cuando termine lo que corre ahí."
+            return "La carpeta del worktree ya no existe: \(branch.worktreePath?.tildePath ?? ""). La rama se va sola de Havebee cuando termine lo que corre ahí."
         }
         if branch.mode == .worktree { return "Worktree en \(branch.worktreePath?.tildePath ?? "")" }
         if active { return "Activa en la carpeta principal" }

@@ -51,7 +51,7 @@ private struct MCPSectionContent: View {
             if let loadError {
                 MCPInvalidFileNotice(error: loadError)
             } else if data != nil && servers.isEmpty {
-                Text("Este proyecto no tiene MCP. Se guardan en .mcp.json del repo: Claude los lee directo y Hive se los pasa a Codex y Gemini.")
+                Text("Este proyecto no tiene MCP. Se guardan en .mcp.json del repo: Claude los lee directo y Havebee se los pasa a Codex y Gemini.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -167,7 +167,7 @@ private struct MCPInvalidFileNotice: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(".mcp.json tiene un error de sintaxis")
                     .font(.system(size: 13, weight: .semibold))
-                Text("Corregilo y Hive lo vuelve a leer. Mientras tanto no se agregan ni se quitan MCP desde acá, así no se pierde ninguno.")
+                Text("Corregilo y Havebee lo vuelve a leer. Mientras tanto no se agregan ni se quitan MCP desde acá, así no se pierde ninguno.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -359,7 +359,7 @@ private struct GlobalMCPs: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                         }
-                        Text("Se configuran con cada agente (por ejemplo `claude mcp add` o `codex mcp add`). Hive solo los muestra.")
+                        Text("Se configuran con cada agente (por ejemplo `claude mcp add` o `codex mcp add`). Havebee solo los muestra.")
                             .font(.caption)
                             .foregroundStyle(Theme.secondaryText)
                     }
@@ -428,7 +428,7 @@ struct MCPEditorSheet: View {
                     .foregroundStyle(Theme.danger)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Text("Se guarda en .mcp.json del repo. Claude lo lee directo; Hive se lo pasa a Codex y Gemini al abrir cada sesión.")
+            Text("Se guarda en .mcp.json del repo. Claude lo lee directo; Havebee se lo pasa a Codex y Gemini al abrir cada sesión.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

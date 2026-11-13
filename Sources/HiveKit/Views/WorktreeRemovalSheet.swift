@@ -58,11 +58,11 @@ struct WorktreeRemovalSheet: View {
                     }
                 }
             }
-            Text("Borrar el worktree elimina su carpeta completa, incluidos .env y archivos ignorados. No se puede deshacer desde Hive.")
+            Text("Borrar el worktree elimina su carpeta completa, incluidos .env y archivos ignorados. No se puede deshacer desde Havebee.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Divider()
             HStack {
-                Button("Solo quitar de Hive") {
+                Button("Solo quitar de Havebee") {
                     Task {
                         busy = true
                         if await store.performRemove(removal.item) { dismiss() }

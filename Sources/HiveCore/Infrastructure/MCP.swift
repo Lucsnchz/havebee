@@ -45,7 +45,7 @@ public enum MCPConfigError: Error, Equatable, Sendable, LocalizedError {
         switch self {
         case .invalidJSON(let path):
             "\((path as NSString).lastPathComponent) tiene un error de sintaxis o no se puede leer. "
-                + "Corregilo a mano (\(path)) antes de cambiar los MCP desde Hive: así no se pierde ningún servidor."
+                + "Corregilo a mano (\(path)) antes de cambiar los MCP desde Havebee: así no se pierde ningún servidor."
         }
     }
 }

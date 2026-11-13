@@ -120,7 +120,7 @@ struct StoreRemoteOperationTests {
         await task.value
         #expect(Date().timeIntervalSince(cancelledAt) < 15)
         #expect(store.alert == nil)
-        #expect(store.undoAction?.message == "Quitaste «tienda» de Hive")
+        #expect(store.undoAction?.message == "Quitaste «tienda» de Havebee")
         withExtendedLifetime((world, repo, marks)) {}
     }
 

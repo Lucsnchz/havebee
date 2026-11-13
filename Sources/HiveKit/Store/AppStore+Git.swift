@@ -36,7 +36,7 @@ extension AppStore {
             let folder = URL(fileURLWithPath: path).lastPathComponent
             alert = AppAlert(
                 title: "No es un repositorio git",
-                message: "«\(folder)» no es un repo de git. ¿Querés inicializarlo y agregarlo a Hive?\n\n\(path)",
+                message: "«\(folder)» no es un repo de git. ¿Querés inicializarlo y agregarlo a Havebee?\n\n\(path)",
                 actionTitle: "Inicializar git",
                 action: { [weak self] in Task { await self?.initializeRepository(at: path) } })
             return
@@ -394,8 +394,8 @@ extension AppStore {
         guard !running.isEmpty else { return }
         let branchId = branch.id
         let message = running.count == 1
-            ? "La sesión «\(running[0].name)» quedó viendo «\(new)» en «\(project.name)». ¿La movés a esa rama en Hive?"
-            : "Las \(running.count) sesiones de esa rama quedaron viendo «\(new)» en «\(project.name)». ¿Las movés a esa rama en Hive?"
+            ? "La sesión «\(running[0].name)» quedó viendo «\(new)» en «\(project.name)». ¿La movés a esa rama en Havebee?"
+            : "Las \(running.count) sesiones de esa rama quedaron viendo «\(new)» en «\(project.name)». ¿Las movés a esa rama en Havebee?"
         alert = AppAlert(title: "Algo cambió la carpeta principal de «\(old)» a «\(new)»",
                          message: message,
                          actionTitle: "Mover las sesiones ahí", cancelTitle: "Dejar así",

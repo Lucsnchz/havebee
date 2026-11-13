@@ -18,7 +18,7 @@ struct ProjectDetailView: View {
 
                     if !head.isEmpty && !project.branches.contains(where: { $0.mode == .main && $0.name == head }) {
                         Callout(icon: "info.circle.fill", color: Theme.info,
-                                title: "«\(head)» no está en Hive",
+                                title: "«\(head)» no está en Havebee",
                                 text: "Es la rama que tiene ahora la carpeta principal.",
                                 action: ("Agregar", {
                                     Task {

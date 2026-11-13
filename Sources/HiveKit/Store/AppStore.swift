@@ -257,9 +257,9 @@ public final class AppStore {
             // Un worktree es de su rama; la carpeta principal es la del proyecto entero.
             alert = branch.mode == .worktree
                 ? AppAlert(title: "No encuentro la carpeta de «\(branch.name)»",
-                           message: "\(dir)\n\nSe borró o se movió por fuera de Hive. Si ya no la usás, quitá la rama de Hive.")
+                           message: "\(dir)\n\nSe borró o se movió por fuera de Havebee. Si ya no la usás, quitá la rama de Havebee.")
                 : AppAlert(title: "No encuentro la carpeta de «\(project.name)»",
-                           message: "\(dir)\n\nSe borró o se movió por fuera de Hive. Si ya no lo usás, quitá el proyecto de Hive.")
+                           message: "\(dir)\n\nSe borró o se movió por fuera de Havebee. Si ya no lo usás, quitá el proyecto de Havebee.")
         }
         return false
     }

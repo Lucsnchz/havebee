@@ -42,7 +42,7 @@ struct StoreLifecycleTests {
         try "x".write(toFile: folder.path + "/archivo.txt", atomically: true, encoding: .utf8)
         await store.addProject(at: folder.path)
         let alert = try #require(store.alert)
-        #expect(alert.message.hasPrefix("«\(folder.url.lastPathComponent)» no es un repo de git. ¿Querés inicializarlo y agregarlo a Hive?"))
+        #expect(alert.message.hasPrefix("«\(folder.url.lastPathComponent)» no es un repo de git. ¿Querés inicializarlo y agregarlo a Havebee?"))
         #expect(alert.message.hasSuffix("\n\n\(folder.path)"))
         #expect(!alert.isDestructive)
         store.alert = AppAlert(title: "Otra", message: "en cola")

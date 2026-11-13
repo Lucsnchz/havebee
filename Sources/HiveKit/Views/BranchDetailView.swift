@@ -47,9 +47,9 @@ struct BranchDetailView: View {
                         Callout(icon: "exclamationmark.triangle.fill", color: Theme.danger,
                                 title: "No encuentro la carpeta de este worktree",
                                 text: store.hasRunningWork(ctx.branch)
-                                    ? "Se borró o se movió por fuera de Hive. Como todavía hay algo corriendo acá, la rama se va sola de Hive cuando termine. La rama de git no se borra."
-                                    : "Se borró o se movió por fuera de Hive. Si ya no la usás, quitá la rama de Hive (la rama de git no se borra).",
-                                action: ("Quitar de Hive…", { store.requestRemoval(.branch(branchId)) }))
+                                    ? "Se borró o se movió por fuera de Havebee. Como todavía hay algo corriendo acá, la rama se va sola de Havebee cuando termine. La rama de git no se borra."
+                                    : "Se borró o se movió por fuera de Havebee. Si ya no la usás, quitá la rama de Havebee (la rama de git no se borra).",
+                                action: ("Quitar de Havebee…", { store.requestRemoval(.branch(branchId)) }))
                     }
 
                     if !active {

@@ -142,7 +142,7 @@ public enum BranchError: Error, Equatable, LocalizedError, Sendable {
     public var errorDescription: String? {
         switch self {
         case .emptyName: "Poné el nombre de la rama."
-        case .alreadyInHive(let name): "La rama «\(name)» ya está en Hive."
+        case .alreadyInHive(let name): "La rama «\(name)» ya está en Havebee."
         case .invalidName(let name): "«\(name)» no es un nombre de rama válido."
         case .alreadyExists(let name): "Ya existe una rama «\(name)». Elegí «Rama existente»."
         case .noCommits: "El repo todavía no tiene commits. Creá el primero para poder sumar ramas."

@@ -37,8 +37,8 @@ extension AppStore {
                                                 sessions: p.allSessions.filter { runtimes[$0.id]?.isRunning == true }.count)
             // Qué pasa y qué no: lo de Hive se va (se puede deshacer unos segundos), el disco no se toca.
             let message = [stopping, remoteSummary(Set(p.branches.map(\.id))),
-                           "Sus ramas, sesiones y comandos se quitan de Hive. No se borra nada del disco: la carpeta y el repo quedan como están."]
-            pendingRemoval = PendingRemoval(item: item, title: "¿Quitar «\(p.name)» de Hive?",
+                           "Sus ramas, sesiones y comandos se quitan de Havebee. No se borra nada del disco: la carpeta y el repo quedan como están."]
+            pendingRemoval = PendingRemoval(item: item, title: "¿Quitar «\(p.name)» de Havebee?",
                                             message: message.compactMap { $0 }.joined(separator: " "), isWorktree: false)
         case .branch(let id):
             guard let ctx = branchContext(id) else { return }
@@ -46,7 +46,7 @@ extension AppStore {
             let stopping = Self.stoppingSummary(commands: commandRuns.filter { $0.branchId == id && $0.running }.count,
                                                 sessions: ctx.branch.sessions.filter { runtimes[$0.id]?.isRunning == true }.count)
             let message = [stopping, remoteSummary([id]), worktree ? nil : "La rama de git no se borra.",
-                           worktree ? "Podés quitarlo de Hive conservando la carpeta, o borrar el worktree del disco." : nil]
+                           worktree ? "Podés quitarlo de Havebee conservando la carpeta, o borrar el worktree del disco." : nil]
                 .compactMap { $0 }.joined(separator: " ")
             pendingRemoval = PendingRemoval(item: item, title: "¿Quitar la rama «\(ctx.branch.name)»?", message: message, isWorktree: worktree)
         case .session(let id):
@@ -54,10 +54,10 @@ extension AppStore {
             let archived = ctx.session.isArchived
             // Qué pasa al eliminarla y, si sigue abierta, la alternativa (el botón «Archivarla»).
             let message = switch (ctx.session.kind.reportsConversation, archived) {
-            case (true, false): "Se cierra y se borra su historial en Hive (todo lo anterior a cada /clear). No se puede deshacer. Si lo querés conservar, archivala."
-            case (false, false): "Se cierra su terminal y se quita de Hive. Si la querés conservar, archivala."
+            case (true, false): "Se cierra y se borra su historial en Havebee (todo lo anterior a cada /clear). No se puede deshacer. Si lo querés conservar, archivala."
+            case (false, false): "Se cierra su terminal y se quita de Havebee. Si la querés conservar, archivala."
             // Ya archivada: no tiene sentido ofrecer archivarla.
-            case (true, true): "Se borra su historial en Hive (todo lo anterior a cada /clear). No se puede deshacer."
+            case (true, true): "Se borra su historial en Havebee (todo lo anterior a cada /clear). No se puede deshacer."
             case (false, true): "Se borra de las archivadas. No se puede deshacer."
             }
             // Si está en algo (la misma regla que ⌘W), que se sepa antes de elegir: «Archivarla» y
@@ -166,7 +166,7 @@ extension AppStore {
             scheduleSave()
             // Se lleva sus sesiones (con la conversación), las archivadas, los comandos, el color y el
             // ícono: volver a agregar el repo no los recupera, así que se puede deshacer.
-            offerUndo("Quitaste «\(p.name)» de Hive") { [weak self] in
+            offerUndo("Quitaste «\(p.name)» de Havebee") { [weak self] in
                 self?.restoreProject(p, at: index, select: selectionWasInside)
             }
             return true

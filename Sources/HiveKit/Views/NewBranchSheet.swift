@@ -385,7 +385,7 @@ struct NewBranchSheet: View {
         case .worktree:
             "Una carpeta propia para esta rama: podés tener varias abiertas a la vez sin pisarte."
         case .main:
-            "Usa la carpeta del proyecto. Hive hace git switch a esta rama, y la carpeta principal tiene una sola rama activa a la vez."
+            "Usa la carpeta del proyecto. Havebee hace git switch a esta rama, y la carpeta principal tiene una sola rama activa a la vez."
         }
     }
 

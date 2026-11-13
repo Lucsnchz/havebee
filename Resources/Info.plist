@@ -2,32 +2,32 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CFBundleName</key>
-	<string>Hive</string>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>es</string>
 	<key>CFBundleDisplayName</key>
-	<string>Hive</string>
+	<string>Havebee</string>
+	<key>CFBundleExecutable</key>
+	<string>Havebee</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.lucianosanchez.hive</string>
-	<key>CFBundleExecutable</key>
-	<string>Hive</string>
+	<key>CFBundleName</key>
+	<string>Havebee</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>0.1.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
-	<key>CFBundleIconFile</key>
-	<string>AppIcon</string>
-	<key>CFBundleDevelopmentRegion</key>
-	<string>es</string>
-	<key>NSHumanReadableCopyright</key>
-	<string>Copyright © 2026 Luciano Sánchez and contributors. GPL-3.0-only.</string>
-	<key>LSMinimumSystemVersion</key>
-	<string>14.0</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.developer-tools</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright © 2026 Luciano Sánchez and contributors. GPL-3.0-only.</string>
 	<key>NSSupportsAutomaticTermination</key>
 	<false/>
 	<key>NSSupportsSuddenTermination</key>
