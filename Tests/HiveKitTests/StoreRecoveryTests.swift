@@ -128,15 +128,50 @@ struct StoreRecoveryTests {
         #expect(!s.world.processes.launches.last!.args.contains(InterruptedWork.prompt))
     }
 
-    @Test("Stop con un servidor de fondo no es un workflow pendiente")
-    func serverIsNotWork() throws {
+    @Test("Un turno que terminó esperando un comando de fondo se retoma si la sesión se corta")
+    func backgroundCommandIsPending() throws {
+        let s = try RecoverySetup()
+        s.working()
+        let stamp = ISO8601DateFormatter().string(from: s.world.now)
+        // La respuesta que cerró el turno ya está en el transcript cuando llega el Stop.
+        try s.transcript("{\"timestamp\":\"\(stamp)\",\"type\":\"assistant\",\"message\":{\"stop_reason\":\"end_turn\",\"content\":[]}}\n")
+        s.world.advance(1)
+        s.event("Stop", payload: ["last_assistant_message": "Corro los tests en segundo plano y sigo cuando terminen.",
+                                  "background_tasks": [["type": "shell", "status": "running"]]])
+        // Te toca a vos (puede ser un servidor que no termina nunca), pero queda anotado.
+        #expect(s.runtime.status == .waiting)
+        #expect(s.session.pendingWork?.backgroundCommands == 1)
+        s.store.shutdown()
+        let reopened = s.reopen()
+        #expect(s.world.processes.launches.last?.args.last == InterruptedWork.prompt)
+        #expect(reopened.runtimes[s.id]?.status == .working)
+    }
+
+    @Test("Cuando el comando de fondo termina y el agente cierra el turno, ya no queda nada pendiente")
+    func backgroundCommandFinished() throws {
         let s = try RecoverySetup()
         try s.transcript()
         s.working()
         s.event("Stop", payload: ["background_tasks": [["type": "shell", "status": "running"]]])
+        #expect(s.session.pendingWork?.backgroundCommands == 1)
+        // El aviso de que terminó despierta al agente: vuelve a trabajar como un turno común.
+        s.event("UserPromptSubmit", payload: ["prompt": "<task-notification>", "source": "system"])
+        #expect(s.runtime.status == .working)
+        #expect(s.session.pendingWork?.backgroundCommands == 0)
+        s.event("Stop", payload: ["background_tasks": []])
         #expect(s.session.pendingWork == nil)
         _ = s.reopen()
         #expect(!s.world.processes.launches.last!.args.contains(InterruptedWork.prompt))
+    }
+
+    @Test("Ctrl+C con un comando de fondo descarta el pendiente")
+    func backgroundCommandManualInterrupt() throws {
+        let s = try RecoverySetup()
+        try s.transcript()
+        s.working()
+        s.event("Stop", payload: ["background_tasks": [["type": "shell", "status": "running"]]])
+        s.store.userInput(s.id, [3][...])
+        #expect(s.session.pendingWork == nil)
     }
 
     @Test("No se envía nada sin conversación nativa, ni se pierde el pendiente si falta el binario")

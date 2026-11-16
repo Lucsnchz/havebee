@@ -124,6 +124,33 @@ struct InterruptedWorkTests {
         let data = try JSONEncoder().encode(old)
         let decoded = try JSONDecoder().decode(Session.self, from: data)
         #expect(decoded.pendingWork == nil)
+        // Un pendiente guardado por la 0.1.1, sin comandos de fondo.
+        let launch = UUID()
+        let saved = "{\"launchId\":\"\(launch.uuidString)\",\"since\":1792152000.25,\"backgroundAgents\":1}"
+        let previous = try JSONDecoder().decode(PendingAgentWork.self, from: Data(saved.utf8))
+        #expect(previous == PendingAgentWork(launchId: launch, since: since, backgroundAgents: 1))
+        let commands = PendingAgentWork(launchId: launch, since: since, backgroundCommands: 2)
+        #expect(try JSONDecoder().decode(PendingAgentWork.self, from: JSONEncoder().encode(commands)) == commands)
+    }
+
+    @Test("Un fin de turno esperando comandos de fondo sigue pendiente; uno sin nada pendiente no")
+    func reconcileBackgroundCommands() {
+        var session = Session(name: "Chat", kind: .claude)
+        let pending = PendingAgentWork(launchId: UUID(), since: since)
+        session.pendingWork = pending
+        func stop(_ tasks: JSONValue) -> HiveEvent {
+            HiveEvent(sessionId: session.id, source: "claude", name: "Stop",
+                      payload: ["background_tasks": tasks], launchId: pending.launchId)
+        }
+        #expect(InterruptedWork.reconcile(session, events: [stop([["type": "shell", "status": "running"]])])?.backgroundCommands == 1)
+        #expect(InterruptedWork.reconcile(session, events: [stop([])]) == nil)
+    }
+
+    @Test("Reconoce el mensaje automático de versiones anteriores en los historiales")
+    func previousPrompt() {
+        #expect(InterruptedWork.isPrompt(InterruptedWork.prompt))
+        #expect(InterruptedWork.previousPrompts.allSatisfy(InterruptedWork.isPrompt))
+        #expect(!InterruptedWork.isPrompt("seguí"))
     }
 
     @Test("Un evento auxiliar o de otro proceso no resuelve ni crea un pendiente")

@@ -12,6 +12,7 @@ extension AppStore {
         if data.elementsEqual([UInt8(3)]) {
             // Ctrl+C también es una interrupción manual; no se continúa sola al volver a abrir.
             rt.backgroundAgents = 0
+            rt.backgroundCommands = 0
             rt.manuallyInterrupted = true
             setStatus(rt, .waiting, quiet: true)
             return
@@ -92,6 +93,7 @@ extension AppStore {
                 scheduleSave()
             }
             if let agents = outcome.backgroundAgents { rt.backgroundAgents = agents }
+            if let commands = outcome.backgroundCommands { rt.backgroundCommands = commands }
             if let cwd = outcome.cwd, rt.workingDirectory != cwd { rt.workingDirectory = cwd }
             if let status = outcome.status { setStatus(rt, status, notify: outcome.notification) }
             if let request = outcome.permissionRequest, rt.status == .attention { rt.pendingPermission = request }

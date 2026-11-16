@@ -141,6 +141,7 @@ extension AppStore {
         rt.workingDirectory = nil
         rt.workingSince = started && plan.continuesInterruptedWork ? now : nil
         rt.backgroundAgents = 0
+        rt.backgroundCommands = 0
         rt.status = started ? (plan.continuesInterruptedWork ? .working : .idle) : .exited(nil)
         if started && plan.continuesInterruptedWork {
             history.append(HistoryEntry(date: now, role: .marker, text: InterruptedWork.marker),

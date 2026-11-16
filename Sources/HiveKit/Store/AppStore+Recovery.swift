@@ -9,10 +9,21 @@ extension AppStore {
               let ctx = sessionContext(rt.sessionId) else { return }
         let previous = ctx.session.pendingWork
         let pending: PendingAgentWork?
+        let sameWork = previous.map {
+            $0.launchId == rt.launchId && $0.backgroundAgents == rt.backgroundAgents
+                && $0.backgroundCommands == rt.backgroundCommands
+        } ?? false
         if status == .working {
             guard !rt.manuallyInterrupted else { return }
-            if let previous, previous.launchId == rt.launchId, previous.backgroundAgents == rt.backgroundAgents { return }
-            pending = PendingAgentWork(launchId: rt.launchId, since: environment.now(), backgroundAgents: rt.backgroundAgents)
+            if sameWork { return }
+            pending = PendingAgentWork(launchId: rt.launchId, since: environment.now(),
+                                       backgroundAgents: rt.backgroundAgents, backgroundCommands: rt.backgroundCommands)
+        } else if status == .waiting, rt.backgroundCommands > 0, !rt.manuallyInterrupted {
+            // Terminó el turno esperando comandos en segundo plano (tests, un build): cuando terminen,
+            // el agente sigue solo. Si la sesión se corta antes, mueren con ella y nadie lo despierta.
+            // Desde ahora: la respuesta final de este turno ya quedó escrita en el transcript.
+            if sameWork { return }
+            pending = PendingAgentWork(launchId: rt.launchId, since: environment.now(), backgroundCommands: rt.backgroundCommands)
         } else if status.needsYou {
             pending = nil
         } else {

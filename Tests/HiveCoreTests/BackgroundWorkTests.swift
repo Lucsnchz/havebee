@@ -43,18 +43,20 @@ struct BackgroundWorkTests {
         #expect(o.status == .working)
         #expect(o.notification == nil)
         #expect(o.backgroundAgents == 1)
+        #expect(o.backgroundCommands == 1)
         // La respuesta igual queda en la tarjeta y en el historial.
         #expect(o.reply == "Lancé el workflow")
         #expect(o.history.map(\.text) == ["Lancé el workflow"])
         #expect(o.touchesActivity)
     }
 
-    @Test("Stop con solo un shell o un monitor (un servidor, por ejemplo): te toca y avisa que quedan")
+    @Test("Stop con solo un shell o un monitor (un servidor, por ejemplo): te toca, avisa que quedan y los cuenta")
     func stopWithShells() {
         let o = run("Stop", ["background_tasks": .array([task("shell"), task("monitor")]), "last_assistant_message": "Listo"])
         #expect(o.status == .waiting)
         #expect(o.notification == "Terminó; quedan 2 tareas en segundo plano")
         #expect(o.backgroundAgents == 0)
+        #expect(o.backgroundCommands == 2)
     }
 
     @Test("Stop sin nada en segundo plano: te toca con su respuesta")
@@ -63,6 +65,7 @@ struct BackgroundWorkTests {
         #expect(o.status == .waiting)
         #expect(o.notification == "Terminé")
         #expect(o.backgroundAgents == 0)
+        #expect(o.backgroundCommands == 0)
     }
 
     @Test("Un turno nuevo del agente principal deja de ser segundo plano; los subagentes no")
@@ -71,10 +74,16 @@ struct BackgroundWorkTests {
         #expect(run("UserPromptSubmit", ["prompt": "<task-notification>", "source": "system"], inBackground: true).backgroundAgents == 0)
         #expect(run("PreToolUse", ["tool_name": "Read"], inBackground: true).backgroundAgents == 0)
         #expect(run("StopFailure", ["error": "rate_limit"], inBackground: true).backgroundAgents == 0)
+        // Lo mismo con los comandos: un turno nuevo, Esc o un error dejan de contarlos como pendientes.
+        #expect(run("UserPromptSubmit", ["prompt": "<task-notification>", "source": "system"]).backgroundCommands == 0)
+        #expect(run("PreToolUse", ["tool_name": "Read"]).backgroundCommands == 0)
+        #expect(run("PostToolUseFailure", ["tool_name": "Bash", "is_interrupt": true]).backgroundCommands == 0)
+        #expect(run("StopFailure", ["error": "rate_limit"]).backgroundCommands == 0)
         // Un subagente usando herramientas confirma que sigue trabajando, sin tocar el segundo plano.
         let sub = run("PreToolUse", ["tool_name": "Read", "agent_id": "sub-1"], inBackground: true)
         #expect(sub.status == .working)
         #expect(sub.backgroundAgents == nil)
+        #expect(sub.backgroundCommands == nil)
         #expect(run("Notification", ["notification_type": "permission_prompt"], inBackground: true).backgroundAgents == nil)
     }
 

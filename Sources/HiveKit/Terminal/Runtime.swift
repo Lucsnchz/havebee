@@ -38,6 +38,9 @@ public final class SessionRuntime {
     /// Subagentes o workflows que siguen trabajando después de que el agente principal terminó su
     /// turno. Mientras haya, la sesión figura trabajando aunque la terminal esté quieta.
     public internal(set) var backgroundAgents = 0
+    /// Comandos en segundo plano (tests, un build, un servidor) que seguían corriendo cuando el agente
+    /// terminó su turno. La sesión te toca a vos, pero queda pendiente por si se corta.
+    @ObservationIgnored var backgroundCommands = 0
     /// Último evento del agente o de sus subagentes (para soltar el «segundo plano» si se cortan).
     @ObservationIgnored var lastEventAt = Date.distantPast
     /// La carpeta que informó el agente en su último evento (nil hasta el primero de cada ejecución).

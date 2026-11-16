@@ -6,11 +6,29 @@ public struct PendingAgentWork: Codable, Hashable, Sendable {
     /// Segundos con fracciones: las fechas ISO del estado se redondean y podrían incluir un turno anterior.
     public var since: TimeInterval
     public var backgroundAgents: Int
+    /// Comandos en segundo plano (tests, un build, un render) que seguían corriendo cuando el agente
+    /// terminó su turno. Cuando terminan, el agente retoma solo; si la sesión se corta antes, mueren
+    /// con ella y nadie lo despierta.
+    public var backgroundCommands: Int
 
-    public init(launchId: UUID, since: Date, backgroundAgents: Int = 0) {
+    public init(launchId: UUID, since: Date, backgroundAgents: Int = 0, backgroundCommands: Int = 0) {
         self.launchId = launchId
         self.since = since.timeIntervalSince1970
         self.backgroundAgents = backgroundAgents
+        self.backgroundCommands = backgroundCommands
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case launchId, since, backgroundAgents, backgroundCommands
+    }
+
+    /// Lee también los pendientes que guardaron versiones anteriores, sin los campos nuevos.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        launchId = try c.decode(UUID.self, forKey: .launchId)
+        since = try c.decode(TimeInterval.self, forKey: .since)
+        backgroundAgents = try c.decodeIfPresent(Int.self, forKey: .backgroundAgents) ?? 0
+        backgroundCommands = try c.decodeIfPresent(Int.self, forKey: .backgroundCommands) ?? 0
     }
 }
 
@@ -19,11 +37,19 @@ public enum InterruptedWork {
     public static let prompt = """
     [Hive: reanudación de trabajo interrumpido]
     Esta conversación tenía trabajo pendiente cuando se cortó la sesión. Revisá el historial de esta misma conversación (también HIVE_HISTORY_FILE, si está disponible) y el estado actual del proyecto. Continuá únicamente la tarea ya autorizada que quedó pendiente, conservando sus objetivos y restricciones.
-    Si había un workflow o subagentes, comprobá sus resultados y si siguen activos antes de retomarlos; no dupliques procesos ni repitas acciones ya realizadas. Si la tarea ya terminó, no la vuelvas a ejecutar. Este mensaje automático no responde preguntas pendientes ni concede permisos: si necesitabas una respuesta o aprobación del usuario, seguí esperando y explicá qué falta.
+    Si había un workflow o subagentes, comprobá sus resultados y si siguen activos antes de retomarlos; no dupliques procesos ni repitas acciones ya realizadas. Los comandos que corrían en segundo plano (tests, builds, servidores) se cortaron con la sesión: si la tarea esperaba el resultado de alguno, volvé a correrlo; no relances los que la tarea ya no necesita. Si la tarea ya terminó, no la vuelvas a ejecutar: decilo en una línea. Este mensaje automático no responde preguntas pendientes ni concede permisos: si necesitabas una respuesta o aprobación del usuario, seguí esperando y explicá qué falta.
     """
 
+    /// Los mensajes que mandaron versiones anteriores: siguen apareciendo en historiales viejos.
+    static let previousPrompts = ["""
+    [Hive: reanudación de trabajo interrumpido]
+    Esta conversación tenía trabajo pendiente cuando se cortó la sesión. Revisá el historial de esta misma conversación (también HIVE_HISTORY_FILE, si está disponible) y el estado actual del proyecto. Continuá únicamente la tarea ya autorizada que quedó pendiente, conservando sus objetivos y restricciones.
+    Si había un workflow o subagentes, comprobá sus resultados y si siguen activos antes de retomarlos; no dupliques procesos ni repitas acciones ya realizadas. Si la tarea ya terminó, no la vuelvas a ejecutar. Este mensaje automático no responde preguntas pendientes ni concede permisos: si necesitabas una respuesta o aprobación del usuario, seguí esperando y explicá qué falta.
+    """]
+
     public static func isPrompt(_ text: String) -> Bool {
-        text.trimmingCharacters(in: .whitespacesAndNewlines) == prompt
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text == prompt || previousPrompts.contains(text)
     }
 
     /// Reconciliar los hooks que quedaron en disco al cerrar. Solo pertenecen al proceso guardado;
@@ -39,10 +65,12 @@ public enum InterruptedWork {
                                                          isSubagentThread: isSubagentThread, pendingPermission: permission,
                                                          inBackground: pending.backgroundAgents > 0)
             if let count = outcome.backgroundAgents { pending.backgroundAgents = count }
+            if let count = outcome.backgroundCommands { pending.backgroundCommands = count }
             if let next = outcome.status { status = next }
             if let request = outcome.permissionRequest { permission = request }
         }
-        return status == .working ? pending : nil
+        // Un turno que terminó esperando comandos en segundo plano también sigue pendiente.
+        return status == .working || (status == .waiting && pending.backgroundCommands > 0) ? pending : nil
     }
 
     /// Última evidencia del transcript nativo. Evita repetir un turno terminado cuyo hook no llegó.

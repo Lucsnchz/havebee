@@ -85,6 +85,9 @@ public struct AgentEventOutcome: Equatable, Sendable {
     /// Subagentes o workflows que siguen trabajando con el agente principal quieto (nil: no cambia).
     /// El Stop dice cuántos quedan; un turno nuevo del agente principal lo vuelve a 0.
     public var backgroundAgents: Int?
+    /// Comandos en segundo plano (tests, un build, un servidor) que siguen corriendo al terminar el turno
+    /// (nil: no cambia). Si la sesión se corta antes de que terminen, el turno queda pendiente.
+    public var backgroundCommands: Int?
     /// La carpeta donde está trabajando el agente principal (cambia si se pasa a otro worktree).
     public var cwd: String?
 
@@ -105,7 +108,8 @@ public struct AgentEventOutcome: Equatable, Sendable {
             && a.history.map(\.role) == b.history.map(\.role) && a.history.map(\.text) == b.history.map(\.text)
             && a.reply == b.reply && a.touchesActivity == b.touchesActivity
             && a.transcript?.conversationId == b.transcript?.conversationId && a.transcript?.path == b.transcript?.path
-            && a.permissionRequest == b.permissionRequest && a.backgroundAgents == b.backgroundAgents && a.cwd == b.cwd
+            && a.permissionRequest == b.permissionRequest && a.backgroundAgents == b.backgroundAgents
+            && a.backgroundCommands == b.backgroundCommands && a.cwd == b.cwd
     }
 }
 
@@ -145,6 +149,7 @@ public enum AgentEventInterpreter {
         case ("claude", "UserPromptSubmit"):
             outcome.status = .working
             outcome.backgroundAgents = 0
+            outcome.backgroundCommands = 0
             let source = payload["source"]?.string ?? "user"
             if source == "user" {
                 outcome.touchesActivity = true
@@ -157,11 +162,17 @@ public enum AgentEventInterpreter {
             // Un subagente usando herramientas solo confirma que sigue trabajando; nunca te saca de tu turno.
             if !fromSubagent || status == .working { outcome.status = .working }
             // El agente principal volvió a trabajar: ya no es solo trabajo en segundo plano.
-            if !fromSubagent { outcome.backgroundAgents = 0 }
+            if !fromSubagent {
+                outcome.backgroundAgents = 0
+                outcome.backgroundCommands = 0
+            }
         case ("claude", "PostToolUseFailure"):
             if payload["is_interrupt"]?.asBool == true {
                 // Lo cortaste con Esc: te toca a vos, y ya lo estás mirando.
-                if !fromSubagent { outcome.status = .waiting }
+                if !fromSubagent {
+                    outcome.status = .waiting
+                    outcome.backgroundCommands = 0
+                }
             } else if !fromSubagent || status == .working {
                 outcome.status = .working
             }
@@ -195,6 +206,7 @@ public enum AgentEventInterpreter {
             outcome.touchesActivity = true
             let work = BackgroundWork.parse(payload["background_tasks"])
             outcome.backgroundAgents = work.agents
+            outcome.backgroundCommands = work.others
             if work.agents > 0 {
                 // Lanzó subagentes o un workflow en segundo plano: siguen trabajando y Claude retoma solo
                 // cuando terminan. Todavía no te toca, así que no hay aviso.
@@ -215,6 +227,7 @@ public enum AgentEventInterpreter {
             outcome.touchesActivity = true
             outcome.status = .attention
             outcome.backgroundAgents = 0
+            outcome.backgroundCommands = 0
             outcome.notification = text
             outcome.transcript = transcript(payload, agentSessionId: agentSessionId)
         case ("grok", let name):
@@ -267,12 +280,16 @@ public enum AgentEventInterpreter {
         case "UserPromptSubmit":
             outcome.status = .working
             outcome.backgroundAgents = 0
+            outcome.backgroundCommands = 0
             outcome.touchesActivity = true
             if let prompt = text("prompt", "userPrompt", "user_prompt") { outcome.history = [(.user, prompt)] }
         case "PreToolUse", "PostToolUse", "PostToolUseFailure":
             // Igual que en Claude: un subagente solo confirma que sigue trabajando.
             if !fromSubagent || status == .working { outcome.status = .working }
-            if !fromSubagent { outcome.backgroundAgents = 0 }
+            if !fromSubagent {
+                outcome.backgroundAgents = 0
+                outcome.backgroundCommands = 0
+            }
         case "Notification":
             let message = text("message", "body", "title") ?? ""
             switch notificationEffect(type: text("notification_type", "notificationType", "type") ?? "", message: message) {
@@ -294,6 +311,7 @@ public enum AgentEventInterpreter {
             outcome.touchesActivity = true
             let work = BackgroundWork.parse(field("background_tasks", "backgroundTasks"))
             outcome.backgroundAgents = work.agents
+            outcome.backgroundCommands = work.others
             if work.agents > 0 {
                 outcome.status = .working
             } else {
@@ -308,11 +326,13 @@ public enum AgentEventInterpreter {
             outcome.touchesActivity = true
             outcome.status = .attention
             outcome.backgroundAgents = 0
+            outcome.backgroundCommands = 0
             outcome.notification = text
         case "StopCancelled":
             // Lo cortaste vos (Esc): te toca, sin aviso.
             outcome.status = .waiting
             outcome.backgroundAgents = 0
+            outcome.backgroundCommands = 0
         default:
             break
         }
